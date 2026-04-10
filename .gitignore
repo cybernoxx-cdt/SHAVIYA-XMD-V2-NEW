@@ -1,0 +1,7 @@
+node_modules/
+auth_info_baileys/
+data/
+cookies/
+.env
+*.log
+npm-debug.log*

@@ -1,0 +1,36 @@
+{
+  "name": "SHAVIYA-XMD-V2",
+  "description": "SHAVIYA-XMD V2 WhatsApp Bot",
+  "repository": "https://github.com/your-repo/SHAVIYA-XMD-V2",
+  "logo": "https://files.catbox.moe/s1pn69.jpg",
+  "keywords": ["whatsapp", "bot", "baileys"],
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    }
+  ],
+  "env": {
+    "SESSION_ID": {
+      "description": "Bot session ID (SHAVIYA-XMD=xxxx format)",
+      "required": true
+    },
+    "OWNER_NUMBER": {
+      "description": "Owner WhatsApp number (with country code, no +)",
+      "value": "94758127752"
+    },
+    "MONGODB_URI": {
+      "description": "MongoDB connection URI",
+      "value": "mongodb+srv://botmini:botmini@minibot.upglk0f.mongodb.net/?retryWrites=true&w=majority&appName=minibot"
+    },
+    "PREFIX": { "value": "." },
+    "MODE": { "value": "public" },
+    "ALIVE_IMG": { "value": "https://files.catbox.moe/s1pn69.jpg" },
+    "ALWAYS_ONLINE": { "value": "true" },
+    "AUTO_VOICE": { "value": "false" },
+    "AUTO_AI": { "value": "false" },
+    "ANTI_DELETE": { "value": "false" },
+    "ANTILINK": { "value": "false" },
+    "PACKNAME": { "value": "SHAVIYA-XMD V2" },
+    "AUTHOR": { "value": "SHAVIYA TECH" }
+  }
+}

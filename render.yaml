@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: SHAVIYA-XMD-V2
+    env: node
+    buildCommand: npm install
+    startCommand: node index.js
+    plan: free
+    envVars:
+      - key: SESSION_ID
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: PREFIX
+        value: "."
+      - key: MODE
+        value: "public"
+      - key: OWNER_NUMBER
+        sync: false
+      - key: NODE_ENV
+        value: "production"
+      - key: PORT
+        value: "8000"
+      - key: ALIVE_IMG
+        value: "https://files.catbox.moe/f18ceb.jpg"
+      - key: MENU_IMG
+        value: "https://files.catbox.moe/f18ceb.jpg"
+      - key: PACKNAME
+        value: "SHAVIYA-XMD V2"
+      - key: AUTHOR
+        value: "SHAVIYA TECH"
