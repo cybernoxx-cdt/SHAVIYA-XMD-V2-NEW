@@ -83,16 +83,21 @@ async function onMessage(conn, mek, sessionId) {
         const chat    = mek.key.remoteJid;
         const isGroup = chat?.endsWith('@g.us');
 
-        // BUG 2 FIX: correct sender extraction
-        // Group  → participant field holds the actual sender JID
-        // DM     → remoteJid IS the sender
-        const sender = isGroup
-            ? (mek.key.participant || mek.participant || '')
-            : chat;
+        // FIXED: Group → participant holds real sender JID
+        //        DM    → remoteJid IS the sender
+        //        If participant missing in group → store empty, show Unknown (not fake group JID)
+        let sender;
+        if (isGroup) {
+            sender = mek.key.participant || mek.participant || '';
+        } else {
+            sender = chat;
+        }
 
-        // Clean number: strip @s.whatsapp.net and device suffix (e.g. 94711:5)
-        const senderNumber = sender.split('@')[0].split(':')[0];
-        const pushName     = mek.pushName || senderNumber;
+        // Strip @domain and multidevice suffix (e.g. 94711:5@s.whatsapp.net → 94711)
+        const senderNumber = sender
+            ? sender.split('@')[0].split(':')[0]
+            : '';
+        const pushName = mek.pushName || senderNumber || 'Unknown';
 
         msgCache.set(id, {
             mek,
@@ -179,11 +184,13 @@ async function onDelete(conn, updates, sessionId) {
                     hour12:    true,
                 });
 
+                const displayNumber = senderNumber ? `+${senderNumber}` : 'Unknown';
+
                 const info =
 `🗑️ *DELETED MESSAGE DETECTED*
 ━━━━━━━━━━━━━━━━━━━━━
 👤 *Name:*    ${pushName}
-📱 *Number:*  +${senderNumber}
+📱 *Number:*  ${displayNumber}
 ${isGroup
     ? `👥 *Group:*   ${groupName}`
     : `💬 *Chat:*    Private DM`}
