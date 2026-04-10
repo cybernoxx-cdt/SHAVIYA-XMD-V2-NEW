@@ -495,13 +495,16 @@ async function startBot(sessionId, authPath, envConfig) {
         (msgKeys.length === 1 && msgKeys[0] === "messageContextInfo")
       ) return;
 
+      // ── Cache for antidelete BEFORE mek.message is mutated ──
+      // Must be here so mek.key.participant is still intact (group sender)
+      try { if (antidelete) await antidelete.onMessage(conn, mek, sessionId); } catch {}
+
       mek.message = getContentType(mek.message) === "ephemeralMessage"
         ? mek.message.ephemeralMessage?.message || mek.message
         : mek.message;
 
       if (!mek.message) return;
 
-      try { if (antidelete) await antidelete.onMessage(conn, mek, sessionId); } catch {}
       if (handleAutoForward) try { await handleAutoForward(conn, mek, sessionId); } catch {}
 
       const m    = sms(conn, mek);
