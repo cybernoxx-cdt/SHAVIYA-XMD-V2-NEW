@@ -112,7 +112,6 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 handler.command = [
     // Group hidetag only
     'hidetag',
-    'tagall',
     'everyone',
     'alltag',
     'mentionall',
