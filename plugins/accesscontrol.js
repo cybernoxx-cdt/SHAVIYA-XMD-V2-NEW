@@ -4,15 +4,17 @@ const path = require('path');
 
 // ═══════════════════════════════════════════════════
 //  Access Config — MongoDB Persist + File Fallback
-//  ✅ FIX: Uses shared mongoose connection (no raw MongoClient)
-//  ✅ FIX: Falls back to file if MongoDB not connected
+//  ✅ Uses shared mongoose connection (no raw MongoClient)
+//  ✅ Falls back to file if MongoDB not connected
+//  ✅ FIX: Mode-based silent block — no "owner only" message
+//  ✅ FIX: inbox/group/premium modes work correctly
 //  Restart වෙද්දිත් settings නැතිවෙන්නෙ නෑ ✅
 // ═══════════════════════════════════════════════════
 
 const DATA_DIR = path.join(__dirname, '../data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// ── Mongoose model (shared connection — no new MongoClient) ──
+// ── Mongoose model (shared connection) ──────────────────────
 let _AccessModel = null;
 function getAccessModel() {
   if (_AccessModel) return _AccessModel;
@@ -31,7 +33,7 @@ function getAccessModel() {
   }
 }
 
-// ── Number normalize ──
+// ── Number normalize ─────────────────────────────────────────
 function normalizeNumber(raw) {
   if (!raw) return '';
   return String(raw)
@@ -41,20 +43,18 @@ function normalizeNumber(raw) {
     .replace(/[^0-9]/g, '');
 }
 
-// ── Local file path per session ──
+// ── Local file path per session ──────────────────────────────
 function getLocalFile(sessionId) {
   return path.join(DATA_DIR, `access_config_${sessionId}.json`);
 }
 
-// ── Load config: Mongoose first, fallback file ──
+// ── Load config: Mongoose first, fallback file ───────────────
 async function getAccessConfig(sessionId) {
-  // Try Mongoose (shared connection)
   try {
     const Model = getAccessModel();
     if (Model) {
       const doc = await Model.findById(sessionId).lean();
       if (doc && doc.data) {
-        // Sync to local file as backup
         try { fs.writeFileSync(getLocalFile(sessionId), JSON.stringify(doc.data, null, 2)); } catch (_) {}
         return doc.data;
       }
@@ -63,7 +63,6 @@ async function getAccessConfig(sessionId) {
     console.error('[ACCESS] Mongoose load error:', e.message);
   }
 
-  // Fallback: local file
   try {
     const file = getLocalFile(sessionId);
     if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -72,14 +71,12 @@ async function getAccessConfig(sessionId) {
   return { mode: 'public', premium: [], banned: [] };
 }
 
-// ── Save config: Mongoose + local file ──
+// ── Save config: Mongoose + local file ──────────────────────
 async function saveAccessConfig(sessionId, cfg) {
-  // Save to local file immediately (fast, always works)
   try {
     fs.writeFileSync(getLocalFile(sessionId), JSON.stringify(cfg, null, 2));
   } catch (e) {}
 
-  // Save to Mongoose (shared connection)
   try {
     const Model = getAccessModel();
     if (Model) {
@@ -90,7 +87,6 @@ async function saveAccessConfig(sessionId, cfg) {
       );
       console.log('[ACCESS] ✅ Saved to MongoDB');
     } else {
-      // MongoDB not ready — retry once after 3 seconds
       setTimeout(async () => {
         try {
           const M2 = getAccessModel();
@@ -106,57 +102,100 @@ async function saveAccessConfig(sessionId, cfg) {
   }
 }
 
-// ── In-memory cache for sync reads (index.js checkAccess) ──
+// ── In-memory cache ──────────────────────────────────────────
 const _configCache = {};
 
-// Preload cache on startup
 async function preloadCache(sessionId) {
   const cfg = await getAccessConfig(sessionId);
   _configCache[sessionId] = cfg;
   return cfg;
 }
 
-// Sync read from cache (used by global.checkAccess)
 function getAccessConfigSync(sessionId) {
   return _configCache[sessionId] || { mode: 'public', premium: [], banned: [] };
 }
 
-// ═══════════════════════════════════════════════════
-//  Global Access Checker (index.js call කරනවා)
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+//  global.checkAccess — called by index.js on every message
+//
+//  FIXED LOGIC:
+//  ┌──────────────┬───────────────────────────────────────────┐
+//  │ MODE         │ BEHAVIOUR                                 │
+//  ├──────────────┼───────────────────────────────────────────┤
+//  │ public       │ everyone allowed ✅                        │
+//  │ private      │ SILENTLY blocked — no message sent ❌      │
+//  │ inbox        │ allowed in DM only, blocked in groups ❌   │
+//  │ group        │ allowed in groups only, blocked in DM ❌   │
+//  │ premium      │ allowed for premium users only ❌          │
+//  │ privatepremium│ premium users in DM only ❌              │
+//  └──────────────┴───────────────────────────────────────────┘
+//
+//  reason: null  → index.js will NOT send any message (silent)
+//  reason: ''    → index.js will NOT send any message (silent)
+// ═══════════════════════════════════════════════════════════════
 global.checkAccess = function(sessionId, senderNumber, isOwner, isGroup) {
-  // Preload cache if not loaded yet (async, non-blocking)
+  // Preload cache if not loaded yet
   if (!_configCache[sessionId]) {
     preloadCache(sessionId);
     return { allowed: true }; // Allow while loading
   }
 
-  const cfg    = getAccessConfigSync(sessionId);
-  const mode   = cfg.mode || 'public';
+  const cfg  = getAccessConfigSync(sessionId);
+  const mode = cfg.mode || 'public';
 
+  // Owner always passes through
   if (isOwner) return { allowed: true, mode };
 
   const isPremium = (cfg.premium || []).includes(senderNumber);
   const isBanned  = (cfg.banned  || []).includes(senderNumber);
 
-  if (isBanned) return { allowed: false, reason: 'banned', mode };
+  // Banned → silent block (no message)
+  if (isBanned) return { allowed: false, reason: null, mode };
 
   switch (mode) {
-    case 'public':         return { allowed: true, mode };
-    case 'private':        return { allowed: false, reason: 'ᴏᴡɴᴇʀ ᴏɴʟʏ ʏꜱᴇ ᴛʜɪꜱ ʙᴏᴛ (ᴘʀɪᴠᴀᴛᴇ) ❌', mode };
-    case 'inbox':          return { allowed: !isGroup, mode };
-    case 'group':          return { allowed: isGroup,  mode };
-    case 'premium':        return { allowed: isPremium, reason: isPremium ? '' : 'premium', mode };
-    case 'privatepremium': return { allowed: isPremium && !isGroup, reason: 'premium', mode };
-    default:               return { allowed: true, mode };
+
+    case 'public':
+      // Everyone allowed
+      return { allowed: true, mode };
+
+    case 'private':
+      // Owner-only mode — silently ignore all other users
+      // reason: null means index.js sends nothing
+      return { allowed: false, reason: null, mode };
+
+    case 'inbox':
+      // Only DM (non-group) allowed
+      if (!isGroup) return { allowed: true, mode };
+      // In group → silent block
+      return { allowed: false, reason: null, mode };
+
+    case 'group':
+      // Only groups allowed
+      if (isGroup) return { allowed: true, mode };
+      // In DM → silent block
+      return { allowed: false, reason: null, mode };
+
+    case 'premium':
+      // Premium users allowed everywhere
+      if (isPremium) return { allowed: true, mode };
+      // Non-premium → silent block
+      return { allowed: false, reason: null, mode };
+
+    case 'privatepremium':
+      // Premium users in DM only
+      if (isPremium && !isGroup) return { allowed: true, mode };
+      return { allowed: false, reason: null, mode };
+
+    default:
+      return { allowed: true, mode };
   }
 };
 
-// Export for index.js to call at startup
+// Export for index.js startup call
 module.exports = { preloadCache };
 
 // ═══════════════════════════════════════════════════
-//  1. SETMODE — ✅ Fixed MongoDB save
+//  1. SETMODE
 // ═══════════════════════════════════════════════════
 cmd({
   pattern: 'setmode',
@@ -170,24 +209,33 @@ cmd({
 
   const modes = ['public', 'private', 'inbox', 'group', 'premium', 'privatepremium'];
   const sub   = q?.trim().toLowerCase();
-
-  const cfg = await getAccessConfig(sessionId);
+  const cfg   = await getAccessConfig(sessionId);
 
   if (!sub || !modes.includes(sub)) {
     return reply(
-`⚙️ *Bot Access Modes*
-
-Current: *${(cfg.mode || 'public').toUpperCase()}*
-
-Available Modes:
-• *public* — Anyone Can Use
-• *private* — Owner Only
-• *inbox* — Private Chat Only
-• *group* — Groups Only
-• *premium* — Premium users + Owner
-• *privatepremium* — Owner + Premium users (DM only)
-
-Example: *.setmode public*`
+`╭──『 ⚙️ *BOT ACCESS MODES* 』──❏
+│
+│  Current: *${(cfg.mode || 'public').toUpperCase()}*
+│
+├─ 🌍 *public*
+│     └ Everyone can use the bot
+│
+├─ 🔒 *private*
+│     └ Owner only — others silently ignored
+│
+├─ 📩 *inbox*
+│     └ DM chats only — groups blocked
+│
+├─ 👥 *group*
+│     └ Groups only — DM blocked
+│
+├─ 💎 *premium*
+│     └ Premium users + Owner only
+│
+├─ 🔐 *privatepremium*
+│     └ Premium users in DM only
+│
+╰─ Example: *.setmode public*`
     );
   }
 
@@ -196,15 +244,20 @@ Example: *.setmode public*`
   _configCache[sessionId] = cfg;
 
   const modeDesc = {
-    public:         '🌍 Anyone',
-    private:        '🔒 Owner Only',
-    inbox:          '📩 Inbox Only',
-    group:          '👥 Groups Only',
-    premium:        '💎 Premium users + Owner',
-    privatepremium: '🔐 Owner + Premium users'
+    public:         '🌍 Everyone can use the bot',
+    private:        '🔒 Owner only — others silently ignored',
+    inbox:          '📩 DM chats only — groups blocked',
+    group:          '👥 Groups only — DM blocked',
+    premium:        '💎 Premium users + Owner only',
+    privatepremium: '🔐 Premium users in DM only',
   };
 
-  reply(`✅ *Mode Updated:* ${sub.toUpperCase()}\n${modeDesc[sub]}\n\n_Saved to MongoDB — persists after restart ✅_`);
+  reply(
+`✅ *Mode changed to:* \`${sub.toUpperCase()}\`
+${modeDesc[sub]}
+
+_💾 Saved to MongoDB — survives restarts ✅_`
+  );
 });
 
 // ═══════════════════════════════════════════════════
@@ -277,7 +330,7 @@ cmd({
 }, async (conn, mek, m, { reply, isOwner, sessionId }) => {
   if (!isOwner) return reply('❌ Owner Only.');
 
-  const cfg = await getAccessConfig(sessionId);
+  const cfg  = await getAccessConfig(sessionId);
   const list = cfg.premium || [];
 
   if (!list.length) return reply('📋 No premium users added yet.');
@@ -287,7 +340,7 @@ cmd({
 });
 
 // ═══════════════════════════════════════════════════
-//  5. BAN / UNBAN
+//  5. BAN
 // ═══════════════════════════════════════════════════
 cmd({
   pattern: 'ban',
@@ -313,6 +366,9 @@ cmd({
   reply(`🚫 *${number}* has been banned!\n_Saved to MongoDB ✅_`);
 });
 
+// ═══════════════════════════════════════════════════
+//  6. UNBAN
+// ═══════════════════════════════════════════════════
 cmd({
   pattern: 'unban',
   react: '✅',
