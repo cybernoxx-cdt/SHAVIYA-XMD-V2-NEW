@@ -1,51 +1,93 @@
+// ╔══════════════════════════════════════════════════╗
+// ║         SHAVIYA-XMD V2 — fulldp Plugin           ║
+// ║  Owner-only: set bot profile picture (full DP)   ║
+// ╚══════════════════════════════════════════════════╝
+
 const { cmd } = require('../command');
-const axios = require("axios");
-const fetch = require("node-fetch");
-const fs = require("fs");
+const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
+
+async function downloadImageBuffer(quotedMsg) {
+    const mtype = quotedMsg.mtype || '';
+    if (!mtype.includes('image')) throw new Error('NOT_IMAGE');
+    const stream = await downloadContentFromMessage(quotedMsg.msg, 'image');
+    let buf = Buffer.from([]);
+    for await (const chunk of stream) buf = Buffer.concat([buf, chunk]);
+    if (!buf || buf.length < 100) throw new Error('EMPTY_BUFFER');
+    return buf;
+}
+
+async function prepareProfileImage(inputBuf) {
+    try {
+        const sharp = require('sharp');
+        return await sharp(inputBuf)
+            .resize(640, 640, { fit: 'cover', position: 'centre' })
+            .jpeg({ quality: 90 })
+            .toBuffer();
+    } catch {
+        return inputBuf;
+    }
+}
 
 cmd({
-    pattern: "fulldp",
-    alias: ["fullpp", "setfulldp"],
-    desc: "Set full-style profile picture",
-    category: "owner",
-    react: "🖼️",
+    pattern:  'fulldp',
+    alias:    ['fullpp', 'setdp', 'setfulldp', 'changedp'],
+    desc:     'Set full-style profile picture for the bot (Owner Only)',
+    category: 'owner',
+    react:    '🖼️',
     filename: __filename
 },
+async (conn, mek, m, { from, reply, isOwner }) => {
 
-async (conn, mek, m, { from, reply, isCreator, quoted, mime }) => {
-    try {
-        if (!isCreator) return reply("⚠️ Only bot owner can change profile picture.");
-        
-        if (!quoted) return reply(`🖼️ *Reply an image with:* .fulldp`);
-        if (!/image/.test(mime)) return reply(`⚠️ Reply to an image only.`);
-
-        // Download image
-        const mediaPath = await conn.downloadAndSaveMediaMessage(quoted);
-
-        // Read file
-        const img = fs.readFileSync(mediaPath);
-
-        // Upload to Catbox for safe link
-        const form = new FormData();
-        form.append("fileToUpload", fs.createReadStream(mediaPath));
-        form.append("reqtype", "fileupload");
-
-        const catRes = await fetch("https://catbox.moe/user/api.php", {
-            method: "POST",
-            body: form
-        });
-
-        const url = await catRes.text();
-
-        // Apply as profile picture
-        await conn.updateProfilePicture(conn.user.id, await (await fetch(url)).buffer());
-
-        reply("✅ *Full-style DP applied successfully!*");
-
-        fs.unlinkSync(mediaPath);
-
-    } catch (e) {
-        console.log(e);
-        reply("❌ Error applying full DP!");
+    if (!isOwner) {
+        return reply('⚠️ *Only bot owner can change profile picture.*');
     }
+
+    if (!mek.quoted) {
+        return reply(
+            `🖼️ *How to use:*\nReply to any image with *.fulldp*\n_Example: reply an image and type .fulldp_`
+        );
+    }
+
+    const quotedMtype = mek.quoted.mtype || '';
+    if (!quotedMtype.includes('image')) {
+        return reply('❌ *Please reply to an IMAGE only.*');
+    }
+
+    let imgBuf;
+    try {
+        imgBuf = await mek.quoted.download();
+    } catch {
+        try {
+            imgBuf = await downloadImageBuffer(mek.quoted);
+        } catch (e) {
+            console.error('[FULLDP] Download failed:', e.message);
+            return reply('❌ *Failed to download image.* Try again.');
+        }
+    }
+
+    if (!imgBuf || imgBuf.length < 100) {
+        return reply('❌ *Image buffer empty.* Try forwarding the image first.');
+    }
+
+    let finalBuf = await prepareProfileImage(imgBuf);
+
+    try {
+        await conn.updateProfilePicture(conn.user.id, finalBuf);
+    } catch (e) {
+        const msg = e.message || '';
+        console.error('[FULLDP] updateProfilePicture error:', msg);
+        if (msg.includes('not-authorized') || msg.includes('403')) {
+            return reply(
+                '❌ *WhatsApp blocked this action.*\n' +
+                '_Rate limit hit — wait a few hours and try again._'
+            );
+        }
+        return reply(`❌ *Failed to set DP:* ${msg || 'Unknown error'}`);
+    }
+
+    await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+    return reply(
+        '✅ *Profile picture updated successfully!*\n' +
+        '> ⏳ May take a few seconds to show on WhatsApp.'
+    );
 });
