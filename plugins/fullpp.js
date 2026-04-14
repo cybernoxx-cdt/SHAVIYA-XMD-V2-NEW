@@ -7,25 +7,11 @@ const { cmd } = require('../command');
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 
 async function downloadImageBuffer(quotedMsg) {
-    const mtype = quotedMsg.mtype || '';
-    if (!mtype.includes('image')) throw new Error('NOT_IMAGE');
     const stream = await downloadContentFromMessage(quotedMsg.msg, 'image');
     let buf = Buffer.from([]);
     for await (const chunk of stream) buf = Buffer.concat([buf, chunk]);
     if (!buf || buf.length < 100) throw new Error('EMPTY_BUFFER');
     return buf;
-}
-
-async function prepareProfileImage(inputBuf) {
-    try {
-        const sharp = require('sharp');
-        return await sharp(inputBuf)
-            .resize(640, 640, { fit: 'cover', position: 'centre' })
-            .jpeg({ quality: 90 })
-            .toBuffer();
-    } catch {
-        return inputBuf;
-    }
 }
 
 cmd({
@@ -38,21 +24,25 @@ cmd({
 },
 async (conn, mek, m, { from, reply, isOwner }) => {
 
+    // ── 1. Owner guard ──────────────────────────────────
     if (!isOwner) {
         return reply('⚠️ *Only bot owner can change profile picture.*');
     }
 
+    // ── 2. Must reply to a message ──────────────────────
     if (!mek.quoted) {
         return reply(
             `🖼️ *How to use:*\nReply to any image with *.fulldp*\n_Example: reply an image and type .fulldp_`
         );
     }
 
-    const quotedMtype = mek.quoted.mtype || '';
-    if (!quotedMtype.includes('image')) {
-        return reply('❌ *Please reply to an IMAGE only.*');
+    // ── 3. Check it is an image ─────────────────────────
+    const qtype = (mek.quoted.type || '').toLowerCase();
+    if (!qtype.includes('image')) {
+        return reply(`❌ *Please reply to an IMAGE only.*\n_Detected type: ${qtype || 'unknown'}_`);
     }
 
+    // ── 4. Download original image (no resize/crop) ──────
     let imgBuf;
     try {
         imgBuf = await mek.quoted.download();
@@ -69,10 +59,9 @@ async (conn, mek, m, { from, reply, isOwner }) => {
         return reply('❌ *Image buffer empty.* Try forwarding the image first.');
     }
 
-    let finalBuf = await prepareProfileImage(imgBuf);
-
+    // ── 5. Apply full image as-is ─────────────────────────
     try {
-        await conn.updateProfilePicture(conn.user.id, finalBuf);
+        await conn.updateProfilePicture(conn.user.id, imgBuf);
     } catch (e) {
         const msg = e.message || '';
         console.error('[FULLDP] updateProfilePicture error:', msg);
@@ -85,6 +74,7 @@ async (conn, mek, m, { from, reply, isOwner }) => {
         return reply(`❌ *Failed to set DP:* ${msg || 'Unknown error'}`);
     }
 
+    // ── 6. Success ────────────────────────────────────────
     await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
     return reply(
         '✅ *Profile picture updated successfully!*\n' +
