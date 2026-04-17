@@ -2,7 +2,7 @@ const { cmd } = require("../command");
 
 cmd({
   pattern: "send",
-  alias: ["sendme", "save"],
+  alias: ["sendme", "save", "status"],
   react: "📤",
   desc: "Forwards quoted message back to your DM or current chat",
   category: "utility",
@@ -72,7 +72,7 @@ cmd({
     await client.sendMessage(target, messageContent);
     
     if (target === sender && from !== sender) {
-        await client.sendMessage(from, { text: "_Sent to your  Inbox! 🔥   sayura md✅_" }, { quoted: message });
+        await client.sendMessage(from, { text: "_Sent to your  Inbox! ✅⚜️_" }, { quoted: message });
     }
 
   } catch (error) {
