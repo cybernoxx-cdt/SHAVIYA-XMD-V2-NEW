@@ -47,7 +47,7 @@ cmd({
             document: Buffer.from(response.data),
             mimetype: contentType,
             fileName: fileName,
-            caption: `*✅ DOWNLOAD COMPLETE*\n\n*📂 File Name:* ${fileName}\n*📊 Content Type:* ${contentType}\n\n${shadow_footer}`
+            caption: `*✅ DOWNLOAD COMPLETE*\n\n*📂 File Name:* ${fileName}\n*📊 Content Type:* ${contentType}\n\n${shaviya_footer}`
         }, { quoted: mek });
 
     } catch (e) {
