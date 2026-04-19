@@ -364,8 +364,8 @@ cmd({
   category: 'owner',
   fromMe:   true,
   filename: __filename,
-}, async (conn, m, mek, { text, reply }) => {
-  if (!isOwner(m)) return reply('❌ Owner only command.');
+}, async (conn, mek, m, { q: text, reply, isOwner }) => {
+  if (!isOwner) return reply('❌ Owner only.');
 
   // Start scheduler on first use
   startScheduler(conn);
@@ -471,10 +471,11 @@ cmd({
   category: 'owner',
   fromMe:   true,
   filename: __filename,
-}, async (conn, m, mek, { text, reply }) => {
-  if (!isOwner(m)) return reply('❌ Owner only command.');
+}, async (conn, mek, m, { q: text, reply, isOwner }) => {
+  if (!isOwner) return reply('❌ Owner only.');
 
   // Clean JID — strip < > brackets, quotes, spaces
+  console.log('[setchannel] raw q:', JSON.stringify(text));
   const jid = (text || '').trim()
     .replace(/^[<"'\s]+|[>"'\s]+$/g, '')
     .replace(/\s+/g, '');
@@ -537,8 +538,8 @@ cmd({
   category: 'owner',
   fromMe:   true,
   filename: __filename,
-}, async (conn, m, mek, { text, reply }) => {
-  if (!isOwner(m)) return reply('❌ Owner only command.');
+}, async (conn, mek, m, { q: text, reply, isOwner }) => {
+  if (!isOwner) return reply('❌ Owner only.');
 
   const jid = (text || '').trim();
 
