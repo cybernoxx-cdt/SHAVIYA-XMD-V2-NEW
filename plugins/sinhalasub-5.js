@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 // ═══════════════════════════════════════════════════
-//  Session Config Helpers (cinesubz.js හා share කරනවා)
+//  Session Config Helpers
 // ═══════════════════════════════════════════════════
 function getSessionConfig(sessionId) {
   try {
@@ -16,7 +16,7 @@ function getSessionConfig(sessionId) {
 }
 
 function getBotName(sessionId) {
-  return getSessionConfig(sessionId).botName || "𝐌𝐫.𝐇𝐚𝐬𝐢𝐲𝐚 𝐓𝐞𝐜𝐡 𝐌𝐨𝐯𝐢𝐞 © 𝟐𝟎𝟐𝟔 🇱🇰";
+  return getSessionConfig(sessionId).botName || "Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️";
 }
 
 function getHardThumbUrl(sessionId) {
@@ -29,7 +29,7 @@ function isMovieDocOn(sessionId) {
 }
 
 function getPrefix(sessionId) {
-  return getSessionConfig(sessionId).docPrefix || "𝐇𝐀𝐒𝐈𝐘𝐀 𝐌𝐃";
+  return getSessionConfig(sessionId).docPrefix || "ꜱʜᴀᴠɪʏᴀ xᴍᴅ";
 }
 
 // ═══════════════════════════════════════════════════
@@ -40,7 +40,7 @@ async function react(conn, jid, key, emoji) {
 }
 
 // ═══════════════════════════════════════════════════
-//  Thumbnail Builder
+//  Thumbnail Builder - ONLY for thumbnail (small image, safe)
 // ═══════════════════════════════════════════════════
 async function makeThumbnail(moviePosterUrl, hardThumbUrl, movieDocOn) {
   const primaryUrl = (movieDocOn && moviePosterUrl) ? moviePosterUrl : hardThumbUrl;
@@ -62,7 +62,7 @@ async function makeThumbnail(moviePosterUrl, hardThumbUrl, movieDocOn) {
 }
 
 // ═══════════════════════════════════════════════════
-//  Wait for reply - never rejects, null on timeout
+//  Wait for reply - single resolve, safe cleanup
 // ═══════════════════════════════════════════════════
 function waitForReply(conn, from, sender, replyToId, timeout = 600000) {
   return new Promise((resolve) => {
@@ -94,6 +94,35 @@ function waitForReply(conn, from, sender, replyToId, timeout = 600000) {
 }
 
 // ═══════════════════════════════════════════════════
+//  FIX: Send via URL streaming - NO buffer in RAM
+//  Buffer download කළොත් Heroku dyno OOM crash වෙනවා
+//  Pixeldrain URL direct ලෙස WhatsApp stream කරනවා
+// ═══════════════════════════════════════════════════
+async function sendPixelFile(conn, from, pixeldrainUrl, fileName, caption, quotedMsg, posterUrl, sessionId) {
+  const thumb = await makeThumbnail(posterUrl || null, getHardThumbUrl(sessionId), isMovieDocOn(sessionId));
+  await react(conn, from, quotedMsg.key, "📥");
+
+  try {
+    // ✅ URL stream - memory safe, bot restart නොවේ
+    const docMsg = await conn.sendMessage(from, {
+      document: { url: pixeldrainUrl },
+      fileName: fileName.replace(/[\/\\:*?"<>|]/g, ""),
+      mimetype: "video/mp4",
+      jpegThumbnail: thumb || undefined,
+      caption,
+    }, { quoted: quotedMsg });
+
+    await react(conn, from, docMsg.key, "✅");
+
+  } catch (e) {
+    console.log("❌ sendPixelFile error:", e.message);
+    await conn.sendMessage(from, {
+      text: `❌ File send කිරීමේදී දෝෂයක් සිදු විය.\n\n📎 Direct link:\n${pixeldrainUrl}\n\n${caption}`
+    }, { quoted: quotedMsg });
+  }
+}
+
+// ═══════════════════════════════════════════════════
 //  SINHALASUB COMMAND
 // ═══════════════════════════════════════════════════
 cmd({
@@ -114,20 +143,26 @@ cmd({
     await react(conn, from, m.key, "🔍");
 
     // 1️⃣ Search
-    const searchRes = await axios.get(
-      `https://darkyasiya-new-movie-api.vercel.app/api/movie/sinhalasub/search?q=${encodeURIComponent(q)}`
-    );
+    let results;
+    try {
+      const searchRes = await axios.get(
+        `https://darkyasiya-new-movie-api.vercel.app/api/movie/sinhalasub/search?q=${encodeURIComponent(q)}`,
+        { timeout: 20000 }
+      );
+      results = searchRes.data?.data?.data;
+    } catch (e) {
+      return reply("❌ Search API error: " + e.message);
+    }
 
-    const results = searchRes.data?.data?.data;
-    if (!results?.length) return reply("❌ No results found");
+    if (!results?.length) return reply("❌ No results found. වෙනත් නමකින් සොයන්න.");
 
     let listText = `🎬 *SinhalaSub.lk Results (Pixeldrain)*\n\n`;
     results.slice(0, 10).forEach((v, i) => {
-      listText += `*${i + 1}.* ${v.title} (${v.year})\n`;
+      listText += `*${i + 1}.* ${v.title} (${v.year || ""})\n`;
     });
 
     const listMsg = await conn.sendMessage(from, {
-      text: listText + `\nReply number\n\n${FOOTER}`
+      text: listText + `\n📌 Reply number\n\n${FOOTER}`
     }, { quoted: mek });
 
     // ── Infinite Movie Select Loop ──
@@ -138,38 +173,53 @@ cmd({
 
         (async () => {
           const index = parseInt(movieSel.text) - 1;
-          if (isNaN(index) || !results[index]) return;
+          if (isNaN(index) || !results[index]) {
+            return conn.sendMessage(from, { text: "❌ වලංගු අංකයක් ඇතුලත් කරන්න." }, { quoted: movieSel.msg });
+          }
 
           await react(conn, from, movieSel.msg.key, "⏳");
-
           const selectedMovie = results[index];
 
-          // 3️⃣ Get movie info
-          const infoRes = await axios.get(
-            `https://sadaslk-apis.vercel.app/api/v1/movie/sinhalasub/infodl?q=${encodeURIComponent(selectedMovie.link)}&apiKey=a3b8844e3897880d75331c5b2526d701`
+          // 2️⃣ Get movie info
+          let info;
+          try {
+            const infoRes = await axios.get(
+              `https://sadaslk-apis.vercel.app/api/v1/movie/sinhalasub/infodl?q=${encodeURIComponent(selectedMovie.link)}&apiKey=a3b8844e3897880d75331c5b2526d701`,
+              { timeout: 20000 }
+            );
+            info = infoRes.data?.data;
+          } catch (e) {
+            return conn.sendMessage(from, { text: "❌ Movie info API error: " + e.message }, { quoted: movieSel.msg });
+          }
+
+          if (!info) return conn.sendMessage(from, { text: "❌ Movie info හමු නොවීය." }, { quoted: movieSel.msg });
+
+          // 3️⃣ Filter Pixeldrain links
+          const pixLinks = (info.downloadLinks || []).filter(d =>
+            d.server?.toLowerCase().includes("pixeldrain")
           );
 
-          const info = infoRes.data?.data;
-          if (!info) return;
+          if (!pixLinks.length) {
+            return conn.sendMessage(from, {
+              text: `❌ *${info.title}*\n\nPixeldrain links හමු නොවීය.\nවෙනත් quality server ඇති නමුත් Pixeldrain නොමැත.`
+            }, { quoted: movieSel.msg });
+          }
 
-          // 4️⃣ Show qualities
           let infoText = `🎬 *${info.title}*\n\n`;
           if (info.date)    infoText += `📅 *Year:* ${info.date}\n`;
           if (info.country) infoText += `🌍 *Country:* ${info.country}\n`;
           if (info.rating)  infoText += `⭐ *Rating:* ${info.rating}\n`;
-          if (info.description) infoText += `📝 *Description:* ${info.description?.substring(0, 200)}...\n`;
-          infoText += `\n*Available Pixeldrain Qualities:*`;
-
-          const pixLinks = info.downloadLinks.filter(d => d.server?.toLowerCase().includes("pixeldrain"));
+          if (info.description) infoText += `📝 *Description:* ${info.description.substring(0, 200)}...\n`;
+          infoText += `\n*💎 Available Qualities (Pixeldrain):*\n`;
           pixLinks.forEach((d, i) => {
-            infoText += `\n*${i + 1}.* ${d.quality} (${d.size})`;
+            infoText += `*${i + 1}.* ${d.quality} (${d.size || "?"})\n`;
           });
 
           const thumb = await makeThumbnail(selectedMovie.image || null, hardThumb, movieDocOn);
 
           const infoMsg = await conn.sendMessage(from, {
             image: { url: selectedMovie.image || hardThumb },
-            caption: infoText + `\n\nReply download number\n${FOOTER}`
+            caption: infoText + `\n📌 Reply download number\n${FOOTER}`
           }, { quoted: movieSel.msg });
 
           // ── Infinite Quality Select Loop ──
@@ -180,24 +230,21 @@ cmd({
 
               (async () => {
                 const dIndex = parseInt(dlSel.text) - 1;
-                if (isNaN(dIndex) || !pixLinks[dIndex]) return;
+                if (isNaN(dIndex) || !pixLinks[dIndex]) {
+                  return conn.sendMessage(from, { text: "❌ වලංගු quality අංකයක් ඇතුලත් කරන්න." }, { quoted: dlSel.msg });
+                }
 
                 const selectedLink = pixLinks[dIndex];
-
                 await react(conn, from, dlSel.msg.key, "📥");
 
-                const fileId = selectedLink.link.split('/').pop();
-                const directPixLink = `https://pixeldrain.com/api/file/${fileId}?download`;
+                // ✅ FIX: pixeldrain URL — buffer download නැත, URL stream only
+                const fileId = selectedLink.link.split('/').pop().split('?')[0];
+                const pixelStreamUrl = `https://pixeldrain.com/api/file/${fileId}?download`;
+                const fileName = `${info.title} (${selectedLink.quality}).mp4`.replace(/[\/\\:*?"<>|]/g, "");
+                const caption = `🎬 *File:* 【${DOC_PREFIX}】 ${info.title} (${selectedLink.quality}).mp4\n⚖️ *Size:* ${selectedLink.size || "?"}\n💎 *Quality:* ${selectedLink.quality}\n\n${FOOTER}`;
 
-                const docMsg = await conn.sendMessage(from, {
-                  document: { url: directPixLink },
-                  fileName: `${info.title} (${selectedLink.quality}).mp4`.replace(/[\/\\:*?"<>|]/g, ""),
-                  mimetype: "video/mp4",
-                  jpegThumbnail: thumb || undefined,
-                  caption: `🎬 *File:* 【${DOC_PREFIX}】 ${info.title} (${selectedLink.quality}).mp4\n⚖️ *Size:* ${selectedLink.size}\n💎 *Quality:* ${selectedLink.quality}\n\n${FOOTER}`
-                }, { quoted: dlSel.msg });
+                await sendPixelFile(conn, from, pixelStreamUrl, fileName, caption, dlSel.msg, selectedMovie.image, sessionId);
 
-                await react(conn, from, docMsg.key, "✅");
               })();
             }
           };
@@ -206,10 +253,11 @@ cmd({
         })();
       }
     };
+
     startMovieFlow();
 
   } catch (e) {
-    console.error("📛 CRITICAL ERROR:", e);
+    console.error("📛 SINHALASUB ERROR:", e);
     reply("⚠️ Error: " + e.message);
   }
 });
