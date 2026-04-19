@@ -474,7 +474,10 @@ cmd({
 }, async (conn, m, mek, { text, reply }) => {
   if (!isOwner(m)) return reply('❌ Owner only command.');
 
-  const jid = (text || '').trim();
+  // Clean JID — strip < > brackets, quotes, spaces
+  const jid = (text || '').trim()
+    .replace(/^[<"'\s]+|[>"'\s]+$/g, '')
+    .replace(/\s+/g, '');
 
   if (!jid) {
     return reply(
@@ -484,7 +487,7 @@ cmd({
       `│\n` +
       `│ How to get channel JID:\n` +
       `│ 1. Bot channel message forward කරන්න\n` +
-      `│ 2. *.jid* command use කරන්න\n` +
+      `│ 2. *.channeljid* command use කරන්න\n` +
       `│    (format: 120363...@newsletter)\n` +
       `│\n` +
       `│ Current channels (${STATE.channels.length}/5):\n` +
