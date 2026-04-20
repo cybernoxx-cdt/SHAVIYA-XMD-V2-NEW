@@ -7,7 +7,7 @@ const sharp = require("sharp");
 
 // ───────── CONFIGURATION ─────────
 const API_KEY = "darkshan-75704c1b";
-const AC2_FOOTER = "✫☘️ 𝐇𝐀𝐒𝐈𝐘𝐀-𝐌𝐃 𝐘𝐎𝐔𝐓𝐔𝐁𝐄 ☘️✫";
+const AC2_FOOTER = "⚜️ Sʜᴀᴠɪʏᴀ Yᴏᴜᴛᴜʙᴇ ©";
 const TEMP_DIR = path.resolve(__dirname, "../temp");
 
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
@@ -65,14 +65,14 @@ cmd(
           const results = search.videos.slice(0, 10);
           if (results.length === 0) return reply("❌ කිසිවක් හමු නොවීය.");
 
-          let listText = "🎬 *𝐇𝐀𝐒𝐈𝐘𝐀-𝐌𝐃 𝐘𝐎𝐔𝐓𝐔𝐁𝐄 𝐒𝐄𝐀𝐑𝐂𝐇*\n\n";
+          let listText = "🎬 *𝐒𝐇𝐀𝐕𝐈𝐘𝐀 𝐘𝐎𝐔𝐓𝐔𝐁𝐄 𝐒𝐄𝐀𝐑𝐂𝐇*\n\n";
           results.forEach((v, i) => { listText += `*${i + 1}.* ${v.title}\n⏱️ ${v.timestamp}\n\n`; });
 
           const vidSearchButtons = results.map((v, i) => ({ id: String(i+1), text: `${i+1}. ${v.title.slice(0,40)}` }));
           const sentSearch = await global.sendInteractiveButtons(bot, from, {
               header: "🎬 SHAVIYA-XMD V2 VIDEO SEARCH",
               body: listText + `🔢 *Reply Number (Infinity Support)*`,
-              footer: "✨ SHAVIYA TECH · PREMIUM EDITION",
+              footer: "✨ SHAVIYA TECH · Lɪᴍɪᴛᴇᴅ Eᴅɪᴛɪᴏɴ",
               buttons: vidSearchButtons,
               _sessionId: sessionId
           }, mek);
