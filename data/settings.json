@@ -7,7 +7,7 @@
   "autoRecording": false,
   "alwaysOnline": false,
   "autoReadStatus": true,
-  "autoReadCmd": trye,
+  "autoReadCmd": true,
   "antiLink": false,
   "antiBot": false,
   "antidelete": true,
