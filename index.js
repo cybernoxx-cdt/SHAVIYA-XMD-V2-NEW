@@ -62,7 +62,7 @@ let sms;
 let antidelete, handleAutoForward;
 
 // ================= Global Variables =================
-const ownerNumber = [config.OWNER_NUMBER || "94707085822"];
+const ownerNumber = [config.OWNER_NUMBER || "94758127752"];
 const botName = "SHAVIYA-XMD V2";
 let activeSessions = new Set();
 const reconnectingSessions = new Set();
@@ -669,5 +669,12 @@ setTimeout(async () => {
   }
   await connectDB();
   await loadSettingsFromDB();
+  // Force-disable removed features (clears any saved MongoDB/JSON value)
+  try {
+    const { setSetting } = require("./lib/settings");
+    setSetting("autoTyping",    false);
+    setSetting("autoRecording", false);
+    setSetting("alwaysOnline",  false);
+  } catch {}
   await connectToWA();
 }, 4000);
