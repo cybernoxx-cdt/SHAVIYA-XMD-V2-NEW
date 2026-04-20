@@ -16,8 +16,6 @@ const TOGGLES = [
     { n: 1,  key: 'alwaysOnline',    label: 'Always Online',          emoji: '🟢' },
     { n: 2,  key: 'autoReadStatus',  label: 'Auto Read Status',        emoji: '👁️' },
     { n: 3,  key: 'autoReactStatus', label: 'Auto React Status',       emoji: '❤️' },
-    { n: 4,  key: 'autoRecording',   label: 'Auto Recording',          emoji: '🎙️' },
-    { n: 5,  key: 'autoTyping',      label: 'Auto Typing',             emoji: '⌨️' },
     { n: 6,  key: 'autoVoice',       label: 'Auto Voice Reply',        emoji: '🔊' },
     { n: 7,  key: 'autoAI',          label: 'Auto AI Reply',           emoji: '🤖' },
     { n: 8,  key: 'antiLink',        label: 'Anti Link (Groups)',      emoji: '🔗' },
