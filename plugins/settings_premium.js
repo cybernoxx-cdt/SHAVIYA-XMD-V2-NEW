@@ -16,12 +16,6 @@ const { cmd }                      = require('../command');
 const { getSetting, setSetting,
         getAllSettings, getConfig } = require('../lib/settings');
 
-// ── Presence interval trackers (module-level) ─
-let _typingTimers    = new Map(); // jid → intervalId
-let _recordingTimers = new Map(); // jid → intervalId
-
-function startPresence(conn, jid, type, timerMap) {
-    stopPresence(jid, timerMap);
     // Send immediately then every 5s
     conn.sendPresenceUpdate(type, jid).catch(() => {});
     const id = setInterval(() => {
@@ -50,8 +44,6 @@ const SETTINGS_LIST = [
     { id: 4,  label: 'Auto Read Status', icon: '👁️', key: 'autoReadStatus' },
     { id: 5,  label: 'Auto Read CMD',    icon: '📖', key: 'autoReadCmd'    },
     // ── PRESENCE ──
-    { id: 6,  label: 'Auto Typing',      icon: '⌨️', key: 'autoTyping'    },
-    { id: 7,  label: 'Auto Recording',   icon: '🎙️', key: 'autoRecording' },
     // ── SECURITY ──
     { id: 8,  label: 'Anti Link',        icon: '🔗', key: 'antiLink'       },
     { id: 9,  label: 'Anti Bot',         icon: '🤖', key: 'antiBot'        },
