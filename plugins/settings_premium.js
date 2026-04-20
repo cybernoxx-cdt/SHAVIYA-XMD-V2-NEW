@@ -205,10 +205,6 @@ async (conn, mek, m, { from, body, isOwner }) => {
             if (newVal) startPresence(conn, from, 'composing', _typingTimers);
             else { stopPresence(from, _typingTimers); conn.sendPresenceUpdate('paused', from).catch(() => {}); }
         }
-        if (setting.key === 'autoRecording') {
-            if (newVal) startPresence(conn, from, 'recording', _recordingTimers);
-            else { stopPresence(from, _recordingTimers); conn.sendPresenceUpdate('paused', from).catch(() => {}); }
-        }
         if (setting.key === 'button' && typeof global.setButtonState === 'function') {
             global.setButtonState(session.sessionId, newVal);
         }
@@ -279,15 +275,6 @@ async (conn, mek, m, { from }) => {
 // ══════════════════════════════════════════════
 //   on:body — Auto Recording presence (interval)
 // ══════════════════════════════════════════════
-cmd({ on: 'body' },
-async (conn, mek, m, { from }) => {
-    try {
-        if (!getConfig('ALWAYS_RECORDING')) return;
-        if (!_recordingTimers.has(from)) {
-            startPresence(conn, from, 'recording', _recordingTimers);
-        }
-    } catch {}
-});
 
 // ══════════════════════════════════════════════
 //   .set  —  quick single setting change
@@ -326,8 +313,6 @@ Or use *.settings* for the full menu.`
     const boolMap = {
         autovoice:      'autoVoice',
         autoai:         'autoAI',
-        autotyping:     'autoTyping',
-        autorecording:  'autoRecording',
         alwaysonline:   'alwaysOnline',
         autoreadstatus: 'autoReadStatus',
         autoreadcmd:    'autoReadCmd',
@@ -351,14 +336,6 @@ Or use *.settings* for the full menu.`
         const newVal = value === 'on';
         await setSetting(boolMap[keyRaw], newVal);
 
-        if (keyRaw === 'autotyping') {
-            if (newVal) startPresence(conn, from, 'composing', _typingTimers);
-            else { stopPresence(from, _typingTimers); conn.sendPresenceUpdate('paused', from).catch(() => {}); }
-        }
-        if (keyRaw === 'autorecording') {
-            if (newVal) startPresence(conn, from, 'recording', _recordingTimers);
-            else { stopPresence(from, _recordingTimers); conn.sendPresenceUpdate('paused', from).catch(() => {}); }
-        }
         if (keyRaw === 'button' && typeof global.setButtonState === 'function') {
             global.setButtonState(sessionId, newVal);
         }
@@ -393,12 +370,6 @@ async (conn, mek, m, { isOwner, args, reply }) => {
 
     const { resetAllSettings } = require('../lib/settings');
     resetAllSettings();
-
-    // Stop all presence timers
-    _typingTimers.forEach((id) => clearInterval(id));
-    _recordingTimers.forEach((id) => clearInterval(id));
-    _typingTimers.clear();
-    _recordingTimers.clear();
 
     return reply('🔄 *All settings reset to default!*\n\nSaved ✅');
 });
