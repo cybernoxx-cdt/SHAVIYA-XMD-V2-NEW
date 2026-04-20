@@ -5,7 +5,7 @@ const axios = require("axios");
 
 // ───────── CONFIGURATION ─────────
 const API_KEY = "darkshan-75704c1b";
-const AC2_FOOTER = "◐ 𝐒𝐇𝐀𝐕𝐈𝐘𝐀-𝐗𝐌𝐃 𝐓𝐈𝐊𝐓𝐎𝐊 𝐒𝐀𝐕𝐄𝐑 ◐";
+const AC2_FOOTER = "💠 Sʜᴀᴠɪʏᴀ Xᴍᴅ TɪᴋTᴏᴋ Sᴀᴠᴇʀ";
 const TEMP_DIR = path.resolve(__dirname, "../temp");
 
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
@@ -57,7 +57,7 @@ cmd(
 
       if (!data) return reply("❌ දත්ත ලබා ගැනීමට නොහැකි විය.");
 
-      let selectMsg = `⫷⦁[ *𝐒𝐇𝐀𝐕𝐈𝐘𝐀-𝐗𝐌𝐃 𝐓𝐢𝐤𝐓𝐨𝐤* ]⦁⫸\n\n` +
+      let selectMsg = `⫷⦁[ *Sʜᴀᴠɪʏᴀ-Xᴍᴅ 𝐓𝐢𝐤𝐓𝐨𝐤* ]⦁⫸\n\n` +
                       `📝 *Title:* ${data.title}\n\n` +
                       `*තේරීම Reply කරන්න:* \n\n` +
                       `1 ┃ Video HD (No WM) 🎥\n` +
