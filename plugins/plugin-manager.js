@@ -16,8 +16,6 @@ const PLUGIN_LIST = [
     { key: 'alwaysOnline',    name: 'Always Online',        cmd: '.alwaysonline'    },
     { key: 'autoReadStatus',  name: 'Auto Read Status',      cmd: '.autoreadstatus'  },
     { key: 'autoReactStatus', name: 'Auto React Status',     cmd: '.autoreactstatus' },
-    { key: 'autoRecording',   name: 'Auto Recording',        cmd: '.autorecording'   },
-    { key: 'autoTyping',      name: 'Auto Typing',           cmd: '.autotyping'      },
     { key: 'autoVoice',       name: 'Auto Voice Reply',      cmd: '.autovoice'       },
     { key: 'autoAI',          name: 'Auto AI Reply',         cmd: '.autoai'          },
     { key: 'antiLink',        name: 'Anti Link (Groups)',    cmd: '.antilink'        },
