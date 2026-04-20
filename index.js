@@ -672,8 +672,6 @@ setTimeout(async () => {
   // Force-disable removed features (clears any saved MongoDB/JSON value)
   try {
     const { setSetting } = require("./lib/settings");
-    setSetting("autoTyping",    false);
-    setSetting("autoRecording", false);
     setSetting("alwaysOnline",  false);
   } catch {}
   await connectToWA();
