@@ -1,139 +1,116 @@
-// ============================================
-//   plugins/status-plugins.js - SHAVIYA-XMD V2
-//   ✅ Auto Status Read
-//   ✅ Auto Status React
-//   ✅ Always Online presence
-//   Commands: .autoreadstatus .autoreactstatus .alwaysonline
-// ============================================
+// ============================================================
+//   plugins/status-plugins.js — SHAVIYA-XMD V2
+//   ✅ Auto Status View  (default: ON)
+//   ✅ Auto Status React (default: ON)
+//   Commands: .autoreadstatus | .autoreactstatus | .statusinfo
+// ============================================================
 
 'use strict';
 
-const { cmd } = require('../command');
+const { cmd }                    = require('../command');
 const { getSetting, setSetting } = require('../lib/settings');
 
-// ── Always Online interval ───────────────────
-let onlineInterval = null;
-
-function startAlwaysOnline(conn) {
-    stopAlwaysOnline();
-    onlineInterval = setInterval(async () => {
-        try {
-            await conn.sendPresenceUpdate('available');
-        } catch {}
-    }, 10000);
-}
-
-function stopAlwaysOnline() {
-    if (onlineInterval) { clearInterval(onlineInterval); onlineInterval = null; }
-}
-
-// ── .alwaysonline ──────────────────────────
-cmd({
-    pattern: 'alwaysonline',
-    alias: ['onlinemode', 'alwayson'],
-    desc: 'Always appear online on/off',
-    category: 'owner',
-    react: '🟢',
-    filename: __filename
-},
-async (conn, mek, m, { isOwner, q, from, reply }) => {
-    if (!isOwner) return reply('❌ Owner only!');
-    const sub = (q || '').toLowerCase().trim();
-    if (!sub || (sub !== 'on' && sub !== 'off')) {
-        const cur = getSetting('alwaysOnline') ?? false;
-        return reply(`🟢 *Always Online:* ${cur ? '✅ ON' : '❌ OFF'}\n\nUsage: .alwaysonline on/off`);
-    }
-    if (sub === 'on') {
-        setSetting('alwaysOnline', true);
-        startAlwaysOnline(conn);
-        reply('✅ *Always Online Enabled!*\n🟢 Bot will always appear online.');
-    } else {
-        setSetting('alwaysOnline', false);
-        stopAlwaysOnline();
-        try { await conn.sendPresenceUpdate('unavailable'); } catch {}
-        reply('❌ *Always Online Disabled!*');
-    }
-});
-
-// ── .autoreadstatus ────────────────────────
+// ── .autoreadstatus ────────────────────────────────────────
 cmd({
     pattern: 'autoreadstatus',
-    alias: ['autoread', 'readstatus'],
-    desc: 'Auto read all WhatsApp statuses on/off',
+    alias:   ['autoread', 'readstatus'],
+    desc:    'Auto view all WhatsApp statuses — on/off',
     category: 'owner',
-    react: '👁️',
-    filename: __filename
+    react:   '👁️',
+    filename: __filename,
 },
 async (conn, mek, m, { isOwner, q, reply }) => {
     if (!isOwner) return reply('❌ Owner only!');
+
     const sub = (q || '').toLowerCase().trim();
     if (!sub || (sub !== 'on' && sub !== 'off')) {
-        const cur = getSetting('autoReadStatus') ?? false;
-        return reply(`👁️ *Auto Read Status:* ${cur ? '✅ ON' : '❌ OFF'}\n\nUsage: .autoreadstatus on/off`);
+        const cur = getSetting('autoReadStatus') ?? true;
+        return reply(
+            `👁️ *Auto Read Status:* ${cur ? '✅ ON' : '❌ OFF'}\n\n` +
+            `Usage: \`.autoreadstatus on\` / \`.autoreadstatus off\``
+        );
     }
+
     setSetting('autoReadStatus', sub === 'on');
     reply(`${sub === 'on' ? '✅' : '❌'} *Auto Read Status ${sub === 'on' ? 'Enabled' : 'Disabled'}!*`);
 });
 
-// ── .autoreactstatus ────────────────────────
+// ── .autoreactstatus ───────────────────────────────────────
 cmd({
     pattern: 'autoreactstatus',
-    alias: ['statusreact', 'reactstatus'],
-    desc: 'Auto react to all statuses on/off',
+    alias:   ['statusreact', 'reactstatus'],
+    desc:    'Auto react to all statuses — on/off',
     category: 'owner',
-    react: '❤️',
-    filename: __filename
+    react:   '❤️',
+    filename: __filename,
 },
 async (conn, mek, m, { isOwner, q, reply }) => {
     if (!isOwner) return reply('❌ Owner only!');
+
     const sub = (q || '').toLowerCase().trim();
     if (!sub || (sub !== 'on' && sub !== 'off')) {
-        const cur = getSetting('autoReactStatus') ?? false;
-        return reply(`❤️ *Auto React Status:* ${cur ? '✅ ON' : '❌ OFF'}\n\nUsage: .autoreactstatus on/off`);
+        const cur = getSetting('autoReactStatus') ?? true;
+        return reply(
+            `❤️ *Auto React Status:* ${cur ? '✅ ON' : '❌ OFF'}\n\n` +
+            `Usage: \`.autoreactstatus on\` / \`.autoreactstatus off\``
+        );
     }
+
     setSetting('autoReactStatus', sub === 'on');
     reply(`${sub === 'on' ? '✅' : '❌'} *Auto React Status ${sub === 'on' ? 'Enabled' : 'Disabled'}!*`);
 });
 
-// ── Status Listener ─────────────────────────
-// Handles auto-read + auto-react for incoming statuses
+// ── .statusinfo ────────────────────────────────────────────
+cmd({
+    pattern: 'statusinfo',
+    alias:   ['statusset', 'statusconfig'],
+    desc:    'Show current status plugin settings',
+    category: 'owner',
+    react:   'ℹ️',
+    filename: __filename,
+},
+async (conn, mek, m, { isOwner, reply }) => {
+    if (!isOwner) return reply('❌ Owner only!');
+
+    const read  = getSetting('autoReadStatus')  ?? true;
+    const react = getSetting('autoReactStatus') ?? true;
+
+    reply(
+        `╔══════════════════════╗\n` +
+        `║  📊 STATUS SETTINGS  ║\n` +
+        `╚══════════════════════╝\n\n` +
+        `👁️ Auto Read Status : ${read  ? '✅ ON' : '❌ OFF'}\n` +
+        `❤️ Auto React Status: ${react ? '✅ ON' : '❌ OFF'}\n\n` +
+        `_Commands: .autoreadstatus | .autoreactstatus_`
+    );
+});
+
+// ── STATUS EVENT LISTENER ──────────────────────────────────
+// Fires on every message — filters to status@broadcast only
 cmd({ on: 'body' },
 async (conn, mek, m, { from }) => {
     try {
-        // Only process status updates
         if (from !== 'status@broadcast') return;
 
-        const autoRead   = getSetting('autoReadStatus')  ?? false;
-        const autoReact  = getSetting('autoReactStatus') ?? false;
+        const autoRead  = getSetting('autoReadStatus')  ?? true;
+        const autoReact = getSetting('autoReactStatus') ?? true;
 
         if (!autoRead && !autoReact) return;
 
-        // Auto read: mark status as read
+        // Auto Read: mark status as seen
         if (autoRead) {
-            try {
-                await conn.readMessages([mek.key]);
-            } catch {}
+            try { await conn.readMessages([mek.key]); } catch {}
         }
 
-        // Auto react: send a random emoji reaction
+        // Auto React: random emoji
         if (autoReact) {
-            const emojis = ['❤️', '🔥', '😍', '👍', '💯', '🎉', '✅', '💎'];
-            const emoji = emojis[Math.floor(Math.random() * emojis.length)];
+            const emojis = ['❤️', '🔥', '😍', '👍', '💯', '🎉', '✨', '💎', '😎', '🥰'];
+            const emoji  = emojis[Math.floor(Math.random() * emojis.length)];
             try {
                 await conn.sendMessage(from, {
                     react: { text: emoji, key: mek.key }
                 });
             } catch {}
         }
-    } catch {}
-});
-
-// ── Always Online on every message ──────────
-cmd({ on: 'body' },
-async (conn, mek, m, { from }) => {
-    try {
-        const enabled = getSetting('alwaysOnline') ?? false;
-        if (!enabled) return;
-        await conn.sendPresenceUpdate('available');
     } catch {}
 });
