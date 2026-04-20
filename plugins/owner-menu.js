@@ -16,8 +16,6 @@ const PLUGINS = [
     { key: 'alwaysOnline',    name: '🟢 Always Online',         desc: 'Always appear online'             },
     { key: 'autoReadStatus',  name: '👁️ Auto Read Status',       desc: 'Auto view all statuses'           },
     { key: 'autoReactStatus', name: '❤️ Auto React Status',      desc: 'Auto react to statuses'           },
-    { key: 'autoRecording',   name: '🎙️ Auto Recording',         desc: 'Always show recording indicator'  },
-    { key: 'autoTyping',      name: '✍️ Auto Typing',            desc: 'Always show typing indicator'     },
     { key: 'autoVoice',       name: '🔊 Auto Voice Reply',       desc: 'Auto reply with voice notes'      },
     { key: 'autoAI',          name: '🤖 Auto AI Reply',          desc: 'Auto reply using AI'              },
     { key: 'antiLink',        name: '🔗 Anti Link',              desc: 'Block links in groups'            },
