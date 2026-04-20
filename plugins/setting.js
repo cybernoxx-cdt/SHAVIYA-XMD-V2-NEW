@@ -36,9 +36,7 @@ async (conn, mek, m, { from, reply, isOwner, senderNumber }) => {
 ├─❏ *🔌 AUTOMATION*
 │  ├─∘ *Auto Voice:* ${isEnabled(config.AUTO_VOICE) ? "✅" : "❌"}
 │  ├─∘ *Auto AI:* ${isEnabled(config.AUTO_AI) ? "✅" : "❌"}
-│  ├─∘ *Always Typing:* ${isEnabled(config.ALWAYS_TYPING) ? "✅" : "❌"}
-│  └─∘ *Always Recording:* ${isEnabled(config.ALWAYS_RECORDING) ? "✅" : "❌"}
-│
+|
 ├─❏ *🛡️ SECURITY*
 │  ├─∘ *Anti-Link:* ${isEnabled(config.ANTILINK) ? "✅" : "❌"}
 │  ├─∘ *Anti-Bad Words:* ${isEnabled(config.ANTI_BAD_WORDS_ENABLED) ? "✅" : "❌"}
