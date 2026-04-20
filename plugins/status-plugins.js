@@ -12,69 +12,57 @@ const { getSetting, setSetting } = require('../lib/settings');
 
 // ── .autoreadstatus ────────────────────────────────────────
 cmd({
-    pattern: 'autoreadstatus',
-    alias:   ['autoread', 'readstatus'],
-    desc:    'Auto view all WhatsApp statuses — on/off',
+    pattern:  'autoreadstatus',
+    alias:    ['autoread', 'readstatus'],
+    desc:     'Auto view all WhatsApp statuses — on/off',
     category: 'owner',
-    react:   '👁️',
+    react:    '👁️',
     filename: __filename,
 },
 async (conn, mek, m, { isOwner, q, reply }) => {
     if (!isOwner) return reply('❌ Owner only!');
-
     const sub = (q || '').toLowerCase().trim();
     if (!sub || (sub !== 'on' && sub !== 'off')) {
         const cur = getSetting('autoReadStatus') ?? true;
-        return reply(
-            `👁️ *Auto Read Status:* ${cur ? '✅ ON' : '❌ OFF'}\n\n` +
-            `Usage: \`.autoreadstatus on\` / \`.autoreadstatus off\``
-        );
+        return reply(`👁️ *Auto Read Status:* ${cur ? '✅ ON' : '❌ OFF'}\n\nUsage: \`.autoreadstatus on\` / \`.autoreadstatus off\``);
     }
-
     setSetting('autoReadStatus', sub === 'on');
     reply(`${sub === 'on' ? '✅' : '❌'} *Auto Read Status ${sub === 'on' ? 'Enabled' : 'Disabled'}!*`);
 });
 
 // ── .autoreactstatus ───────────────────────────────────────
 cmd({
-    pattern: 'autoreactstatus',
-    alias:   ['statusreact', 'reactstatus'],
-    desc:    'Auto react to all statuses — on/off',
+    pattern:  'autoreactstatus',
+    alias:    ['statusreact', 'reactstatus'],
+    desc:     'Auto react to all statuses — on/off',
     category: 'owner',
-    react:   '❤️',
+    react:    '❤️',
     filename: __filename,
 },
 async (conn, mek, m, { isOwner, q, reply }) => {
     if (!isOwner) return reply('❌ Owner only!');
-
     const sub = (q || '').toLowerCase().trim();
     if (!sub || (sub !== 'on' && sub !== 'off')) {
         const cur = getSetting('autoReactStatus') ?? true;
-        return reply(
-            `❤️ *Auto React Status:* ${cur ? '✅ ON' : '❌ OFF'}\n\n` +
-            `Usage: \`.autoreactstatus on\` / \`.autoreactstatus off\``
-        );
+        return reply(`❤️ *Auto React Status:* ${cur ? '✅ ON' : '❌ OFF'}\n\nUsage: \`.autoreactstatus on\` / \`.autoreactstatus off\``);
     }
-
     setSetting('autoReactStatus', sub === 'on');
     reply(`${sub === 'on' ? '✅' : '❌'} *Auto React Status ${sub === 'on' ? 'Enabled' : 'Disabled'}!*`);
 });
 
 // ── .statusinfo ────────────────────────────────────────────
 cmd({
-    pattern: 'statusinfo',
-    alias:   ['statusset', 'statusconfig'],
-    desc:    'Show current status plugin settings',
+    pattern:  'statusinfo',
+    alias:    ['statusset', 'statusconfig'],
+    desc:     'Show status plugin settings',
     category: 'owner',
-    react:   'ℹ️',
+    react:    'ℹ️',
     filename: __filename,
 },
 async (conn, mek, m, { isOwner, reply }) => {
     if (!isOwner) return reply('❌ Owner only!');
-
     const read  = getSetting('autoReadStatus')  ?? true;
     const react = getSetting('autoReactStatus') ?? true;
-
     reply(
         `╔══════════════════════╗\n` +
         `║  📊 STATUS SETTINGS  ║\n` +
@@ -86,7 +74,6 @@ async (conn, mek, m, { isOwner, reply }) => {
 });
 
 // ── STATUS EVENT LISTENER ──────────────────────────────────
-// Fires on every message — filters to status@broadcast only
 cmd({ on: 'body' },
 async (conn, mek, m, { from }) => {
     try {
@@ -94,15 +81,20 @@ async (conn, mek, m, { from }) => {
 
         const autoRead  = getSetting('autoReadStatus')  ?? true;
         const autoReact = getSetting('autoReactStatus') ?? true;
-
         if (!autoRead && !autoReact) return;
 
-        // Auto Read: mark status as seen
+        // Auto Read — Baileys v7 correct format
         if (autoRead) {
-            try { await conn.readMessages([mek.key]); } catch {}
+            try {
+                await conn.readMessages([{
+                    remoteJid:   mek.key.remoteJid,
+                    id:          mek.key.id,
+                    participant: mek.key.participant || mek.key.remoteJid,
+                }]);
+            } catch {}
         }
 
-        // Auto React: random emoji
+        // Auto React — random emoji
         if (autoReact) {
             const emojis = ['❤️', '🔥', '😍', '👍', '💯', '🎉', '✨', '💎', '😎', '🥰'];
             const emoji  = emojis[Math.floor(Math.random() * emojis.length)];
