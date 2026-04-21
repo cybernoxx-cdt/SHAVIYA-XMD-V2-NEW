@@ -79,44 +79,6 @@ const chama = {
   },
 };
 
-// ═══════════════════════════════════════════════════════════════════
-//  CRASH GUARD — bot restart නෑ, unhandled error log කරනවා විතරයි
-// ═══════════════════════════════════════════════════════════════════
-process.on('unhandledRejection', (reason, promise) => {
-  const msg = reason?.message || String(reason);
-  // Movie upload OOM / stream errors — silent log, no crash
-  if (
-    msg.includes('ECONNRESET') ||
-    msg.includes('ETIMEDOUT') ||
-    msg.includes('EPIPE') ||
-    msg.includes('socket hang up') ||
-    msg.includes('aborted') ||
-    msg.includes('stream') ||
-    msg.includes('memory') ||
-    msg.includes('heap')
-  ) {
-    console.error(`[UNHANDLED REJECTION - network/stream] ${msg}`);
-    return; // bot alive
-  }
-  console.error(`[UNHANDLED REJECTION]`, reason);
-  // critical නොවන errors bot crash නොකරවනවා
-});
-
-process.on('uncaughtException', (err) => {
-  const msg = err?.message || String(err);
-  console.error(`[UNCAUGHT EXCEPTION] ${msg}`);
-  // plugin error නිසා whole bot kill නෑ
-  // fatal errors (module not found etc) නම් restart
-  if (
-    msg.includes('Cannot find module') ||
-    msg.includes('MODULE_NOT_FOUND')
-  ) {
-    console.error('[FATAL] Module missing — restarting...');
-    process.exit(1);
-  }
-  // otherwise keep alive
-});
-
 // ====================== MEGA SESSION DOWNLOADER ======================
 // SHAVIYA-XMD V2 RULE:
 //   plugins/ and lib/ are BUNDLED LOCALLY — never downloaded from MEGA.
@@ -466,9 +428,8 @@ async function startBot(sessionId, authPath, envConfig) {
 
         const botNum = conn.user.id.split(":")[0];
 
-       const upMsg =
-`╔════════════════════════╗
-║ ❤️‍🔥 *SHAVIYA-XMD V2 CONNECTED* 💫 ║
+       const upMsg =`╔════════════════════════╗
+║ 💠 *SHAVIYA-XMD V2 CONNECTED* ⚜️ ║
 ╚════════════════════════╝
 │
 ├─ 🤖 *Bot*      ➠ SHAVIYA-XMD V2
@@ -483,10 +444,10 @@ async function startBot(sessionId, authPath, envConfig) {
 ├─ 🛡️ *Security*  ➠ Active
 ├─ 🌐 *Mode*      ➠ ${(config.MODE || "public").toUpperCase()}
 ├─ 🎯 *Platform*  ➠ ʜᴇʀᴏᴋᴜ
-├─ ⚙️ *Engine*    ➠ GOD ⚡
+├─ ⚙️ *Engine*    ➠ GOD LEVEL ⚡
 │
 ╰━━━━━━━━━━━━━━━━━━━━━━━━⊷
-> ✨ *𝗦𝗛𝗔𝗩𝗜𝗬𝗔 𝗫𝗠𝗗 𝗩2 · 𝗣𝗥𝗘𝗠𝗜𝗨𝗠* 💎`;
+> ✨ *𝗦𝗛𝗔𝗩𝗜𝗬𝗔 𝗫𝗠𝗗 𝗩2* 💎`;
 
         try {
           await conn.sendMessage(
