@@ -18,7 +18,7 @@ const randomReact = () => reactions[Math.floor(Math.random() * reactions.length)
 
 const MENUS = {
     main: {
-        title: "SHAVIYA-XMD V2 PREMIUM",
+        title: "Sʜᴀᴠɪʏᴀ-Xᴍᴅ V2 ",
         icon: "👑"
     },
     
@@ -38,6 +38,7 @@ const MENUS = {
             { cmd: ".download", alias: "downurl", desc: "Universal Download" },
             { cmd: ".ud", alias: "usersdrive, udrive", desc: "UsersDrive Download" },
             { cmd: ".upload", alias: "tourl, catbox", desc: "Media to URL Upload" },
+            { cmd: ".mediafire", alias: "mf", desc: "MediaFire Files And All Download" },
             { cmd: ".imgbb", alias: "img2url, uploadimg", desc: "Image to ImgBB URL" }
         ]
     },
