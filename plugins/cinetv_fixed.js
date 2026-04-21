@@ -191,6 +191,84 @@ async function resolveDownloadLink(dlUrl, label) {
 }
 
 // ═══════════════════════════════════════════════════
+//  Smart Size Parser  — "1.4 GB" / "850 MB" / bytes
+// ═══════════════════════════════════════════════════
+function parseSizeMB(raw) {
+  if (!raw) return null;
+  const str = raw.toString().trim().toUpperCase();
+  const num = parseFloat(str.replace(/[^0-9.]/g, ''));
+  if (isNaN(num)) return null;
+  if (str.includes('GB')) return num * 1024;
+  if (str.includes('KB')) return num / 1024;
+  if (str.includes('MB')) return num;
+  // raw bytes
+  if (num > 1048576) return num / (1024 * 1024);
+  return null;
+}
+
+// ═══════════════════════════════════════════════════
+//  Smart Send  — auto-detects real size via HEAD,
+//  sends as doc if safe, sends link card if too big
+// ═══════════════════════════════════════════════════
+// WhatsApp හරහා bot safely upload කරන්න පුලුවන් max size
+// Heroku free dyno RAM ~512MB → limit 450MB safe
+const MAX_SEND_MB = 450;
+
+async function getRealSizeMB(url) {
+  try {
+    const res = await axios.head(url, { timeout: 10000 });
+    const cl = res.headers['content-length'];
+    if (cl) return parseInt(cl) / (1024 * 1024);
+  } catch (_) {}
+  return null;
+}
+
+async function smartSendMovie(conn, from, dlResult, title, quality, thumb, caption, quotedMsg) {
+  // Step 1: size raw string parse
+  let sizeMB = parseSizeMB(dlResult.fileSize);
+
+  // Step 2: size string වලින් හොයාගන්න බැරි නම් HEAD request
+  if (!sizeMB && dlResult.url) {
+    console.log(`📏 [SHAVIYA-XMD] HEAD check size: ${title}`);
+    sizeMB = await getRealSizeMB(dlResult.url);
+  }
+
+  console.log(`📦 [SHAVIYA-XMD] Size: ${sizeMB ? sizeMB.toFixed(1) + ' MB' : 'unknown'} | Limit: ${MAX_SEND_MB} MB`);
+
+  // Step 3: size නොදැනේ නම් හෝ limit ඇතුළේ නම් → direct document send
+  if (!sizeMB || sizeMB <= MAX_SEND_MB) {
+    const docMsg = await conn.sendMessage(from, {
+      document: { url: dlResult.url },
+      fileName: dlResult.fileName,
+      mimetype: dlResult.mimetype || 'video/mp4',
+      jpegThumbnail: thumb,
+      caption: caption
+    }, { quoted: quotedMsg });
+    console.log(`✅ [SHAVIYA-XMD] Sent as document: ${dlResult.fileName}`);
+    await conn.sendMessage(from, { react: { text: "✅", key: docMsg.key } });
+    return;
+  }
+
+  // Step 4: file too big → link card send කරනවා, bot crash වෙන්නේ නෑ
+  console.log(`⚠️ [SHAVIYA-XMD] File too large (${sizeMB.toFixed(1)} MB) — sending link card`);
+  const formattedMB = sizeMB >= 1024
+    ? `${(sizeMB / 1024).toFixed(2)} GB`
+    : `${sizeMB.toFixed(0)} MB`;
+
+  const linkMsg = await conn.sendMessage(from, {
+    text: `🎬 *${title}*\n` +
+          `💎 *Quality:* ${quality}\n` +
+          `📦 *Size:* ${formattedMB}\n\n` +
+          `⚠️ *File size too large to send directly via WhatsApp*\n` +
+          `*(Max: ${MAX_SEND_MB} MB — this file is ${formattedMB})*\n\n` +
+          `📥 *Direct Download Link:*\n` +
+          `${dlResult.url}\n\n` +
+          `💡 *IDM / browser හරහා download කරන්න*`
+  }, { quoted: quotedMsg });
+  await conn.sendMessage(from, { react: { text: "🔗", key: linkMsg.key } });
+}
+
+// ═══════════════════════════════════════════════════
 //  Handle Movie Download
 // ═══════════════════════════════════════════════════
 async function handleMovieDownload(conn, from, sender, dlLinks, title, quotedMsg, posterUrl, sessionId) {
@@ -247,37 +325,27 @@ async function handleMovieDownload(conn, from, sender, dlLinks, title, quotedMsg
       react: { text: "📥", key: qSel.msg.key } 
     });
 
-    // Create thumbnail
+    // Thumbnail + filename build
     const thumb = await makeThumbnail(posterUrl || null, hardThumb, movieDocOn);
-    
-    // Clean filename
     const cleanName = dlResult.fileName 
       ? dlResult.fileName.replace(/\[Cinesubz\.co\]/gi, '').trim() 
       : `${title} (${chosenDl.quality}).mp4`;
-    
     const finalFileName = `${FILE_PREFIX} ${cleanName}`;
     const fileSize = dlResult.fileSize || chosenDl.size || '';
     const formattedSize = fileSize.toString().includes('MB') ? fileSize : formatFileSize(fileSize);
 
-    // Send as document
-    const docMsg = await conn.sendMessage(from, {
-      document: { url: dlResult.url },
-      fileName: finalFileName,
-      mimetype: dlResult.mimetype || 'video/mp4',
-      jpegThumbnail: thumb,
-      caption: `🎬 *${DOC_PREFIX}*\n\n` +
-               `📽️ *Title:* ${title}\n` +
-               `💎 *Quality:* ${chosenDl.quality}\n` +
-               `📦 *Size:* ${formattedSize}\n` +
-               `📁 *Format:* MP4\n\n` +
-               `──────────────\n` +
-               `💫 *${botName}*`
-    }, { quoted: qSel.msg });
+    dlResult.fileName = finalFileName;
 
-    console.log(`✅ [SHAVIYA-XMD] Sent: ${finalFileName}`);
-    await conn.sendMessage(from, { 
-      react: { text: "✅", key: docMsg.key } 
-    });
+    const caption = `🎬 *${DOC_PREFIX}*\n\n` +
+                    `📽️ *Title:* ${title}\n` +
+                    `💎 *Quality:* ${chosenDl.quality}\n` +
+                    `📦 *Size:* ${formattedSize}\n` +
+                    `📁 *Format:* MP4\n\n` +
+                    `──────────────\n` +
+                    `💫 *${botName}*`;
+
+    // Smart send — auto size check, no bot crash
+    await smartSendMovie(conn, from, dlResult, title, chosenDl.quality, thumb, caption, qSel.msg);
 
   } catch (err) { 
     console.log(`❌ [SHAVIYA-XMD] handleDownload error:`, err.message);
@@ -486,19 +554,20 @@ cmd({
                   const fileSize = dlResult.fileSize || matchedDl.size || '';
                   const formattedSize = fileSize.toString().includes('MB') ? fileSize : formatFileSize(fileSize);
 
-                  await conn.sendMessage(from, {
-                    document: { url: dlResult.url },
-                    fileName: finalFileName,
-                    mimetype: dlResult.mimetype || 'video/mp4',
-                    jpegThumbnail: thumb,
-                    caption: `🎬 *${DOC_PREFIX}*\n\n` +
-                             `📺 *${tvData.title}*\n` +
-                             `🎬 *S${chosenSeason.s_no} E${ep.e_no}*\n` +
-                             `💎 *Quality:* ${matchedDl.quality}\n` +
-                             `📦 *Size:* ${formattedSize}\n\n` +
-                             `──────────────\n` +
-                             `💫 *${FOOTER}*`
-                  });
+                  dlResult.fileName = finalFileName;
+
+                  const epCaption = `🎬 *${DOC_PREFIX}*\n\n` +
+                                   `📺 *${tvData.title}*\n` +
+                                   `🎬 *S${chosenSeason.s_no} E${ep.e_no}*\n` +
+                                   `💎 *Quality:* ${matchedDl.quality}\n` +
+                                   `📦 *Size:* ${formattedSize}\n\n` +
+                                   `──────────────\n` +
+                                   `💫 *${FOOTER}*`;
+
+                  // Smart send — size check, no crash
+                  await smartSendMovie(conn, from, dlResult,
+                    `${tvData.title} S${chosenSeason.s_no}E${ep.e_no}`,
+                    matchedDl.quality, thumb, epCaption, qSel.msg);
 
                   console.log(`✅ [SHAVIYA-XMD] Sent E${ep.e_no}`);
                   
