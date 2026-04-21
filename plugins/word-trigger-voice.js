@@ -1,24 +1,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//   plugins/triggervoice.js — SHAVIYA-XMD V2
-//
+//   plugins/word-trigger-voice.js — SHAVIYA-XMD V2
 //   🎵 Word Trigger Voice Plugin — Always ON
-//
-//   ✅ Case 1: trigger word type කළොත්
-//             → message delete → voice note send
-//
-//   ✅ Case 2: ඕනෑ message එකකට reply කරලා trigger word type කළොත්
-//             → reply message delete → quoted message ලා voice note send
-//
-//   ✅ Delete FIRST (fast) → then download & send
-//   ✅ Groups + DM දෙකෙහිම works
-//   ✅ Data: ranumitha_data/triggervoice.json
-//   ✅ ffmpeg නැහැ — opus direct (no audio errors)
-//
-//   triggervoice.json FORMAT:
-//   {
-//     "fah":   "https://github.com/.../fah.opus",
-//     "hello": "https://github.com/.../hello.opus"
-//   }
+//   ✅ GitHub raw .opus → proper arraybuffer download + magic byte validation
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 'use strict';
@@ -38,14 +21,43 @@ function loadTriggers() {
     } catch (_) { return {}; }
 }
 
-// ── Download opus buffer ─────────────────────────────────────
+// ── Convert GitHub blob URL → raw.githubusercontent.com ──────
+function toDirectUrl(url) {
+    if (url.includes('github.com') && url.includes('/blob/')) {
+        return url
+            .replace('github.com', 'raw.githubusercontent.com')
+            .replace('/blob/', '/');
+    }
+    return url;
+}
+
+// ── Download opus buffer with validation ─────────────────────
 async function downloadOpus(url) {
-    const res = await axios.get(url, {
+    const directUrl = toDirectUrl(url);
+
+    const res = await axios.get(directUrl, {
         responseType: 'arraybuffer',
-        timeout: 20000,
-        headers: { 'User-Agent': 'Mozilla/5.0' }
+        timeout: 25000,
+        headers: {
+            'User-Agent': 'Mozilla/5.0',
+            'Accept': '*/*',
+            'Cache-Control': 'no-cache'
+        }
     });
-    return Buffer.from(res.data);
+
+    const buf = Buffer.from(res.data);
+
+    if (buf.length < 100) {
+        throw new Error(`Downloaded file too small (${buf.length} bytes) — not valid opus`);
+    }
+
+    // Check OGG magic bytes: "OggS"
+    const magic = buf.slice(0, 4).toString('ascii');
+    if (magic !== 'OggS') {
+        console.warn(`[TRIGGERVOICE] ⚠️ Magic bytes: "${magic}" — may not be valid OGG. Sending anyway.`);
+    }
+
+    return buf;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -70,7 +82,7 @@ async (conn, mek, m, { from, body }) => {
         }
         if (!matchedUrl) return;
 
-        // ── Check if this is a reply to another message ──────
+        // ── Check if this is a reply ─────────────────────────
         const contextInfo = mek.message?.extendedTextMessage?.contextInfo
                          || mek.message?.imageMessage?.contextInfo
                          || mek.message?.videoMessage?.contextInfo
@@ -80,24 +92,32 @@ async (conn, mek, m, { from, body }) => {
         const quotedMsgId  = contextInfo?.stanzaId;
         const quotedSender = contextInfo?.participant || contextInfo?.remoteJid || from;
 
-        // ── STEP 1: Delete trigger message FIRST (fast) ──────
+        // ── STEP 1: Delete trigger message ───────────────────
         try {
             await conn.sendMessage(from, { delete: mek.key });
         } catch (_) {}
 
         // ── STEP 2: Download opus ────────────────────────────
-        const opusBuf = await downloadOpus(matchedUrl);
+        let opusBuf;
+        try {
+            opusBuf = await downloadOpus(matchedUrl);
+            console.log(`[TRIGGERVOICE] ✅ Downloaded ${(opusBuf.length / 1024).toFixed(1)}KB for: "${bodyLower}"`);
+        } catch (dlErr) {
+            console.error(`[TRIGGERVOICE] ❌ Download failed for "${bodyLower}":`, dlErr.message);
+            return;
+        }
 
         // ── STEP 3: Send voice note ──────────────────────────
         await conn.sendPresenceUpdate('recording', from);
 
+        const audioPayload = {
+            audio:    opusBuf,
+            mimetype: 'audio/ogg; codecs=opus',
+            ptt:      true
+        };
+
         if (isReply && quotedMsgId) {
-            // Voice note → quoted message ලා reply ලෙස යනවා
-            await conn.sendMessage(from, {
-                audio:    opusBuf,
-                mimetype: 'audio/ogg; codecs=opus',
-                ptt:      true
-            }, {
+            await conn.sendMessage(from, audioPayload, {
                 quoted: {
                     key: {
                         remoteJid:   from,
@@ -108,15 +128,10 @@ async (conn, mek, m, { from, body }) => {
                     message: {}
                 }
             });
-            console.log(`[TRIGGERVOICE] ✅ Reply-voice for: "${bodyLower}"`);
+            console.log(`[TRIGGERVOICE] ✅ Reply-voice sent for: "${bodyLower}"`);
         } else {
-            // Normal voice note
-            await conn.sendMessage(from, {
-                audio:    opusBuf,
-                mimetype: 'audio/ogg; codecs=opus',
-                ptt:      true
-            });
-            console.log(`[TRIGGERVOICE] ✅ Voice for: "${bodyLower}"`);
+            await conn.sendMessage(from, audioPayload);
+            console.log(`[TRIGGERVOICE] ✅ Voice sent for: "${bodyLower}"`);
         }
 
     } catch (e) {
