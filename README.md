@@ -37,9 +37,9 @@ node index.js
 |---|---|---|
 | `SESSION_ID` | ✅ | Base64 encoded creds.json OR MEGA link |
 | `OWNER_NUMBER` | ✅ | Your WhatsApp number (no +) |
-| `MONGODB_URI` | ❌ | MongoDB URL for DB features |
-| `PREFIX` | ❌ | Command prefix (default: `.`) |
-| `MODE` | ❌ | public/private/inbox/groups/premium |
+| `MONGODB_URI` | 💠 | MongoDB URL for DB features |
+| `PREFIX` | 💠 | Command prefix (default: `.`) |
+| `MODE` | 💠 | public/private/inbox/groups/premium |
 
 ## 📱 Get Session ID
 ```
