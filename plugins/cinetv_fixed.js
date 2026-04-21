@@ -28,7 +28,7 @@ function saveSessionConfig(sessionId, cfg) {
 }
 
 function getBotName(sessionId) {
-  return getSessionConfig(sessionId).botName || "SHAVIYA-XMD © 2026 🇱🇰";
+  return getSessionConfig(sessionId).botName || "Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️";
 }
 
 function getHardThumbUrl(sessionId) {
@@ -114,7 +114,7 @@ function formatFileSize(bytes) {
 // ═══════════════════════════════════════════════════
 //  API Configuration
 // ═══════════════════════════════════════════════════
-const API_KEY = "edbcfabbca5a9750";
+const API_KEY = "42a61f2a33c61caf";
 const BASE_URL = "https://api-dark-shan-yt.koyeb.app";
 
 // ═══════════════════════════════════════════════════
