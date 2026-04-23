@@ -6,7 +6,6 @@
 //   ✅ Reply number to toggle ON/OFF instantly
 //   ✅ X.5 = OFF  |  X = ON  (e.g. 7=on, 7.5=off)
 //   ✅ No restart needed — saves to settings.json
-//   ✅ Auto typing / recording — real interval
 //   ✅ Full customize support
 // ============================================
 
@@ -15,21 +14,6 @@
 const { cmd }                      = require('../command');
 const { getSetting, setSetting,
         getAllSettings, getConfig } = require('../lib/settings');
-
-    // Send immediately then every 5s
-    conn.sendPresenceUpdate(type, jid).catch(() => {});
-    const id = setInterval(() => {
-        conn.sendPresenceUpdate(type, jid).catch(() => {});
-    }, 5000);
-    timerMap.set(jid, id);
-}
-
-function stopPresence(jid, timerMap) {
-    if (timerMap.has(jid)) {
-        clearInterval(timerMap.get(jid));
-        timerMap.delete(jid);
-    }
-}
 
 // ── Settings definition list ──────────────────
 // { id, half, label, icon, settingKey, type }
@@ -92,10 +76,8 @@ ${security}│
 ${ui}│
 ├─────────────────────────
 │  💡 *HOW TO USE:*
-│  ├─ Type *7* → Auto Recording ON
-│  ├─ Type *7.5* → Auto Recording OFF
-│  ├─ Type *6* → Auto Typing ON
-│  └─ Type *6.5* → Auto Typing OFF
+│  ├─ Type number → Toggle ON
+│  └─ Type number.5 → Toggle OFF
 │
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━⊷
 > ✨ *SHAVIYA XMD · PREMIUM SETTINGS* 💎`
@@ -201,10 +183,6 @@ async (conn, mek, m, { from, body, isOwner }) => {
         await setSetting(setting.key, newVal);
 
         // ── Special live handlers ────────────
-        if (setting.key === 'autoTyping') {
-            if (newVal) startPresence(conn, from, 'composing', _typingTimers);
-            else { stopPresence(from, _typingTimers); conn.sendPresenceUpdate('paused', from).catch(() => {}); }
-        }
         if (setting.key === 'button' && typeof global.setButtonState === 'function') {
             global.setButtonState(session.sessionId, newVal);
         }
@@ -260,23 +238,6 @@ async (conn, mek, m, { from, body, isOwner }) => {
 });
 
 // ══════════════════════════════════════════════
-//   on:body — Auto Typing presence (interval)
-// ══════════════════════════════════════════════
-cmd({ on: 'body' },
-async (conn, mek, m, { from }) => {
-    try {
-        if (!getConfig('ALWAYS_TYPING')) return;
-        if (!_typingTimers.has(from)) {
-            startPresence(conn, from, 'composing', _typingTimers);
-        }
-    } catch {}
-});
-
-// ══════════════════════════════════════════════
-//   on:body — Auto Recording presence (interval)
-// ══════════════════════════════════════════════
-
-// ══════════════════════════════════════════════
 //   .set  —  quick single setting change
 // ══════════════════════════════════════════════
 cmd({
@@ -297,8 +258,6 @@ Usage: *.set <key> <on/off>*
 
 Examples:
 ├─ *.set autovoice on*
-├─ *.set autotyping off*
-├─ *.set autorecording on*
 ├─ *.set antilink on*
 ├─ *.set button on*
 ├─ *.set mode public*
