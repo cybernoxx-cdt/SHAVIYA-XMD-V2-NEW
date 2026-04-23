@@ -104,7 +104,7 @@ async (conn, mek, m, { from, reply }) => {
     }
 });
 
-// .rmeme — Random meme/video from r/TKASYLUM (Hot + New mix)
+// .rmeme — Random meme/video from r/TKASYLUM via meme-api.com
 cmd({
     pattern: 'rmeme',
     alias: ['tkmeme', 'tkasylum'],
@@ -118,106 +118,50 @@ async (conn, mek, m, { from, reply }) => {
         await conn.sendPresenceUpdate('composing', from);
         await reply('🔥 Fetching from r/TKASYLUM...');
 
-        // Randomly pick hot or new for variety
-        const sorts = ['hot', 'new', 'top'];
-        const sort = sorts[Math.floor(Math.random() * sorts.length)];
-        const timeParam = sort === 'top' ? '?t=week&limit=50' : '?limit=50';
+        const res = await axios.get('https://meme-api.com/gimme/TKASYLUM', { timeout: 15000 });
+        const data = res.data;
 
-        const headers = {
-            'User-Agent': 'SHAVIYA-XMD-Bot/2.0 (by /u/shaviyabot)'
-        };
+        if (!data || !data.url) return reply('❌ No post found. Try again!');
 
-        const url = `https://www.reddit.com/r/TKASYLUM/${sort}.json${timeParam}`;
-        const res = await axios.get(url, { headers, timeout: 15000 });
+        const title = data.title || 'TKASYLUM Meme';
+        const ups = data.ups || 0;
+        const postUrl = data.postLink || '';
+        const mediaUrl = data.url;
 
-        const posts = res.data?.data?.children;
-        if (!posts || posts.length === 0) return reply('❌ No posts found. Try again.');
+        const isVideo = /\.(mp4|gifv|webm)(\?.*)?$/i.test(mediaUrl) || mediaUrl.includes('v.redd.it');
 
-        // Filter only image and video posts (no text posts)
-        const mediaPosts = posts.filter(p => {
-            const post = p.data;
-            if (post.stickied || post.is_self) return false;
-
-            const url = post.url || '';
-            const isImage = /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(url);
-            const isRedditVideo = post.is_video && post.media?.reddit_video?.fallback_url;
-            const isGifVideo = post.url?.includes('v.redd.it');
-            const isImgur = url.includes('imgur.com');
-            const isRedditGallery = post.is_gallery;
-
-            return isImage || isRedditVideo || isGifVideo || isImgur || isRedditGallery;
-        });
-
-        if (mediaPosts.length === 0) return reply('❌ No media posts found right now. Try again!');
-
-        // Pick a random post from filtered list
-        const picked = mediaPosts[Math.floor(Math.random() * mediaPosts.length)].data;
-        const title = picked.title || 'TKASYLUM Meme';
-        const ups = picked.ups || 0;
-        const comments = picked.num_comments || 0;
-
-        // Check if video
-        const isVideo = picked.is_video && picked.media?.reddit_video?.fallback_url;
+        const caption = `🔥 *${title}*\n\n` +
+            `👍 ${ups.toLocaleString()} upvotes\n` +
+            `📌 r/TKASYLUM\n` +
+            `🔗 ${postUrl}\n\n` +
+            `> 🎲 *SHAVIYA-XMD V2 · TKASYLUM*`;
 
         if (isVideo) {
-            // Send as video
-            const videoUrl = picked.media.reddit_video.fallback_url;
-
             try {
-                const vidRes = await axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 30000 });
+                const vidRes = await axios.get(mediaUrl, { responseType: 'arraybuffer', timeout: 30000 });
                 const videoBuffer = Buffer.from(vidRes.data);
-
                 await conn.sendMessage(from, {
                     video: videoBuffer,
-                    caption: `🔥 *${title}*\n\n` +
-                        `👍 ${ups.toLocaleString()} upvotes  💬 ${comments} comments\n` +
-                        `📌 r/TKASYLUM\n\n` +
-                        `> 🎲 *SHAVIYA-XMD V2 · TKASYLUM*`,
+                    caption,
                     mimetype: 'video/mp4'
                 }, { quoted: mek });
             } catch (_) {
-                // Video download failed, send link
-                await reply(
-                    `🔥 *${title}*\n\n` +
-                    `🎬 Video: ${videoUrl}\n\n` +
-                    `👍 ${ups.toLocaleString()} upvotes  💬 ${comments} comments\n` +
-                    `📌 r/TKASYLUM\n\n` +
-                    `> 🎲 *SHAVIYA-XMD V2 · TKASYLUM*`
-                );
+                await reply(`🔥 *${title}*\n\n🎬 ${mediaUrl}\n\n👍 ${ups} upvotes\n📌 r/TKASYLUM\n\n> 🎲 *SHAVIYA-XMD V2 · TKASYLUM*`);
             }
-
         } else {
-            // Send as image
-            let imageUrl = picked.url;
-
-            // Fix imgur links
-            if (imageUrl.includes('imgur.com') && !imageUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
-                imageUrl = imageUrl + '.jpg';
-            }
-
             try {
-                const imgRes = await axios.get(imageUrl, {
+                const imgRes = await axios.get(mediaUrl, {
                     responseType: 'arraybuffer',
                     timeout: 20000,
                     headers: { 'User-Agent': 'SHAVIYA-XMD-Bot/2.0' }
                 });
                 const imageBuffer = Buffer.from(imgRes.data);
-
                 await conn.sendMessage(from, {
                     image: imageBuffer,
-                    caption: `🔥 *${title}*\n\n` +
-                        `👍 ${ups.toLocaleString()} upvotes  💬 ${comments} comments\n` +
-                        `📌 r/TKASYLUM\n\n` +
-                        `> 🎲 *SHAVIYA-XMD V2 · TKASYLUM*`
+                    caption
                 }, { quoted: mek });
             } catch (_) {
-                await reply(
-                    `🔥 *${title}*\n\n` +
-                    `🖼️ ${imageUrl}\n\n` +
-                    `👍 ${ups.toLocaleString()} upvotes  💬 ${comments} comments\n` +
-                    `📌 r/TKASYLUM\n\n` +
-                    `> 🎲 *SHAVIYA-XMD V2 · TKASYLUM*`
-                );
+                await reply(`🔥 *${title}*\n\n🖼️ ${mediaUrl}\n\n👍 ${ups} upvotes\n📌 r/TKASYLUM\n\n> 🎲 *SHAVIYA-XMD V2 · TKASYLUM*`);
             }
         }
 
