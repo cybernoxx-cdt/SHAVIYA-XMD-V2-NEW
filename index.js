@@ -79,6 +79,44 @@ const chama = {
   },
 };
 
+// ═══════════════════════════════════════════════════════════════════
+//  CRASH GUARD — bot restart නෑ, unhandled error log කරනවා විතරයි
+// ═══════════════════════════════════════════════════════════════════
+process.on('unhandledRejection', (reason, promise) => {
+  const msg = reason?.message || String(reason);
+  // Movie upload OOM / stream errors — silent log, no crash
+  if (
+    msg.includes('ECONNRESET') ||
+    msg.includes('ETIMEDOUT') ||
+    msg.includes('EPIPE') ||
+    msg.includes('socket hang up') ||
+    msg.includes('aborted') ||
+    msg.includes('stream') ||
+    msg.includes('memory') ||
+    msg.includes('heap')
+  ) {
+    console.error(`[UNHANDLED REJECTION - network/stream] ${msg}`);
+    return; // bot alive
+  }
+  console.error(`[UNHANDLED REJECTION]`, reason);
+  // critical නොවන errors bot crash නොකරවනවා
+});
+
+process.on('uncaughtException', (err) => {
+  const msg = err?.message || String(err);
+  console.error(`[UNCAUGHT EXCEPTION] ${msg}`);
+  // plugin error නිසා whole bot kill නෑ
+  // fatal errors (module not found etc) නම් restart
+  if (
+    msg.includes('Cannot find module') ||
+    msg.includes('MODULE_NOT_FOUND')
+  ) {
+    console.error('[FATAL] Module missing — restarting...');
+    process.exit(1);
+  }
+  // otherwise keep alive
+});
+
 // ====================== MEGA SESSION DOWNLOADER ======================
 // SHAVIYA-XMD V2 RULE:
 //   plugins/ and lib/ are BUNDLED LOCALLY — never downloaded from MEGA.
@@ -428,8 +466,9 @@ async function startBot(sessionId, authPath, envConfig) {
 
         const botNum = conn.user.id.split(":")[0];
 
-       const upMsg =`╔════════════════════════╗
-║ 💠 *SHAVIYA-XMD V2 CONNECTED* ⚜️ ║
+       const upMsg =
+`╔════════════════════════╗
+║ ❤️‍🔥 *SHAVIYA-XMD V2 CONNECTED* 💫 ║
 ╚════════════════════════╝
 │
 ├─ 🤖 *Bot*      ➠ SHAVIYA-XMD V2
@@ -444,10 +483,10 @@ async function startBot(sessionId, authPath, envConfig) {
 ├─ 🛡️ *Security*  ➠ Active
 ├─ 🌐 *Mode*      ➠ ${(config.MODE || "public").toUpperCase()}
 ├─ 🎯 *Platform*  ➠ ʜᴇʀᴏᴋᴜ
-├─ ⚙️ *Engine*    ➠ GOD LEVEL ⚡
+├─ ⚙️ *Engine*    ➠ GOD ⚡
 │
 ╰━━━━━━━━━━━━━━━━━━━━━━━━⊷
-> ✨ *𝗦𝗛𝗔𝗩𝗜𝗬𝗔 𝗫𝗠𝗗 𝗩2* 💎`;
+> ✨ *𝗦𝗛𝗔𝗩𝗜𝗬𝗔 𝗫𝗠𝗗 𝗩2 · 𝗣𝗥𝗘𝗠𝗜𝗨𝗠* 💎`;
 
         try {
           await conn.sendMessage(
@@ -484,9 +523,6 @@ async function startBot(sessionId, authPath, envConfig) {
 
   conn.ev.on("messages.upsert", async (mkk) => {
     try {
-      // ✅ FIX: Only process "notify" type — ignore "append" (history/old msgs on restart)
-      if (mkk.type !== "notify") return;
-
       let mek = mkk.messages[0];
       if (!mek?.message) return;
 
@@ -575,30 +611,7 @@ async function startBot(sessionId, authPath, envConfig) {
         return;
       }
 
-      // ── Rebuild cached command lookup map only when plugin list changes ──
-      if (!global._cmdMap || global._cmdMapSize !== events.commands.length) {
-        global._cmdMap = new Map();
-        global._bodyHandlers = [];
-        global._regexCmds = [];
-        for (const c of events.commands) {
-          if (c.on === "body") {
-            global._bodyHandlers.push(c);
-          } else if (c.pattern instanceof RegExp) {
-            global._regexCmds.push(c);
-          } else if (typeof c.pattern === "string" && c.pattern) {
-            global._cmdMap.set(c.pattern, c);
-            if (c.alias) for (const a of c.alias) global._cmdMap.set(a, c);
-          }
-        }
-        global._cmdMapSize = events.commands.length;
-        console.log(`[CMD CACHE] Rebuilt: ${global._cmdMap.size} string cmds, ${global._regexCmds.length} regex cmds, ${global._bodyHandlers.length} body handlers`);
-      }
-
-      // ── O(1) command lookup (Map) instead of O(n) .find() every message ──
-      let cmd = isCmd ? global._cmdMap.get(commandText) : undefined;
-      if (!cmd && isCmd && global._regexCmds.length) {
-        cmd = global._regexCmds.find(c => c.pattern.test(commandText));
-      }
+      const cmd = events.commands.find(c => c.pattern === commandText || (c.alias && c.alias.includes(commandText)));
 
       if (cmd) {
         if (cmd.react) conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
@@ -609,8 +622,9 @@ async function startBot(sessionId, authPath, envConfig) {
         }
       }
 
-      // ── on:"body" handlers — uses cached array, no filter() on 171 commands per message ──
-      for (const handler of global._bodyHandlers) {
+      // ── on:"body" handlers (auto-voice, auto-typing, auto-recording etc.) ──
+      const bodyHandlers = events.commands.filter(c => c.on === "body");
+      for (const handler of bodyHandlers) {
         try {
           await handler.function(conn, mek, m, { from, body, isCmd, command: commandText, args, q, sender, senderNumber, botNumber, isOwner, reply, sessionId });
         } catch (err) {
