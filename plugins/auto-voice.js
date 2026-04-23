@@ -136,6 +136,21 @@ async (conn, mek, m, { isOwner, q, reply }) => {
 });
 
 // ══════════════════════════════════════════════════════════
+// ── In-memory JSON caches (reloaded every 30s, not on every message) ──
+let _voiceCache = null, _stickerCache = null, _replyCache = null, _cacheTime = 0;
+const CACHE_TTL = 30000; // 30 seconds
+
+function getJsonCaches() {
+    const now = Date.now();
+    if (!_voiceCache || (now - _cacheTime) > CACHE_TTL) {
+        _voiceCache   = loadJson(VOICE_FILE);
+        _stickerCache = loadJson(STICKER_FILE);
+        _replyCache   = loadJson(REPLY_FILE);
+        _cacheTime = now;
+    }
+    return { voiceData: _voiceCache, stickerData: _stickerCache, replyData: _replyCache };
+}
+
 //  on:body — auto voice / sticker / reply handler
 // ══════════════════════════════════════════════════════════
 cmd({ on: 'body', dontAddCommandList: true },
@@ -147,9 +162,11 @@ async (conn, mek, m, { from, body, isOwner }) => {
         if (!body || !body.trim()) return;
         const bodyLower = body.trim().toLowerCase();
 
+        // Load all JSON data from cache (single disk read max every 30s)
+        const { voiceData, stickerData, replyData } = getJsonCaches();
+
         // 1. Auto Voice
         try {
-            const voiceData = loadJson(VOICE_FILE);
             for (const text in voiceData) {
                 if (bodyLower === text.trim().toLowerCase()) {
                     await sendVoiceNote(conn, from, mek, voiceData[text]);
@@ -160,7 +177,6 @@ async (conn, mek, m, { from, body, isOwner }) => {
 
         // 2. Auto Sticker
         try {
-            const stickerData = loadJson(STICKER_FILE);
             for (const text in stickerData) {
                 if (bodyLower === text.trim().toLowerCase()) {
                     await conn.sendMessage(from, { sticker: { url: stickerData[text] } }, { quoted: mek });
@@ -171,7 +187,6 @@ async (conn, mek, m, { from, body, isOwner }) => {
 
         // 3. Auto Reply
         try {
-            const replyData = loadJson(REPLY_FILE);
             for (const text in replyData) {
                 if (bodyLower === text.trim().toLowerCase()) {
                     await m.reply(replyData[text]);
