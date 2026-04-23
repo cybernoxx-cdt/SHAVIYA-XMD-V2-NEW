@@ -57,42 +57,6 @@ async (conn, mek, m, { isOwner, q, reply }) => {
 });
 
 // ── .autoreply ─────────────────────────────────────────────
-cmd({
-    pattern:  'autoreply',
-    alias:    ['autoreplystat', 'statusreply'],
-    desc:     'Auto reply to status viewers — on/off | set custom text',
-    category: 'owner',
-    react:    '💬',
-    filename: __filename,
-},
-async (conn, mek, m, { isOwner, q, reply }) => {
-    if (!isOwner) return reply('❌ Owner only!');
-    const sub = (q || '').toLowerCase().trim();
-
-    if (sub === 'on') {
-        setSetting('autoReplyStatus', true);
-        return reply('✅ *Auto Reply Status Enabled!*');
-    }
-    if (sub === 'off') {
-        setSetting('autoReplyStatus', false);
-        return reply('❌ *Auto Reply Status Disabled!*');
-    }
-    if (q && q.trim().length > 0) {
-        setSetting('autoReplyText', q.trim());
-        return reply(`✅ *Auto Reply Text Set:*\n_${q.trim()}_`);
-    }
-
-    const cur  = getSetting('autoReplyStatus') ?? false;
-    const text = getSetting('autoReplyText')   || '👀 Saw your status!';
-    reply(
-        `💬 *Auto Reply Status:* ${cur ? '✅ ON' : '❌ OFF'}\n` +
-        `📝 *Reply Text:* _${text}_\n\n` +
-        `Usage:\n` +
-        `• \`.autoreply on\` / \`.autoreply off\`\n` +
-        `• \`.autoreply <custom text>\``
-    );
-});
-
 // ── .statusemoji ───────────────────────────────────────────
 cmd({
     pattern:  'statusemoji',
@@ -189,35 +153,6 @@ async (conn, mek, m, { from }) => {
         }
 
         // ── AUTO REPLY ────────────────────────────────────
-        if (statusViewed && AUTO_REPLY_STATUS) {
-            let retries = MAX_RETRIES;
-            while (retries > 0) {
-                try {
-                    await conn.sendMessage(
-                        mek.key.participant,
-                        {
-                            text:     `${AUTO_REPLY_TEXT}`,
-                            mentions: [mek.key.participant]
-                        },
-                        {
-                            statusJidList: [mek.key.participant],
-                            quoted: {
-                                key:     mek.key,
-                                message: mek.message
-                            }
-                        }
-                    );
-                    break;
-                } catch (error) {
-                    retries--;
-                    console.warn(`Failed to reply to status, retries left: ${retries}`, error);
-                    if (retries === 0) {
-                        console.error('Permanently failed to reply to status:', error);
-                    }
-                    await delay(1000 * (MAX_RETRIES - retries + 1));
-                }
-            }
-        }
 
         // ── AUTO LIKE (REACT) ─────────────────────────────
         if (statusViewed && AUTO_LIKE_STATUS) {
