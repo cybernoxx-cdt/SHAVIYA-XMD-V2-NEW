@@ -543,9 +543,29 @@ async function startBot(sessionId, authPath, envConfig) {
       const args        = body.trim().split(/ +/).slice(1);
       const q           = args.join(" ");
 
-      const sender       = mek.key.fromMe
+      // ── LID-safe sender extraction ──
+      // WhatsApp multi-device wala @lid JID enna puluwan — real number resolve karamu
+      let sender = mek.key.fromMe
         ? conn.user.id.split(":")[0] + "@s.whatsapp.net"
         : mek.key.participant || mek.key.remoteJid;
+
+      // If LID (@lid), try to resolve real number from contacts map
+      if (sender && sender.endsWith("@lid")) {
+        try {
+          const contacts = conn.contacts || {};
+          const resolved = Object.values(contacts).find(c =>
+            c.lid && c.lid.split("@")[0] === sender.split("@")[0] && c.id && c.id.endsWith("@s.whatsapp.net")
+          );
+          if (resolved?.id) sender = resolved.id;
+          else {
+            // fallback: check mek.message pushName isn't useful, try notify
+            const notify = mek.pushName;
+            // still can't resolve — keep lid but log it
+            console.warn(`[LID] Could not resolve real number for: ${sender}`);
+          }
+        } catch {}
+      }
+
       const senderNumber = sender.split("@")[0].split(":")[0];
       const botNumber    = conn.user.id.split(":")[0].split("@")[0];
       const isOwner      = ownerNumber.includes(senderNumber) || botNumber === senderNumber;
