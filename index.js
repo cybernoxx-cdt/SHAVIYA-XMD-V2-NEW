@@ -592,7 +592,9 @@ async function startBot(sessionId, authPath, envConfig) {
       const events = require("./command");
 
       if (!global._pluginsLoaded || events.commands.length === 0) {
+        // Plugins not yet loaded — retry ONCE after delay, but only if still not loaded
         setTimeout(async () => {
+          if (global._pluginsLoaded) return; // already loaded by now, main handler will catch next msg
           const ev2 = require("./command");
           if (!ev2.commands.length) return;
           const cmd2 = ev2.commands.find(c => c.pattern === commandText || (c.alias && c.alias.includes(commandText)));
@@ -644,7 +646,7 @@ app.listen(port, () => console.log(`🚀 SHAVIYA-XMD V2 Server running on port $
 function loadPlugins() {
   if (global._pluginsLoaded) return;
   global._pluginsLoaded = true;
-  try { delete require.cache[require.resolve("./command")]; } catch {}
+  // command.js cache delete removed — prevents commands[] reset & re-registration
   const pluginFolder = "./plugins/";
   let loadedCount = 0;
   if (fs.existsSync(pluginFolder)) {
