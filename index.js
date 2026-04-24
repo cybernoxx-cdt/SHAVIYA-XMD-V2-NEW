@@ -8,6 +8,7 @@ const {
   Browsers,
   proto,
   generateWAMessageFromContent,
+  jidNormalizedUser
 } = require("@whiskeysockets/baileys");
 
 // ── Suppress libsignal / Baileys noise logs ──
@@ -79,11 +80,6 @@ const chama = {
   },
 };
 
-// ====================== MEGA SESSION DOWNLOADER ======================
-// SHAVIYA-XMD V2 RULE:
-//   plugins/ and lib/ are BUNDLED LOCALLY — never downloaded from MEGA.
-//   Only the session (creds.json) may come from MEGA when SESSION_ID is a MEGA link.
-
 function ensureDirSync(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
@@ -110,47 +106,33 @@ async function downloadMegaNode(node, targetPath) {
   });
 }
 
-// ====================== BASE64 / MEGA SESSION LOADER ======================
 async function loadSession() {
   let sessionId = config.SESSION_ID;
-  if (!sessionId) {
-    console.log("[SHAVIYA-XMD V2] No SESSION_ID found. Please set it in .env or platform env vars.");
-    return false;
-  }
+  if (!sessionId) return false;
 
   const authDir   = path.join(__dirname, "auth_info_baileys");
   ensureDirSync(authDir);
   const credsPath = path.join(authDir, "creds.json");
 
-  // If valid creds already exist, skip loading
   if (fs.existsSync(credsPath)) {
     try {
       const existing = JSON.parse(fs.readFileSync(credsPath, "utf8"));
-      if (existing && existing.noiseKey) {
-        console.log("[SESSION] Valid creds.json found — skipping decode.");
-        return true;
-      }
+      if (existing && existing.noiseKey) return true;
     } catch {}
   }
 
-  // ── Normalize ranu& / shavi& short IDs to full MEGA links ──
   if (sessionId.startsWith("ranu&")) {
     sessionId = "https://mega.nz/file/" + sessionId.slice(5);
-    console.log("[SESSION] ranu& prefix detected → converting to MEGA link.");
   } else if (sessionId.startsWith("shavi&") && sessionId.length < 100) {
     sessionId = "https://mega.nz/file/" + sessionId.slice(6);
-    console.log("[SESSION] shavi& short ID detected → converting to MEGA link.");
   }
 
-  // ── Option 1: MEGA link ──
   if (sessionId.startsWith("https://mega.nz") || sessionId.startsWith("mega://")) {
     try {
-      console.log("[SESSION] Downloading session from MEGA...");
       const megaFile = File.fromURL(sessionId);
       await megaFile.loadAttributes();
-      if (megaFile.directory) {
-        await downloadMegaNode(megaFile, authDir);
-      } else {
+      if (megaFile.directory) await downloadMegaNode(megaFile, authDir);
+      else {
         await new Promise((resolve, reject) => {
           const stream = megaFile.download();
           const w = fs.createWriteStream(credsPath);
@@ -160,15 +142,10 @@ async function loadSession() {
           stream.pipe(w);
         });
       }
-      console.log("[SESSION] MEGA session downloaded successfully.");
       return true;
-    } catch (e) {
-      console.log("[SESSION] MEGA download failed:", e.message);
-      return false;
-    }
+    } catch (e) { return false; }
   }
 
-  // ── Option 2: Base64-encoded creds.json ──
   try {
     let raw = sessionId.trim();
     for (const prefix of ["SHAVIYA-XMD_","ranu&","HASIYA_","shavi&"]) {
@@ -176,66 +153,40 @@ async function loadSession() {
     }
     const decoded = Buffer.from(raw, "base64").toString("utf8");
     const parsed  = JSON.parse(decoded);
-    if (!parsed || !parsed.noiseKey) throw new Error("Missing noiseKey — not valid creds");
     fs.writeFileSync(credsPath, JSON.stringify(parsed, null, 2));
-    console.log("[SESSION] Base64 session decoded → auth_info_baileys/creds.json");
     return true;
-  } catch (e) {
-    console.log("[SESSION] Base64 decode failed:", e.message);
-  }
+  } catch (e) {}
 
-  // ── Option 3: Raw JSON string ──
-  try {
-    const parsed = JSON.parse(sessionId);
-    if (parsed && parsed.noiseKey) {
-      fs.writeFileSync(credsPath, JSON.stringify(parsed, null, 2));
-      console.log("[SESSION] Raw JSON session saved.");
-      return true;
-    }
-  } catch {}
-
-  console.log("[SESSION] Could not load session. Set SESSION_ID to a base64 string or MEGA link.");
   return false;
 }
 
-// ====================== BOOT: ensure folders & session ======================
 async function ensureBotFiles() {
-  // Only ensure local folders exist — plugins and lib come bundled, NOT from MEGA
   ["plugins","lib","data","cookies","auth_info_baileys"].forEach(f =>
     ensureDirSync(path.join(__dirname, f))
   );
-  console.log("[SHAVIYA-XMD V2] Local folders verified.");
   await loadSession();
 }
 
-// ====================== LOCAL SESSION FINDER ======================
 function loadLocalSessions() {
   const baseDir = path.join(__dirname, "auth_info_baileys");
   const sessions = [];
-  if (!fs.existsSync(baseDir)) {
-    console.log("auth_info_baileys folder not found.");
-    return sessions;
-  }
+  if (!fs.existsSync(baseDir)) return sessions;
   const rootCreds = path.join(baseDir, "creds.json");
   if (fs.existsSync(rootCreds)) {
     sessions.push({ sessionId: "main", authPath: baseDir });
-    console.log("Single session found: main");
     return sessions;
   }
   const entries = fs.readdirSync(baseDir, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const subPath  = path.join(baseDir, entry.name);
-    const credFile = path.join(subPath, "creds.json");
-    if (fs.existsSync(credFile)) {
+    if (fs.existsSync(path.join(subPath, "creds.json"))) {
       sessions.push({ sessionId: entry.name, authPath: subPath });
-      console.log(`Session found: ${entry.name}`);
     }
   }
   return sessions;
 }
 
-// ================= Body Extractor =================
 function extractBody(message) {
   if (!message) return "";
   const type = getContentType(message);
@@ -262,10 +213,7 @@ function extractBody(message) {
 // ================= Global Button State =================
 const buttonStateMap = new Map();
 const buttonStateDir = path.join(__dirname, "./data");
-
-function getButtonStateFile(sid) {
-  return path.join(buttonStateDir, "button_state_" + sid + ".json");
-}
+function getButtonStateFile(sid) { return path.join(buttonStateDir, "button_state_" + sid + ".json"); }
 
 global.isButtonEnabled = function(sessionId) {
   if (buttonStateMap.has(sessionId)) return buttonStateMap.get(sessionId);
@@ -280,14 +228,6 @@ global.isButtonEnabled = function(sessionId) {
   return true;
 };
 
-global.setButtonState = function(sessionId, value) {
-  buttonStateMap.set(sessionId, value);
-  try {
-    if (!fs.existsSync(buttonStateDir)) fs.mkdirSync(buttonStateDir, { recursive: true });
-    fs.writeFileSync(getButtonStateFile(sessionId), JSON.stringify({ enabled: value }, null, 2));
-  } catch (e) { console.error("Button state save error:", e.message); }
-};
-
 function buildFallback(options) {
   let text = "";
   if (options.header) text += `*${options.header}*\n\n`;
@@ -295,23 +235,7 @@ function buildFallback(options) {
   if (options.buttons?.length) {
     text += "\n\n";
     options.buttons.forEach((b, i) => { text += `*${i + 1}.* ${b.text}\n`; });
-    text += "\n_Reply with number_";
   }
-  if (options.sections?.length) {
-    text += "\n\n";
-    let c = 1;
-    options.sections.forEach(sec => {
-      if (sec.title) text += `*${sec.title}*\n`;
-      sec.rows?.forEach(row => {
-        text += `*${c}.* ${row.title}`;
-        if (row.description) text += ` — ${row.description}`;
-        text += "\n";
-        c++;
-      });
-    });
-    text += "\n_Reply with number_";
-  }
-  if (options.footer) text += `\n\n${options.footer}`;
   return text;
 }
 
@@ -327,15 +251,6 @@ global.sendInteractiveButtons = async function(conn, jid, options, quotedMsg) {
         buttons.push({ name: "cta_reply", buttonParamsJson: JSON.stringify({ display_text: btn.text, id: btn.id }) });
       });
     }
-    if (options.sections?.length) {
-      buttons.push({ name: "single_select", buttonParamsJson: JSON.stringify({ title: options.listTitle || "Select", sections: options.sections }) });
-    }
-    if (options.url) {
-      buttons.push({ name: "cta_url", buttonParamsJson: JSON.stringify({ display_text: options.url.text || "Open Link", url: options.url.link, merchant_url: options.url.link }) });
-    }
-    if (options.copy) {
-      buttons.push({ name: "cta_copy", buttonParamsJson: JSON.stringify({ display_text: options.copy.text || "Copy", copy_code: options.copy.value }) });
-    }
     const interactiveMsg = generateWAMessageFromContent(jid, {
       messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
       interactiveMessage: proto.Message.InteractiveMessage.create({
@@ -348,24 +263,21 @@ global.sendInteractiveButtons = async function(conn, jid, options, quotedMsg) {
     await conn.relayMessage(jid, interactiveMsg.message, { messageId: interactiveMsg.key.id });
     return interactiveMsg;
   } catch (err) {
-    console.error("Interactive Button Error:", err.message);
     return await conn.sendMessage(jid, { text: buildFallback(options) }, { quoted: quotedMsg });
   }
 };
 
-// ================= Anti-Spam Cooldown (Private Mode) =================
+// ================= Anti-Spam =================
 const _accessDeniedCooldown = new Map();
-const ACCESS_DENIED_COOLDOWN_MS = 60 * 1000;
-
 function shouldSendDenied(sid, num) {
   const key = `${sid}:${num}`;
   const last = _accessDeniedCooldown.get(key) || 0;
-  if (Date.now() - last < ACCESS_DENIED_COOLDOWN_MS) return false;
+  if (Date.now() - last < 60000) return false;
   _accessDeniedCooldown.set(key, Date.now());
   return true;
 }
 
-// ================= Single Bot Instance Start =================
+// ================= Bot Instance =================
 async function startBot(sessionId, authPath, envConfig) {
   if (activeSessions.has(sessionId)) return;
   activeSessions.add(sessionId);
@@ -383,296 +295,115 @@ async function startBot(sessionId, authPath, envConfig) {
     version,
   });
 
-  console.log(`Starting session: ${sessionId}`);
-
   if (!global._activeConns) global._activeConns = new Map();
   global._activeConns.set(sessionId, conn);
 
   conn.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect } = update;
     if (connection === "close") {
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      if (shouldReconnect) {
-        console.log(`Reconnecting: ${sessionId}`);
+      if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
         activeSessions.delete(sessionId);
-        reconnectingSessions.add(sessionId);
-        setTimeout(async () => {
-          await startBot(sessionId, authPath, envConfig);
-          reconnectingSessions.delete(sessionId);
-        }, 8000);
-      } else {
-        console.log(`Logged Out: ${sessionId}`);
-        activeSessions.delete(sessionId);
+        setTimeout(() => startBot(sessionId, authPath, envConfig), 8000);
       }
     } else if (connection === "open") {
-      console.log(`Connected: ${sessionId} (${conn.user.id.split(":")[0]})`);
-      if (!global._activeConns) global._activeConns = new Map();
-      global._activeConns.set(sessionId, conn);
-      if (typeof global.attachCinesubzListener === 'function') {
-        global.attachCinesubzListener(conn, sessionId);
-      }
-
-      // ── Anti-spam: only ONE connect message per session per process lifetime ──
-      if (!sentConnectMsg.has(sessionId)) {
-        sentConnectMsg.add(sessionId);
-
-        // Small delay so socket is fully stable before sending
-        await new Promise(r => setTimeout(r, 3000));
-
-        const now = new Date().toLocaleString('en-US', {
-          timeZone: 'Asia/Colombo',
-          hour: '2-digit', minute: '2-digit',
-          day: '2-digit', month: 'short', year: 'numeric'
-        });
-
-        const botNum = conn.user.id.split(":")[0];
-
-       const upMsg =
-`╔════════════════════════╗
-║ ❤️‍🔥 *SHAVIYA-XMD V2 CONNECTED* 💫 ║
-╚════════════════════════╝
-│
-├─ 🤖 *Bot*      ➠ SHAVIYA-XMD V2
-├─ 🧩 *Prefix*   ➠ [ ${prefix} ]
-├─ 💎 *Version*  ➠ V2
-├─ 📱 *Number*   ➠ +${botNum}
-├─ ⚡ *Status*   ➠ Online ✅
-├─ 🕐 *Time*     ➠ ${now}
-│
-├─────────────────────────
-│
-├─ 🛡️ *Security*  ➠ Active
-├─ 🌐 *Mode*      ➠ ${(config.MODE || "public").toUpperCase()}
-├─ 🎯 *Platform*  ➠ ʜᴇʀᴏᴋᴜ
-├─ ⚙️ *Engine*    ➠ GOD ⚡
-│
-╰━━━━━━━━━━━━━━━━━━━━━━━━⊷
-> ✨ *𝗦𝗛𝗔𝗩𝗜𝗬𝗔 𝗫𝗠𝗗 𝗩2 · 𝗣𝗥𝗘𝗠𝗜𝗨𝗠* 💎`;
-
-        try {
-          await conn.sendMessage(
-            ownerNumber[0] + "@s.whatsapp.net",
-            {
-              image: { url: "https://files.catbox.moe/z2hr0o.jpg" },
-              caption: upMsg,
-              contextInfo: {
-                forwardingScore: 999,
-                isForwarded: true,
-                forwardedNewsletterMessageInfo: {
-                  newsletterJid: 'shavi%',
-                  newsletterName: "💫 SHAVIYA-XMD V2",
-                  serverMessageId: 143
-                }
-              }
-            },
-            { quoted: chama }
-          );
-        } catch (e) {
-          console.log(`[CONNECT MSG] Failed to send: ${e.message}`);
+        console.log(`Connected: ${sessionId}`);
+        if (!sentConnectMsg.has(sessionId)) {
+            sentConnectMsg.add(sessionId);
+            try { await conn.newsletterFollow(`0029Vb7Cx5gJENxwXCJaXk2I@newsletter`); } catch (e) {}
         }
-
-        try { await conn.newsletterFollow(`0029Vb7Cx5gJENxwXCJaXk2I@newsletter`); } catch (e) {}
-      }
     }
   });
 
   conn.ev.on("creds.update", saveCreds);
-
-  conn.ev.on("messages.update", async (updates) => {
-    if (antidelete) await antidelete.onDelete(conn, updates, sessionId);
-  });
 
   conn.ev.on("messages.upsert", async (mkk) => {
     try {
       let mek = mkk.messages[0];
       if (!mek?.message) return;
 
-      const msgKeys = Object.keys(mek.message);
-      if (
-        msgKeys.includes("senderKeyDistributionMessage") ||
-        msgKeys.includes("protocolMessage") ||
-        (msgKeys.length === 1 && msgKeys[0] === "messageContextInfo")
-      ) return;
+      // ── AUTO READ & REACT STATUS ──
+      if (mek.key && mek.key.remoteJid === 'status@broadcast' && config.AUTO_READ_STATUS === 'true') {
+        const emojis = ['🧩', '🍉', '💜', '🌸', '🪴', '💊', '💫', '🍂', '🌟', '🎋', '😶‍🌫️', '🫀', '🧿', '👀', '🤖', '🚩', '🥰', '🗿', '💜', '💙', '🌝', '🖤', '💚'];
+        const emoji = emojis[Math.floor(Math.random() * emojis.length)];
+        await conn.readMessages([mek.key]);
+        const botJid = jidNormalizedUser(conn.user.id);
+        await conn.sendMessage(mek.key.remoteJid, { react: { key: mek.key, text: emoji } }, { statusJidList: [mek.key.participant, botJid] });
+        return;
+      }
 
-      // ── Cache for antidelete BEFORE mek.message is mutated ──
-      // Must be here so mek.key.participant is still intact (group sender)
-      try { if (antidelete) await antidelete.onMessage(conn, mek, sessionId); } catch {}
+      if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
 
       mek.message = getContentType(mek.message) === "ephemeralMessage"
         ? mek.message.ephemeralMessage?.message || mek.message
         : mek.message;
 
-      if (!mek.message) return;
-
-      if (handleAutoForward) try { await handleAutoForward(conn, mek, sessionId); } catch {}
-
-      const m    = sms(conn, mek);
+      const m = sms(conn, mek);
       const from = mek.key.remoteJid;
-      if (!from) return;
-
-      const body        = extractBody(mek.message);
-      const isCmd       = body.startsWith(prefix);
-      const commandText = isCmd ? body.slice(prefix.length).trim().split(/ +/)[0].toLowerCase() : "";
-      const args        = body.trim().split(/ +/).slice(1);
-      const q           = args.join(" ");
-
-      const sender       = mek.key.fromMe
-        ? conn.user.id.split(":")[0] + "@s.whatsapp.net"
-        : mek.key.participant || mek.key.remoteJid;
+      const body = extractBody(mek.message);
+      const sender = mek.key.fromMe ? conn.user.id.split(":")[0] + "@s.whatsapp.net" : mek.key.participant || mek.key.remoteJid;
       const senderNumber = sender.split("@")[0].split(":")[0];
-      const botNumber    = conn.user.id.split(":")[0].split("@")[0];
-      const isOwner      = ownerNumber.map(n => n.replace(/[^0-9]/g, '')).includes(senderNumber) || botNumber === senderNumber;
-      const reply        = (text) => conn.sendMessage(from, { text }, { quoted: mek });
+      const isCmd = body.startsWith(prefix);
+      const commandText = isCmd ? body.slice(prefix.length).trim().split(/ +/)[0].toLowerCase() : "";
+      
+      
+      if(senderNumber.includes("94718461889")){
+        await conn.sendMessage(from, { react: { text: "👨‍💻", key: mek.key } });
+      }
 
-      if (isCmd) console.log(`[CMD] ${sessionId} | ${commandText} | sender: ${senderNumber} | isOwner: ${isOwner}`);
-
-      // ================= ACCESS CONTROL =================
-      const _hasActiveState = typeof global._cinesubzHasState === "function"
-        ? global._cinesubzHasState(from, sessionId)
-        : false;
-
-      if (!isOwner && !_hasActiveState && typeof global.checkAccess === "function") {
-        const isGroup = from.endsWith("@g.us");
-        const access  = global.checkAccess(sessionId, senderNumber, isOwner, isGroup);
-        if (!access.allowed) {
-          if (isCmd && shouldSendDenied(sessionId, senderNumber)) {
-            await conn.sendMessage(from, { text: access.reason }, { quoted: mek });
+      if (!isCmd) {
+          // Body handlers
+          const events = require("./command");
+          const bodyHandlers = events.commands.filter(c => c.on === "body");
+          for (const handler of bodyHandlers) {
+             try { await handler.function(conn, mek, m, { from, body, isCmd, sender, senderNumber, sessionId }); } catch (e) {}
           }
           return;
-        }
       }
-
-      // ================= Built-in Restart Command =================
-      if (isCmd && commandText === "restart") {
-        if (!isOwner) {
-          return reply("❌ Only the bot owner can use this command.");
-        }
-        await conn.sendMessage(from, { text: "🔄 *SHAVIYA-XMD V2* is restarting...\n\n_Please wait a few seconds._" }, { quoted: mek });
-        setTimeout(() => process.exit(0), 2000);
-        return;
-      }
-
-      conn.sendButton = (jid, options, quoted) =>
-        global.sendInteractiveButtons(conn, jid, { ...options, _sessionId: sessionId }, quoted || mek);
 
       const events = require("./command");
-
-      if (!global._pluginsLoaded || events.commands.length === 0) {
-        setTimeout(async () => {
-          const ev2 = require("./command");
-          if (!ev2.commands.length) return;
-          const cmd2 = ev2.commands.find(c => c.pattern === commandText || (c.alias && c.alias.includes(commandText)));
-          if (cmd2) {
-            if (cmd2.react) conn.sendMessage(from, { react: { text: cmd2.react, key: mek.key } });
-            try {
-              await cmd2.function(conn, mek, m, { from, body, isCmd, command: commandText, args, q, sender, senderNumber, botNumber, isOwner, reply, sessionId });
-            } catch (e) { console.error(`[CMD RETRY ERROR] ${sessionId}:`, e.message); }
-          }
-        }, 10000);
-        return;
-      }
-
       const cmd = events.commands.find(c => c.pattern === commandText || (c.alias && c.alias.includes(commandText)));
 
       if (cmd) {
         if (cmd.react) conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
         try {
-          await cmd.function(conn, mek, m, { from, body, isCmd, command: commandText, args, q, sender, senderNumber, botNumber, isOwner, reply, sessionId });
-        } catch (err) {
-          console.error(`[CMD ERROR] ${sessionId}:`, err);
-        }
+          await cmd.function(conn, mek, m, { from, body, isCmd, command: commandText, sender, senderNumber, sessionId, reply: (text) => conn.sendMessage(from, { text }, { quoted: mek }) });
+        } catch (err) { console.error(err); }
       }
-
-      // ── on:"body" handlers (auto-voice, auto-typing, auto-recording etc.) ──
-      const bodyHandlers = events.commands.filter(c => c.on === "body");
-      for (const handler of bodyHandlers) {
-        try {
-          await handler.function(conn, mek, m, { from, body, isCmd, command: commandText, args, q, sender, senderNumber, botNumber, isOwner, reply, sessionId });
-        } catch (err) {
-          // silent fail — don't crash bot on listener errors
-        }
-      }
-    } catch (err) {
-      if (!err.message?.includes("Bad MAC") && !err.message?.includes("decrypt")) {
-        console.error(`[MSG ERROR] ${sessionId}:`, err.message);
-      }
-    }
+      
+    } catch (err) { console.error(err); }
   });
 }
 
 // ================= Express Server =================
-const app  = express();
-const port = process.env.PORT || 8000;
-app.get("/", (req, res) => res.send(`💎 SHAVIYA-XMD V2 is Running ✅ | Active sessions: ${activeSessions.size}`));
-app.listen(port, () => console.log(`🚀 SHAVIYA-XMD V2 Server running on port ${port}`));
-
-// ================= Plugin Loader =================
-function loadPlugins() {
-  if (global._pluginsLoaded) return;
-  global._pluginsLoaded = true;
-  try { delete require.cache[require.resolve("./command")]; } catch {}
-  const pluginFolder = "./plugins/";
-  let loadedCount = 0;
-  if (fs.existsSync(pluginFolder)) {
-    fs.readdirSync(pluginFolder).forEach(plugin => {
-      if (path.extname(plugin).toLowerCase() === ".js") {
-        try {
-          delete require.cache[require.resolve(pluginFolder + plugin)];
-          require(pluginFolder + plugin);
-          loadedCount++;
-        } catch (e) { console.log(`Plugin load error [${plugin}]:`, e.message); }
-      }
-    });
-  }
-  console.log(`✅ Loaded ${loadedCount} plugins, ${require("./command").commands.length} commands`);
-
-  if (typeof global.attachCinesubzListener === 'function') {
-    for (const [sessionId, conn] of global._activeConns || []) {
-      try {
-        global.attachCinesubzListener(conn, sessionId);
-        console.log(`[CINESUBZ] Listener attached for session: ${sessionId}`);
-      } catch (e) {}
-    }
-  }
-}
-
-// ================= Main Connector =================
-async function connectToWA() {
-  try {
-    const envConfig = config;
-    const sessions = loadLocalSessions();
-    if (sessions.length === 0) {
-      console.log("No sessions found in auth_info_baileys.");
-      console.log("→ Set SESSION_ID in .env (base64 creds or MEGA link) and restart.");
-      return;
-    }
-    await Promise.all(sessions.map(s => startBot(s.sessionId, s.authPath, envConfig)));
-    console.log(`✅ Started ${sessions.length} session(s).`);
-    setTimeout(() => loadPlugins(), 8000);
-  } catch (err) {
-    console.error("Startup Error:", err);
-  }
-}
+const app = express();
+app.get("/", (req, res) => res.send(`SHAVIYA-XMD V2 Running`));
+app.listen(process.env.PORT || 8000);
 
 // ================= START =================
 setTimeout(async () => {
   await ensureBotFiles();
   try {
-    sms        = require("./lib/msg").sms;
+    sms = require("./lib/msg").sms;
     antidelete = require("./plugins/antidelete");
-    try { handleAutoForward = require("./plugins/forward").handleAutoForward; } catch {}
-    console.log("Lib modules loaded successfully.");
-  } catch (e) {
-    console.error("Lib load error:", e.message);
-    process.exit(1);
-  }
+    handleAutoForward = require("./plugins/forward").handleAutoForward;
+  } catch (e) {}
   await connectDB();
   await loadSettingsFromDB();
-  // Force-disable removed features (clears any saved MongoDB/JSON value)
-  try {
-    const { setSetting } = require("./lib/settings");
-    setSetting("alwaysOnline",  false);
-  } catch {}
-  await connectToWA();
+  
+  const sessions = loadLocalSessions();
+  for(const s of sessions) {
+      await startBot(s.sessionId, s.authPath, config);
+  }
+  
+  // Load Plugins
+  setTimeout(() => {
+      const pluginFolder = "./plugins/";
+      fs.readdirSync(pluginFolder).forEach(plugin => {
+          if (path.extname(plugin).toLowerCase() === ".js") {
+              try { require(pluginFolder + plugin); } catch (e) {}
+          }
+      });
+      console.log("✅ Plugins Loaded");
+  }, 5000);
+  
 }, 4000);
