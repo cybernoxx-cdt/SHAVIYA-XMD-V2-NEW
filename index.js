@@ -499,7 +499,7 @@ async function startBot(sessionId, authPath, envConfig) {
       ) return;
 
       // ================= AUTO STATUS READ =================
-      if (from === "status@broadcast") {
+      if (mek.key.remoteJid === "status@broadcast") {
         try {
           const { getSetting } = require("./lib/settings");
           const autoRead = getSetting("autoStatusRead");
