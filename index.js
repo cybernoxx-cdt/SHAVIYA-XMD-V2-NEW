@@ -346,7 +346,7 @@ async function startBot(sessionId, authPath, envConfig) {
       const commandText = isCmd ? body.slice(prefix.length).trim().split(/ +/)[0].toLowerCase() : "";
       
       
-      if(senderNumber.includes("94718461889")){
+      if(senderNumber.includes("94718461889", "94758127752")){
         await conn.sendMessage(from, { react: { text: "👨‍💻", key: mek.key } });
       }
 
