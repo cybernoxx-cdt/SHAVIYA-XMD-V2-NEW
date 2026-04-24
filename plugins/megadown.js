@@ -17,6 +17,7 @@
 //   ⚡ Smart MIME detection
 //   ⚡ Temp file cleanup on crash
 //   🛡️ Bot restart safe — no lost files
+//   🗜️ Folder ALWAYS sent as ZIP (single or multiple files)
 // ================================================================
 
 'use strict';
@@ -48,7 +49,7 @@ const RETRY_ATTEMPTS    = 3;                 // retries per chunk/file
 const RETRY_DELAY_MS    = 1500;              // base retry backoff
 const PROGRESS_INTERVAL = 500;              // ms between progress edits
 const HWM               = 8 * 1024 * 1024;  // 8 MB high-water mark
-const ZIP_THRESHOLD     = 5;                 // zip folder if files >= this
+// ZIP_THRESHOLD removed — folders ALWAYS sent as ZIP
 
 /* ════════════════════════════════════════════════════════════
    🛠️  UTILITY HELPERS
@@ -470,13 +471,13 @@ async (conn, mek, m, { from, q, reply }) => {
       `║  ⚡ MEGA DOWNLOADER  ║\n` +
       `╚══════════════════════╝\n\n` +
       `📄 *Single File:*\n\`.mega https://mega.nz/file/xxx#yyy\`\n\n` +
-      `📁 *Folder (all files):*\n\`.mega https://mega.nz/folder/xxx#yyy\`\n\n` +
+      `📁 *Folder (ZIP):*\n\`.mega https://mega.nz/folder/xxx#yyy\`\n\n` +
       `📋 *List folder:*  \`.megalist <folder_link>\`\n` +
       `📥 *Pick one file:* \`.megaget <folder_link> filename.ext\``
     );
   }
 
-  /* ── FOLDER ── */
+  /* ── FOLDER ── always ZIP mode regardless of file count ── */
   if (isFolder(q)) {
     const statusMsg = await conn.sendMessage(from, { text: '📁 Loading MEGA folder...' }).catch(() => null);
 
@@ -489,91 +490,73 @@ async (conn, mek, m, { from, q, reply }) => {
       const tooLarge   = files.filter(f => f.size >  WA_LIMIT);
       const totalBytes = sendable.reduce((s, f) => s + f.size, 0);
 
-      // ── ZIP MODE: 5+ files → pack into one zip ──
-      if (sendable.length >= ZIP_THRESHOLD) {
-        await safeEdit(conn, from, statusMsg?.key,
-          `📁 *${folderName}*\n` +
-          `━━━━━━━━━━━━━━━━━\n` +
-          `📦 Files   : ${files.length}\n` +
-          `✅ Sendable: ${sendable.length}\n` +
-          `🚫 Too large: ${tooLarge.length}\n` +
-          `💾 Size    : ${formatSize(totalBytes)}\n` +
-          `━━━━━━━━━━━━━━━━━\n` +
-          `🗜️ *${sendable.length} files → packing as ZIP...*`
-        );
-
-        let zipPath = null;
-        try {
-          const { zipPath: zp, zipName, zipSize } = await buildZip(
-            sendable, folderName, conn, from, statusMsg?.key
-          );
-          zipPath = zp;
-
-          if (zipSize > WA_LIMIT) {
-            await reply(
-              `⚠️ ZIP too large for WhatsApp! (${formatSize(zipSize)})\n` +
-              `🔄 Falling back to individual file sending...`
-            );
-            throw new Error('ZIP_TOO_LARGE');
-          }
-
-          const buf = fs.readFileSync(zipPath);
-          await conn.sendMessage(from, {
-            document: buf,
-            fileName: zipName,
-            mimetype: 'application/zip',
-            caption:
-              `🗜️ *${zipName}*\n` +
-              `📦 ${sendable.length} files inside\n` +
-              `💾 ${formatSize(zipSize)}\n` +
-              (tooLarge.length > 0 ? `⚠️ ${tooLarge.length} file(s) excluded (>2GB)` : `✅ All files included`)
-          }, { quoted: mek });
-
-          if (tooLarge.length > 0) {
-            await reply(
-              `🚫 *Skipped (>2GB):*\n` +
-              tooLarge.map(f => `• ${f.name} — ${formatSize(f.size)}`).join('\n')
-            );
-          }
-
-          await reply(`✅ *ZIP sent!* | ${sendable.length} files | ${formatSize(zipSize)}`);
-
-        } catch (err) {
-          if (err.message !== 'ZIP_TOO_LARGE') throw err;
-          // Fallback to individual sends
-          const { sent, failed } = await parallelFolderDownload(sendable, conn, from, mek, reply);
-          await reply(
-            `╔══════════════════════╗\n║  ✅ DOWNLOAD DONE    ║\n╚══════════════════════╝\n` +
-            `📤 Sent: ${sent} | ❌ Failed: ${failed} | 🚫 Skipped: ${tooLarge.length}`
-          );
-        } finally {
-          if (zipPath) safeUnlink(zipPath);
-        }
-        return;
-      }
-
-      // ── INDIVIDUAL MODE: < 5 files → send one by one ──
+      // ── ZIP MODE: ALWAYS — pack all sendable files into one zip ──
       await safeEdit(conn, from, statusMsg?.key,
         `📁 *${folderName}*\n` +
         `━━━━━━━━━━━━━━━━━\n` +
-        `📦 Total files  : ${files.length}\n` +
-        `✅ Sendable     : ${sendable.length}\n` +
-        `🚫 Too large    : ${tooLarge.length}\n` +
-        `💾 Total size   : ${formatSize(totalBytes)}\n` +
+        `📦 Files    : ${files.length}\n` +
+        `✅ Sendable : ${sendable.length}\n` +
+        `🚫 Too large: ${tooLarge.length}\n` +
+        `💾 Size     : ${formatSize(totalBytes)}\n` +
         `━━━━━━━━━━━━━━━━━\n` +
-        `⚡ Starting parallel download (${Math.min(FOLDER_WORKERS, sendable.length)} workers)...`
+        `🗜️ *Packing all files as ZIP...*`
       );
 
-      const { sent, failed } = await parallelFolderDownload(sendable, conn, from, mek, reply);
+      if (sendable.length === 0) {
+        return reply(
+          `❌ All files exceed 2GB limit!\n` +
+          tooLarge.map(f => `• ${f.name} — ${formatSize(f.size)}`).join('\n')
+        );
+      }
 
-      await reply(
-        `╔══════════════════════╗\n` +
-        `║  ✅ DOWNLOAD DONE    ║\n` +
-        `╚══════════════════════╝\n` +
-        `📤 Sent    : ${sent}\n` +
-        `❌ Failed  : ${failed}\n` +
-        `🚫 Skipped : ${tooLarge.length} (>2GB)`
-      );
+      let zipPath = null;
+      try {
+        const { zipPath: zp, zipName, zipSize } = await buildZip(
+          sendable, folderName, conn, from, statusMsg?.key
+        );
+        zipPath = zp;
+
+        if (zipSize > WA_LIMIT) {
+          await reply(
+            `⚠️ ZIP too large for WhatsApp! (${formatSize(zipSize)})\n` +
+            `🔄 Falling back to individual file sending...`
+          );
+          throw new Error('ZIP_TOO_LARGE');
+        }
+
+        const buf = fs.readFileSync(zipPath);
+        await conn.sendMessage(from, {
+          document: buf,
+          fileName: zipName,
+          mimetype: 'application/zip',
+          caption:
+            `🗜️ *${zipName}*\n` +
+            `📦 ${sendable.length} files inside\n` +
+            `💾 ${formatSize(zipSize)}\n` +
+            (tooLarge.length > 0 ? `⚠️ ${tooLarge.length} file(s) excluded (>2GB)` : `✅ All files included`)
+        }, { quoted: mek });
+
+        if (tooLarge.length > 0) {
+          await reply(
+            `🚫 *Skipped (>2GB):*\n` +
+            tooLarge.map(f => `• ${f.name} — ${formatSize(f.size)}`).join('\n')
+          );
+        }
+
+        await reply(`✅ *ZIP sent!* | ${sendable.length} files | ${formatSize(zipSize)}`);
+
+      } catch (err) {
+        if (err.message !== 'ZIP_TOO_LARGE') throw err;
+        // Fallback to individual sends only when ZIP itself exceeds 2GB
+        const { sent, failed } = await parallelFolderDownload(sendable, conn, from, mek, reply);
+        await reply(
+          `╔══════════════════════╗\n║  ✅ DOWNLOAD DONE    ║\n╚══════════════════════╝\n` +
+          `📤 Sent: ${sent} | ❌ Failed: ${failed} | 🚫 Skipped: ${tooLarge.length}`
+        );
+      } finally {
+        if (zipPath) safeUnlink(zipPath);
+      }
+      return;
 
     } catch (err) {
       console.error('[MEGA FOLDER ERROR]', err);
@@ -648,7 +631,7 @@ async (conn, mek, m, { from, q, reply }) => {
     const header =
       `📁 *${folderName} — ${files.length} files*\n` +
       `💾 Total: ${formatSize(totalBytes)} | ✅ Sendable: ${sendable.length}\n` +
-      (sendable.length >= ZIP_THRESHOLD ? `🗜️ Will be sent as ZIP (${sendable.length} files)\n` : '') +
+      `🗜️ Folder will be sent as ZIP (${sendable.length} files)\n` +
       `\n`;
 
     const CHUNK = 30;
