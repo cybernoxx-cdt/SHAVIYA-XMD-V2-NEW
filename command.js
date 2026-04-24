@@ -22,6 +22,30 @@ function cmd(info, func) {
     if (!data.fromMe) data.fromMe = false;
     if (!info.category) data.category = 'misc';
     if (!info.filename) data.filename = "Not Provided";
+
+    // ✅ DUPLICATE PREVENTION: same pattern already registered naa kiyala check karanna
+    const patternStr = data.pattern instanceof RegExp
+        ? data.pattern.toString()
+        : String(data.pattern || '');
+
+    const isDuplicate = commands.some(existing => {
+        const existingStr = existing.pattern instanceof RegExp
+            ? existing.pattern.toString()
+            : String(existing.pattern || '');
+        return existingStr === patternStr && patternStr !== '';
+    });
+
+    if (isDuplicate) {
+        // Existing registration overwrite karanna (hot-reload safe)
+        const idx = commands.findIndex(existing => {
+            const existingStr = existing.pattern instanceof RegExp
+                ? existing.pattern.toString()
+                : String(existing.pattern || '');
+            return existingStr === patternStr;
+        });
+        if (idx !== -1) commands.splice(idx, 1);
+    }
+
     commands.push(data);
     return data;
 }
