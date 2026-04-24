@@ -1,7 +1,7 @@
 const { cmd } = require("../command");
 const axios = require("axios");
 
-const DK_FOOTER = Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️";
+const DK_FOOTER = "Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️";
 const DK_BASE = "https://dinka-mu.vercel.app";
 const DK_HANDLER = "https://dinka-mu.vercel.app/api/handler";
 const SRIHUB_BYPASS = "https://api.srihub.store/download/gdrive";
