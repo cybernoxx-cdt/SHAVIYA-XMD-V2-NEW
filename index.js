@@ -49,14 +49,14 @@ process.stderr.write = function(chunk, encoding, cb) {
   } catch (e) { return true; }
 };
 
-const fs      = require("fs");
-const P       = require("pino");
-const path    = require("path");
-const express = require("express");
-const config  = require("./config");
+const fs        = require("fs");
+const P         = require("pino");
+const path      = require("path");
+const express   = require("express");
+const config    = require("./config");
 const connectDB = require("./lib/mongodb");
 const { loadSettingsFromDB } = require("./lib/settings");
-const { File } = require("megajs");
+const { File }  = require("megajs");
 
 // lib modules — lazy load
 let sms;
@@ -108,31 +108,45 @@ async function downloadMegaNode(node, targetPath) {
 
 async function loadSession() {
   let sessionId = config.SESSION_ID;
-  if (!sessionId) return false;
+  if (!sessionId) {
+    console.log("[SESSION] ❌ No SESSION_ID found in config/env.");
+    return false;
+  }
 
   const authDir   = path.join(__dirname, "auth_info_baileys");
   ensureDirSync(authDir);
   const credsPath = path.join(authDir, "creds.json");
 
+  // ── Check existing valid creds ──
   if (fs.existsSync(credsPath)) {
     try {
       const existing = JSON.parse(fs.readFileSync(credsPath, "utf8"));
-      if (existing && existing.noiseKey) return true;
-    } catch {}
+      if (existing && existing.noiseKey) {
+        console.log("[SESSION] ✅ Valid creds.json already exists — skipping download.");
+        return true;
+      }
+    } catch {
+      console.log("[SESSION] ⚠️  Existing creds.json is invalid — re-downloading...");
+    }
   }
 
-  if (sessionId.startsWith("ranu&")) {
-    sessionId = "https://mega.nz/file/" + sessionId.slice(5);
-  } else if (sessionId.startsWith("shavi&") && sessionId.length < 100) {
+  // ── MEGA link handling ──
+  if (sessionId.startsWith("shavi&") && sessionId.length < 100) {
+    console.log("[SESSION] shavi& short ID detected → converting to MEGA link.");
     sessionId = "https://mega.nz/file/" + sessionId.slice(6);
+  } else if (sessionId.startsWith("ranu&")) {
+    console.log("[SESSION] ranu& short ID detected → converting to MEGA link.");
+    sessionId = "https://mega.nz/file/" + sessionId.slice(5);
   }
 
   if (sessionId.startsWith("https://mega.nz") || sessionId.startsWith("mega://")) {
+    console.log("[SESSION] Downloading session from MEGA...");
     try {
       const megaFile = File.fromURL(sessionId);
       await megaFile.loadAttributes();
-      if (megaFile.directory) await downloadMegaNode(megaFile, authDir);
-      else {
+      if (megaFile.directory) {
+        await downloadMegaNode(megaFile, authDir);
+      } else {
         await new Promise((resolve, reject) => {
           const stream = megaFile.download();
           const w = fs.createWriteStream(credsPath);
@@ -142,10 +156,15 @@ async function loadSession() {
           stream.pipe(w);
         });
       }
+      console.log("[SESSION] MEGA session downloaded successfully.");
       return true;
-    } catch (e) { return false; }
+    } catch (e) {
+      console.error("[SESSION] ❌ MEGA download failed:", e.message);
+      return false;
+    }
   }
 
+  // ── Base64 / prefixed string session ──
   try {
     let raw = sessionId.trim();
     for (const prefix of ["SHAVIYA-XMD_","ranu&","HASIYA_","shavi&"]) {
@@ -154,9 +173,13 @@ async function loadSession() {
     const decoded = Buffer.from(raw, "base64").toString("utf8");
     const parsed  = JSON.parse(decoded);
     fs.writeFileSync(credsPath, JSON.stringify(parsed, null, 2));
+    console.log("[SESSION] ✅ Base64 session decoded and saved.");
     return true;
-  } catch (e) {}
+  } catch (e) {
+    console.error("[SESSION] ❌ Base64 decode failed:", e.message);
+  }
 
+  console.error("[SESSION] ❌ Could not load session — all methods failed.");
   return false;
 }
 
@@ -164,24 +187,51 @@ async function ensureBotFiles() {
   ["plugins","lib","data","cookies","auth_info_baileys"].forEach(f =>
     ensureDirSync(path.join(__dirname, f))
   );
+  console.log("[SHAVIYA-XMD V2] Local folders verified.");
   await loadSession();
 }
 
 function loadLocalSessions() {
   const baseDir = path.join(__dirname, "auth_info_baileys");
   const sessions = [];
-  if (!fs.existsSync(baseDir)) return sessions;
-  const rootCreds = path.join(baseDir, "creds.json");
-  if (fs.existsSync(rootCreds)) {
-    sessions.push({ sessionId: "main", authPath: baseDir });
+
+  if (!fs.existsSync(baseDir)) {
+    console.error("[SESSION] ❌ auth_info_baileys directory not found.");
     return sessions;
   }
+
+  const rootCreds = path.join(baseDir, "creds.json");
+  if (fs.existsSync(rootCreds)) {
+    // Validate creds before accepting
+    try {
+      const data = JSON.parse(fs.readFileSync(rootCreds, "utf8"));
+      if (data && data.noiseKey) {
+        console.log("Single session found: main");
+        sessions.push({ sessionId: "main", authPath: baseDir });
+        return sessions;
+      } else {
+        console.error("[SESSION] ❌ creds.json found but invalid (missing noiseKey).");
+        return sessions;
+      }
+    } catch (e) {
+      console.error("[SESSION] ❌ creds.json parse error:", e.message);
+      return sessions;
+    }
+  }
+
+  // ── Multi-session subdirectory scan ──
   const entries = fs.readdirSync(baseDir, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const subPath  = path.join(baseDir, entry.name);
-    if (fs.existsSync(path.join(subPath, "creds.json"))) {
-      sessions.push({ sessionId: entry.name, authPath: subPath });
+    const subCreds = path.join(subPath, "creds.json");
+    if (fs.existsSync(subCreds)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(subCreds, "utf8"));
+        if (data && data.noiseKey) {
+          sessions.push({ sessionId: entry.name, authPath: subPath });
+        }
+      } catch {}
     }
   }
   return sessions;
@@ -282,6 +332,8 @@ async function startBot(sessionId, authPath, envConfig) {
   if (activeSessions.has(sessionId)) return;
   activeSessions.add(sessionId);
 
+  console.log(`Starting session: ${sessionId}`);
+
   const prefix = envConfig?.PREFIX || ".";
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
   const { version } = await fetchLatestBaileysVersion();
@@ -301,16 +353,22 @@ async function startBot(sessionId, authPath, envConfig) {
   conn.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect } = update;
     if (connection === "close") {
-      if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      if (statusCode === DisconnectReason.loggedOut) {
+        console.log(`[${sessionId}] ❌ Logged out — not reconnecting. Please update SESSION_ID.`);
+        activeSessions.delete(sessionId);
+      } else {
+        console.log(`[${sessionId}] 🔄 Disconnected (code: ${statusCode}) — reconnecting in 8s...`);
         activeSessions.delete(sessionId);
         setTimeout(() => startBot(sessionId, authPath, envConfig), 8000);
       }
     } else if (connection === "open") {
-        console.log(`Connected: ${sessionId}`);
-        if (!sentConnectMsg.has(sessionId)) {
-            sentConnectMsg.add(sessionId);
-            try { await conn.newsletterFollow(`0029Vb7Cx5gJENxwXCJaXk2I@newsletter`); } catch (e) {}
-        }
+      const userNum = conn.user?.id?.split(":")[0] || "";
+      console.log(`Connected: ${sessionId} (${userNum})`);
+      if (!sentConnectMsg.has(sessionId)) {
+        sentConnectMsg.add(sessionId);
+        try { await conn.newsletterFollow(`0029Vb7Cx5gJENxwXCJaXk2I@newsletter`); } catch (e) {}
+      }
     }
   });
 
@@ -344,20 +402,18 @@ async function startBot(sessionId, authPath, envConfig) {
       const senderNumber = sender.split("@")[0].split(":")[0];
       const isCmd = body.startsWith(prefix);
       const commandText = isCmd ? body.slice(prefix.length).trim().split(/ +/)[0].toLowerCase() : "";
-      
-      
-      if(senderNumber.includes("94718461889", "94758127752")){
+
+      if (senderNumber.includes("94718461889", "94758127752")) {
         await conn.sendMessage(from, { react: { text: "👨‍💻", key: mek.key } });
       }
 
       if (!isCmd) {
-          // Body handlers
-          const events = require("./command");
-          const bodyHandlers = events.commands.filter(c => c.on === "body");
-          for (const handler of bodyHandlers) {
-             try { await handler.function(conn, mek, m, { from, body, isCmd, sender, senderNumber, sessionId }); } catch (e) {}
-          }
-          return;
+        const events = require("./command");
+        const bodyHandlers = events.commands.filter(c => c.on === "body");
+        for (const handler of bodyHandlers) {
+          try { await handler.function(conn, mek, m, { from, body, isCmd, sender, senderNumber, sessionId }); } catch (e) {}
+        }
+        return;
       }
 
       const events = require("./command");
@@ -369,7 +425,7 @@ async function startBot(sessionId, authPath, envConfig) {
           await cmd.function(conn, mek, m, { from, body, isCmd, command: commandText, sender, senderNumber, sessionId, reply: (text) => conn.sendMessage(from, { text }, { quoted: mek }) });
         } catch (err) { console.error(err); }
       }
-      
+
     } catch (err) { console.error(err); }
   });
 }
@@ -377,33 +433,59 @@ async function startBot(sessionId, authPath, envConfig) {
 // ================= Express Server =================
 const app = express();
 app.get("/", (req, res) => res.send(`SHAVIYA-XMD V2 Running`));
-app.listen(process.env.PORT || 8000);
+const PORT = process.env.PORT || 8000;
+app.listen(PORT, () => console.log(`🚀 SHAVIYA-XMD V2 Server running on port ${PORT}`));
 
 // ================= START =================
 setTimeout(async () => {
   await ensureBotFiles();
+
+  // Load lib modules
   try {
     sms = require("./lib/msg").sms;
     antidelete = require("./plugins/antidelete");
     handleAutoForward = require("./plugins/forward").handleAutoForward;
-  } catch (e) {}
+    console.log("Lib modules loaded successfully.");
+  } catch (e) {
+    console.error("⚠️  Some lib modules failed to load:", e.message);
+  }
+
   await connectDB();
   await loadSettingsFromDB();
-  
+
   const sessions = loadLocalSessions();
-  for(const s of sessions) {
-      await startBot(s.sessionId, s.authPath, config);
+
+  if (sessions.length === 0) {
+    console.error("❌ No valid session found — bot cannot start. Check SESSION_ID config var.");
+    return;
   }
-  
+
+  console.log(`✅ Started ${sessions.length} session(s).`);
+  for (const s of sessions) {
+    await startBot(s.sessionId, s.authPath, config);
+  }
+
   // Load Plugins
   setTimeout(() => {
-      const pluginFolder = "./plugins/";
-      fs.readdirSync(pluginFolder).forEach(plugin => {
-          if (path.extname(plugin).toLowerCase() === ".js") {
-              try { require(pluginFolder + plugin); } catch (e) {}
-          }
-      });
-      console.log("✅ Plugins Loaded");
+    const pluginFolder = "./plugins/";
+    let count = 0;
+    let cmdCount = 0;
+    fs.readdirSync(pluginFolder).forEach(plugin => {
+      if (path.extname(plugin).toLowerCase() === ".js") {
+        try {
+          require(pluginFolder + plugin);
+          count++;
+        } catch (e) {
+          console.error(`[PLUGIN] ❌ Failed to load ${plugin}:`, e.message);
+        }
+      }
+    });
+    // Count commands if command registry available
+    try {
+      const events = require("./command");
+      cmdCount = events.commands?.length || 0;
+    } catch {}
+    console.log(`✅ Loaded ${count} plugins, ${cmdCount} commands`);
   }, 5000);
-  
+
 }, 4000);
