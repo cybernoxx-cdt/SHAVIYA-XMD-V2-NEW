@@ -124,7 +124,7 @@ async (conn, mek, m, { from, isOwner, args, reply }) => {
 
     if (!isOwner) return reply(
         `╔══════════════════════╗\n` +
-        `║   ⛔  ACCESS DENIED  ║\n` +
+        `║    ⛔  ACCESS DENIED     ║\n` +
         `╚══════════════════════╝\n\n` +
         `This command is *owner only*.`
     );
@@ -167,7 +167,7 @@ async (conn, mek, m, { from, isOwner, args, reply }) => {
             await conn.sendMessage(from, {
                 text:
                     `╔══════════════════════════════╗\n` +
-                    `║  🔄  *SHAVIYA-XMD V2 UPDATE*  ║\n` +
+                    `║    🔄  *SHAVIYA-XMD V2 UPDATE*    ║\n` +
                     `╚══════════════════════════════╝\n\n` +
                     `📦 *Repo:* ${GH_OWNER}/${GH_REPO}\n` +
                     `🌿 *Branch:* ${GH_BRANCH}\n` +
@@ -217,7 +217,7 @@ async (conn, mek, m, { from, isOwner, args, reply }) => {
             await conn.sendMessage(from, {
                 text:
                     `╔════════════════════════════════╗\n` +
-                    `║  🚀  *HEROKU REDEPLOY STARTED*  ║\n` +
+                    `║    🚀  *HEROKU REDEPLOY STARTED*     ║\n` +
                     `╚════════════════════════════════╝\n\n` +
                     `📦 *Repo:* ${GH_OWNER}/${GH_REPO}\n` +
                     `🌿 *Branch:* ${GH_BRANCH}\n` +
@@ -244,7 +244,7 @@ async (conn, mek, m, { from, isOwner, args, reply }) => {
                             await conn.sendMessage(from, {
                                 text:
                                     `╔══════════════════════════════╗\n` +
-                                    `║  ✅  *DEPLOY SUCCESSFUL!*     ║\n` +
+                                    `║     ✅  *DEPLOY SUCCESSFUL!*      ║\n` +
                                     `╚══════════════════════════════╝\n\n` +
                                     `🔖 *Deployed:* \`${latestSHA.substring(0, 7)}\`\n` +
                                     `🏗️ *Build:* \`${buildId.substring(0, 8)}\`\n` +
@@ -258,7 +258,7 @@ async (conn, mek, m, { from, isOwner, args, reply }) => {
                             await conn.sendMessage(from, {
                                 text:
                                     `╔══════════════════════╗\n` +
-                                    `║  ❌  *BUILD FAILED!*  ║\n` +
+                                    `║   ❌  *BUILD FAILED!*    ║\n` +
                                     `╚══════════════════════╝\n\n` +
                                     `Check Heroku dashboard for build logs.\n` +
                                     `https://dashboard.heroku.com/apps/${HK_APP}/activity\n\n` +
