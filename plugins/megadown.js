@@ -28,6 +28,14 @@ const os                   = require('os');
 const path                 = require('path');
 const { pipeline }         = require('stream/promises');
 const { PassThrough }      = require('stream');
+const { execSync }         = require('child_process');
+
+// ── Auto-install archiver if missing ──
+try { require.resolve('archiver'); } catch {
+  try { execSync('npm install archiver --save', { stdio: 'inherit' }); } catch {}
+}
+let archiver;
+try { archiver = require('archiver'); } catch { archiver = null; }
 
 /* ════════════════════════════════════════════════════════════
    ⚙️  TUNING CONSTANTS
@@ -39,6 +47,7 @@ const RETRY_ATTEMPTS    = 3;                 // retries per chunk/file
 const RETRY_DELAY_MS    = 1500;              // base retry backoff
 const PROGRESS_INTERVAL = 500;              // ms between progress edits
 const HWM               = 8 * 1024 * 1024;  // 8 MB high-water mark
+const ZIP_THRESHOLD     = 5;                 // zip folder if files >= this
 
 /* ════════════════════════════════════════════════════════════
    🛠️  UTILITY HELPERS
@@ -240,24 +249,36 @@ async function sendFile(conn, from, mek, filePath, name, size) {
 }
 
 /* ════════════════════════════════════════════════════════════
-   📁  FOLDER LOADER
+   📁  FOLDER LOADER — preserves tree structure
 ════════════════════════════════════════════════════════════ */
 async function loadFolder(url) {
   const folder = File.fromURL(url);
   await folder.loadAttributes();
 
   const files = [];
-  function walk(node) {
+
+  // Walk with relative path tracking
+  function walk(node, relDir) {
     if (!node) return;
     if (node.directory) {
-      for (const child of (node.children || [])) walk(child);
+      const sub = relDir ? relDir + '/' + node.name : node.name;
+      for (const child of (node.children || [])) walk(child, sub);
     } else {
+      // attach relative path for zip purposes
+      node._relPath = relDir ? relDir + '/' + node.name : node.name;
       files.push(node);
     }
   }
-  walk(folder);
 
-  // Sort: sendable files first, then by size ascending
+  // If root itself is a directory, walk its children
+  if (folder.directory) {
+    for (const child of (folder.children || [])) walk(child, '');
+  } else {
+    folder._relPath = folder.name;
+    files.push(folder);
+  }
+
+  // Sort: sendable first, then by size ascending
   files.sort((a, b) => {
     const aOk = a.size <= WA_LIMIT ? 0 : 1;
     const bOk = b.size <= WA_LIMIT ? 0 : 1;
@@ -265,15 +286,82 @@ async function loadFolder(url) {
     return a.size - b.size;
   });
 
-  return files;
+  return { files, folderName: folder.name || `mega_folder_${Date.now()}` };
+}
+
+/* ════════════════════════════════════════════════════════════
+   🗜️  ZIP BUILDER — downloads all files into a zip
+════════════════════════════════════════════════════════════ */
+async function buildZip(files, folderName, conn, from, statusKey) {
+  if (!archiver) throw new Error('archiver module not available. Run: npm install archiver');
+
+  const zipName = `${folderName.replace(/[^a-z0-9._-]/gi, '_')}.zip`;
+  const zipPath = tmpPath(zipName);
+
+  const totalSize = files.reduce((s, f) => s + (f.size || 0), 0);
+  let downloaded  = 0;
+  let lastPct     = -1;
+
+  await safeEdit(conn, from, statusKey,
+    `🗜️ *Creating ZIP: ${zipName}*\n` +
+    `📦 ${files.length} files | 💾 ${formatSize(totalSize)}\n` +
+    `[░░░░░░░░░░░░] 0%\n⏬ Downloading & packing...`
+  );
+
+  await new Promise((resolve, reject) => {
+    const output  = fs.createWriteStream(zipPath);
+    const archive = archiver('zip', { zlib: { level: 6 } });
+
+    output.once('close', resolve);
+    archive.once('error', reject);
+    archive.pipe(output);
+
+    // Add files one by one with their relative paths
+    let chain = Promise.resolve();
+    for (const f of files) {
+      chain = chain.then(() => new Promise((res, rej) => {
+        try {
+          const stream = f.download({ highWaterMark: HWM });
+          stream.on('data', chunk => {
+            downloaded += chunk.length;
+            const pct = totalSize > 0 ? Math.min(Math.floor((downloaded / totalSize) * 100), 99) : 0;
+            if (pct !== lastPct) {
+              lastPct = pct;
+              safeEdit(conn, from, statusKey,
+                `🗜️ *Packing: ${zipName}*\n` +
+                `[${progressBar(pct)}] *${pct}%*\n` +
+                `💾 ${formatSize(downloaded)} / ${formatSize(totalSize)}`
+              );
+            }
+          });
+          stream.once('error', rej);
+          // Use _relPath for proper folder structure inside zip
+          archive.append(stream, { name: f._relPath || f.name });
+          stream.once('end', res);
+        } catch (e) { rej(e); }
+      }));
+    }
+
+    chain.then(() => archive.finalize()).catch(reject);
+  });
+
+  await safeEdit(conn, from, statusKey,
+    `🗜️ *ZIP Ready: ${zipName}*\n` +
+    `📦 ${files.length} files packed\n` +
+    `[████████████] *100%*\n` +
+    `📤 Uploading ZIP to WhatsApp...`
+  );
+
+  const stat = fs.statSync(zipPath);
+  return { zipPath, zipName, zipSize: stat.size };
 }
 
 /* ════════════════════════════════════════════════════════════
    🔄  PARALLEL FOLDER DOWNLOAD (pool of N workers)
 ════════════════════════════════════════════════════════════ */
 async function parallelFolderDownload(files, conn, from, mek, reply) {
-  const sendable = files.filter(f => f.size <= WA_LIMIT);
-  const skipped  = files.filter(f => f.size >  WA_LIMIT);
+  const sendable = files; // already filtered by caller
+  const skipped  = [];    // nothing skipped at this point
 
   if (skipped.length > 0) {
     await reply(
@@ -355,17 +443,80 @@ async (conn, mek, m, { from, q, reply }) => {
     const statusMsg = await conn.sendMessage(from, { text: '📁 Loading MEGA folder...' }).catch(() => null);
 
     try {
-      const files = await withRetry(() => loadFolder(q), RETRY_ATTEMPTS, 'loadFolder');
+      const { files, folderName } = await withRetry(() => loadFolder(q), RETRY_ATTEMPTS, 'loadFolder');
 
       if (files.length === 0) return reply('❌ Folder is empty.');
 
-      const sendable = files.filter(f => f.size <= WA_LIMIT);
-      const tooLarge = files.filter(f => f.size >  WA_LIMIT);
+      const sendable   = files.filter(f => f.size <= WA_LIMIT);
+      const tooLarge   = files.filter(f => f.size >  WA_LIMIT);
       const totalBytes = sendable.reduce((s, f) => s + f.size, 0);
 
-      // Show folder summary
+      // ── ZIP MODE: 5+ files → pack into one zip ──
+      if (sendable.length >= ZIP_THRESHOLD) {
+        await safeEdit(conn, from, statusMsg?.key,
+          `📁 *${folderName}*\n` +
+          `━━━━━━━━━━━━━━━━━\n` +
+          `📦 Files   : ${files.length}\n` +
+          `✅ Sendable: ${sendable.length}\n` +
+          `🚫 Too large: ${tooLarge.length}\n` +
+          `💾 Size    : ${formatSize(totalBytes)}\n` +
+          `━━━━━━━━━━━━━━━━━\n` +
+          `🗜️ *${sendable.length} files → packing as ZIP...*`
+        );
+
+        let zipPath = null;
+        try {
+          const { zipPath: zp, zipName, zipSize } = await buildZip(
+            sendable, folderName, conn, from, statusMsg?.key
+          );
+          zipPath = zp;
+
+          if (zipSize > WA_LIMIT) {
+            await reply(
+              `⚠️ ZIP too large for WhatsApp! (${formatSize(zipSize)})\n` +
+              `🔄 Falling back to individual file sending...`
+            );
+            throw new Error('ZIP_TOO_LARGE');
+          }
+
+          const buf = fs.readFileSync(zipPath);
+          await conn.sendMessage(from, {
+            document: buf,
+            fileName: zipName,
+            mimetype: 'application/zip',
+            caption:
+              `🗜️ *${zipName}*\n` +
+              `📦 ${sendable.length} files inside\n` +
+              `💾 ${formatSize(zipSize)}\n` +
+              (tooLarge.length > 0 ? `⚠️ ${tooLarge.length} file(s) excluded (>2GB)` : `✅ All files included`)
+          }, { quoted: mek });
+
+          if (tooLarge.length > 0) {
+            await reply(
+              `🚫 *Skipped (>2GB):*\n` +
+              tooLarge.map(f => `• ${f.name} — ${formatSize(f.size)}`).join('\n')
+            );
+          }
+
+          await reply(`✅ *ZIP sent!* | ${sendable.length} files | ${formatSize(zipSize)}`);
+
+        } catch (err) {
+          if (err.message !== 'ZIP_TOO_LARGE') throw err;
+          // Fallback to individual sends
+          const { sent, failed } = await parallelFolderDownload(sendable, conn, from, mek, reply);
+          await reply(
+            `╔══════════════════════╗\n║  ✅ DOWNLOAD DONE    ║\n╚══════════════════════╝\n` +
+            `📤 Sent: ${sent} | ❌ Failed: ${failed} | 🚫 Skipped: ${tooLarge.length}`
+          );
+        } finally {
+          if (zipPath) safeUnlink(zipPath);
+        }
+        return;
+      }
+
+      // ── INDIVIDUAL MODE: < 5 files → send one by one ──
       await safeEdit(conn, from, statusMsg?.key,
-        `📁 *MEGA Folder*\n` +
+        `📁 *${folderName}*\n` +
         `━━━━━━━━━━━━━━━━━\n` +
         `📦 Total files  : ${files.length}\n` +
         `✅ Sendable     : ${sendable.length}\n` +
@@ -375,7 +526,7 @@ async (conn, mek, m, { from, q, reply }) => {
         `⚡ Starting parallel download (${Math.min(FOLDER_WORKERS, sendable.length)} workers)...`
       );
 
-      const { sent, failed } = await parallelFolderDownload(files, conn, from, mek, reply);
+      const { sent, failed } = await parallelFolderDownload(sendable, conn, from, mek, reply);
 
       await reply(
         `╔══════════════════════╗\n` +
@@ -444,7 +595,7 @@ async (conn, mek, m, { from, q, reply }) => {
 
   try {
     await reply('📁 Loading folder...');
-    const files = await withRetry(() => loadFolder(q), RETRY_ATTEMPTS, 'megalist');
+    const { files, folderName } = await withRetry(() => loadFolder(q), RETRY_ATTEMPTS, 'megalist');
 
     if (files.length === 0) return reply('❌ Folder is empty.');
 
@@ -453,13 +604,14 @@ async (conn, mek, m, { from, q, reply }) => {
 
     const lines = files.map((f, i) => {
       const flag = f.size > WA_LIMIT ? ' 🚫' : ' ✅';
-      return `*${i + 1}.* 📄 ${f.name}\n    📁 ${formatSize(f.size)}${flag}`;
+      return `*${i + 1}.* 📄 ${f._relPath || f.name}\n    📁 ${formatSize(f.size)}${flag}`;
     });
 
-    // WhatsApp has a 65535 char message limit — chunk if needed
     const header =
-      `📁 *MEGA Folder — ${files.length} files*\n` +
-      `💾 Total: ${formatSize(totalBytes)} | ✅ Sendable: ${sendable.length}\n\n`;
+      `📁 *${folderName} — ${files.length} files*\n` +
+      `💾 Total: ${formatSize(totalBytes)} | ✅ Sendable: ${sendable.length}\n` +
+      (sendable.length >= ZIP_THRESHOLD ? `🗜️ Will be sent as ZIP (${sendable.length} files)\n` : '') +
+      `\n`;
 
     const CHUNK = 30;
     for (let i = 0; i < lines.length; i += CHUNK) {
@@ -504,7 +656,7 @@ async (conn, mek, m, { from, q, reply }) => {
   let outPath = null;
   try {
     await reply(`🔍 Searching for *${filename}*...`);
-    const files = await withRetry(() => loadFolder(url), RETRY_ATTEMPTS, 'megaget-load');
+    const { files } = await withRetry(() => loadFolder(url), RETRY_ATTEMPTS, 'megaget-load');
 
     // Fuzzy match: exact first, then partial
     const match =
