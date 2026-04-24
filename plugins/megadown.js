@@ -29,13 +29,14 @@ const path                 = require('path');
 const { pipeline }         = require('stream/promises');
 const { PassThrough }      = require('stream');
 const { execSync }         = require('child_process');
+const zlib                 = require('zlib');
 
-// ── Auto-install archiver if missing ──
-try { require.resolve('archiver'); } catch {
-  try { execSync('npm install archiver --save', { stdio: 'inherit' }); } catch {}
+// ── Auto-install adm-zip (pure JS, no native deps, Heroku safe) ──
+try { require.resolve('adm-zip'); } catch {
+  try { execSync('npm install adm-zip --save', { stdio: 'inherit' }); } catch {}
 }
-let archiver;
-try { archiver = require('archiver'); } catch { archiver = null; }
+let AdmZip;
+try { AdmZip = require('adm-zip'); } catch { AdmZip = null; }
 
 /* ════════════════════════════════════════════════════════════
    ⚙️  TUNING CONSTANTS
@@ -101,9 +102,12 @@ async function withRetry(fn, attempts = RETRY_ATTEMPTS, label = '') {
   throw lastErr;
 }
 
-/** Deterministic temp path */
+/** Deterministic temp path — strips extension to avoid double-ext */
 function tmpPath(name) {
-  return path.join(os.tmpdir(), `shaviya_mega_${Date.now()}_${name.replace(/[^a-z0-9._-]/gi, '_')}`);
+  const ext      = path.extname(name);                          // e.g. ".mp4"
+  const baseName = path.basename(name, ext);                    // e.g. "movie"
+  const safe     = baseName.replace(/[^a-z0-9_-]/gi, '_');
+  return path.join(os.tmpdir(), `shaviya_mega_${Date.now()}_${safe}${ext}`);
 }
 
 /** Detect MIME from extension */
@@ -148,7 +152,7 @@ function safeUnlink(fp) {
  */
 async function ultraDownload(megaFile, conn, from, statusKey, label = '') {
   const total    = megaFile.size  || 0;
-  const name     = megaFile.name  || `mega_${Date.now()}`;
+  const name     = cleanMegaName(megaFile.name || `mega_${Date.now()}`);
   const outPath  = tmpPath(name);
 
   if (total > WA_LIMIT) {
@@ -234,11 +238,26 @@ async function sendFile(conn, from, mek, filePath, name, size) {
   const isAudio = mime.startsWith('audio/');
   const isImage = mime.startsWith('image/');
 
-  // Stream-read to avoid holding entire file in RAM
   const buf = fs.readFileSync(filePath);
 
   if (isVideo) {
-    await conn.sendMessage(from, { video: buf, fileName: name, mimetype: mime, caption: `📦 *${name}*\n📁 ${formatSize(size)}` }, { quoted: mek });
+    try {
+      await conn.sendMessage(from, {
+        video: buf,
+        fileName: name,
+        mimetype: 'video/mp4',
+        caption: `📦 *${name}*\n📁 ${formatSize(size)}`,
+        gifPlayback: false,
+      }, { quoted: mek });
+    } catch {
+      // fallback to document if video send fails
+      await conn.sendMessage(from, {
+        document: buf,
+        fileName: name,
+        mimetype: mime,
+        caption: `📦 *${name}*\n📁 ${formatSize(size)}`,
+      }, { quoted: mek });
+    }
   } else if (isAudio) {
     await conn.sendMessage(from, { audio: buf, fileName: name, mimetype: mime, ptt: false }, { quoted: mek });
   } else if (isImage) {
@@ -289,18 +308,31 @@ async function loadFolder(url) {
   return { files, folderName: folder.name || `mega_folder_${Date.now()}` };
 }
 
+/** Clean up ugly MEGA auto-generated names like document_6143220439343696093.mp4 */
+function cleanMegaName(name) {
+  // document_DIGITS.ext → keep only the extension part with a generic name
+  const m = name.match(/^document_\d+(\.[a-z0-9]+)$/i);
+  if (m) return `file_${Date.now()}${m[1]}`;
+  // remove double extensions e.g. movie.mp4.mp4
+  const parts = name.split('.');
+  if (parts.length > 2 && parts[parts.length - 1] === parts[parts.length - 2]) {
+    parts.pop();
+    return parts.join('.');
+  }
+  return name;
+}
+
 /* ════════════════════════════════════════════════════════════
-   🗜️  ZIP BUILDER — downloads all files into a zip
+   🗜️  ZIP BUILDER — downloads all files into a zip (adm-zip, pure JS)
 ════════════════════════════════════════════════════════════ */
 async function buildZip(files, folderName, conn, from, statusKey) {
-  if (!archiver) throw new Error('archiver module not available. Run: npm install archiver');
+  if (!AdmZip) throw new Error('adm-zip not available. Run: npm install adm-zip');
 
-  const zipName = `${folderName.replace(/[^a-z0-9._-]/gi, '_')}.zip`;
-  const zipPath = tmpPath(zipName);
-
-  const totalSize = files.reduce((s, f) => s + (f.size || 0), 0);
-  let downloaded  = 0;
-  let lastPct     = -1;
+  const zipName    = `${folderName.replace(/[^a-z0-9._-]/gi, '_')}.zip`;
+  const zipOutPath = path.join(os.tmpdir(), `shaviya_zip_${Date.now()}_${zipName}`);
+  const totalSize  = files.reduce((s, f) => s + (f.size || 0), 0);
+  let   downloaded = 0;
+  let   lastPct    = -1;
 
   await safeEdit(conn, from, statusKey,
     `🗜️ *Creating ZIP: ${zipName}*\n` +
@@ -308,42 +340,48 @@ async function buildZip(files, folderName, conn, from, statusKey) {
     `[░░░░░░░░░░░░] 0%\n⏬ Downloading & packing...`
   );
 
-  await new Promise((resolve, reject) => {
-    const output  = fs.createWriteStream(zipPath);
-    const archive = archiver('zip', { zlib: { level: 6 } });
+  const zip = new AdmZip();
 
-    output.once('close', resolve);
-    archive.once('error', reject);
-    archive.pipe(output);
+  // Download each file into memory buffer and add to zip
+  for (let i = 0; i < files.length; i++) {
+    const f       = files[i];
+    const fname   = cleanMegaName(f._relPath || f.name);
 
-    // Add files one by one with their relative paths
-    let chain = Promise.resolve();
-    for (const f of files) {
-      chain = chain.then(() => new Promise((res, rej) => {
-        try {
-          const stream = f.download({ highWaterMark: HWM });
-          stream.on('data', chunk => {
-            downloaded += chunk.length;
-            const pct = totalSize > 0 ? Math.min(Math.floor((downloaded / totalSize) * 100), 99) : 0;
-            if (pct !== lastPct) {
-              lastPct = pct;
-              safeEdit(conn, from, statusKey,
-                `🗜️ *Packing: ${zipName}*\n` +
-                `[${progressBar(pct)}] *${pct}%*\n` +
-                `💾 ${formatSize(downloaded)} / ${formatSize(totalSize)}`
-              );
-            }
-          });
-          stream.once('error', rej);
-          // Use _relPath for proper folder structure inside zip
-          archive.append(stream, { name: f._relPath || f.name });
-          stream.once('end', res);
-        } catch (e) { rej(e); }
-      }));
-    }
+    await safeEdit(conn, from, statusKey,
+      `🗜️ *Packing [${i + 1}/${files.length}]*\n` +
+      `📄 ${f.name}\n` +
+      `💾 ${formatSize(downloaded)} / ${formatSize(totalSize)}`
+    );
 
-    chain.then(() => archive.finalize()).catch(reject);
-  });
+    // Download to temp file first (safer for large files than RAM buffer)
+    const tmpFile = path.join(os.tmpdir(), `shaviya_ziptmp_${Date.now()}_${i}`);
+    await new Promise((resolve, reject) => {
+      const stream = f.download({ highWaterMark: HWM });
+      const w      = fs.createWriteStream(tmpFile);
+      stream.on('data', chunk => {
+        downloaded += chunk.length;
+        const pct = totalSize > 0 ? Math.min(Math.floor((downloaded / totalSize) * 100), 99) : 0;
+        if (pct !== lastPct) {
+          lastPct = pct;
+          safeEdit(conn, from, statusKey,
+            `🗜️ *Packing: ${zipName}*\n` +
+            `[${progressBar(pct)}] *${pct}%*\n` +
+            `📄 ${f.name} [${i + 1}/${files.length}]\n` +
+            `💾 ${formatSize(downloaded)} / ${formatSize(totalSize)}`
+          );
+        }
+      });
+      stream.once('error', reject);
+      w.once('error', reject);
+      w.once('finish', resolve);
+      stream.pipe(w);
+    });
+
+    zip.addLocalFile(tmpFile, '', fname);
+    safeUnlink(tmpFile);
+  }
+
+  zip.writeZip(zipOutPath);
 
   await safeEdit(conn, from, statusKey,
     `🗜️ *ZIP Ready: ${zipName}*\n` +
@@ -352,8 +390,8 @@ async function buildZip(files, folderName, conn, from, statusKey) {
     `📤 Uploading ZIP to WhatsApp...`
   );
 
-  const stat = fs.statSync(zipPath);
-  return { zipPath, zipName, zipSize: stat.size };
+  const stat = fs.statSync(zipOutPath);
+  return { zipPath: zipOutPath, zipName, zipSize: stat.size };
 }
 
 /* ════════════════════════════════════════════════════════════
