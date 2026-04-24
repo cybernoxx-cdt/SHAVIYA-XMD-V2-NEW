@@ -468,7 +468,7 @@ async (conn, mek, m, { from, q, reply }) => {
   if (!q || !q.startsWith('https://mega.nz')) {
     return reply(
       `╔══════════════════════╗\n` +
-      `║  ⚡ MEGA DOWNLOADER  ║\n` +
+      `║   ⚡ MEGA DOWNLOADER     ║\n` +
       `╚══════════════════════╝\n\n` +
       `📄 *Single File:*\n\`.mega https://mega.nz/file/xxx#yyy\`\n\n` +
       `📁 *Folder (ZIP):*\n\`.mega https://mega.nz/folder/xxx#yyy\`\n\n` +
