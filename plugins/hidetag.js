@@ -1,167 +1,114 @@
-// ============================================
-//   HIDETAG + FORWARD PLUGIN
-//   CDT - Crash Delta Team
-//   Compatible: Baileys / gifted-baileys
-// ============================================
+const { cmd } = require('../command');
 
-const config = require('../config');
+// Fixed & Created By JawadTechX
+cmd({
+  pattern: "hidetag",
+  alias: ["tag", "h"],  
+  react: "🔊",
+  desc: "To Tag all Members for Any Message/Media",
+  category: "group",
+  use: '.hidetag Hello',
+  filename: __filename
+},
+async (conn, mek, m, {
+  from, q, isGroup, isCreator, isAdmins,
+  participants, reply
+}) => {
+  try {
+    const isUrl = (url) => {
+      return /https?:\/\/(www\.)?[\w\-@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([\w\-@:%_\+.~#?&//=]*)/.test(url);
+    };
 
-const handler = async (m, { conn, args, usedPrefix, command }) => {
+    if (!isGroup) return reply("❌ This command can only be used in groups.");
+    if (!isCreator) return reply("❌ This command is only for the bot owner.");
 
-    // ── Permission check ──────────────────────────────────────
-    const isOwner =
-        [conn.decodeJid(conn.user.id), ...config.owner].includes(m.sender);
-    const isSudo  = (config.sudo  || []).includes(m.sender);
-    const isAdmin = m.isGroup
-        ? (await conn.groupMetadata(m.chat).catch(() => ({ participants: [] })))
-              .participants
-              .find(p => conn.decodeJid(p.id) === m.sender)
-              ?.admin != null
-        : false;
+    const mentionAll = { mentions: participants.map(u => u.id) };
 
-    if (!isOwner && !isSudo && !isAdmin) {
-        return m.reply(`❌ *Permission Denied!*\nOnly admins/sudo/owner can use this command.`);
+    if (!q && !m.quoted) {
+      return reply("❌ Please provide a message or reply to a message to tag all members.");
     }
 
-    if (!m.isGroup) {
-        return m.reply(`❌ This command only works in *groups*!`);
-    }
+    if (m.quoted) {
+      const type = m.quoted.mtype || '';
+      
+      if (type === 'extendedTextMessage') {
+        return await conn.sendMessage(from, {
+          text: m.quoted.text || 'No message content found.',
+          ...mentionAll
+        }, { quoted: mek });
+      }
 
-    // ── Get group members ─────────────────────────────────────
-    const groupMeta   = await conn.groupMetadata(m.chat);
-    const participants = groupMeta.participants.map(p => p.id);
+      if (['imageMessage', 'videoMessage', 'audioMessage', 'stickerMessage', 'documentMessage'].includes(type)) {
+        try {
+          const buffer = await m.quoted.download?.();
+          if (!buffer) return reply("❌ Failed to download the quoted media.");
 
-    if (participants.length === 0) {
-        return m.reply(`❌ Could not fetch group members.`);
-    }
+          let content;
+          switch (type) {
+            case "imageMessage":
+              content = { image: buffer, caption: m.quoted.text || "📷 Image", ...mentionAll };
+              break;
+            case "videoMessage":
+              content = { 
+                video: buffer, 
+                caption: m.quoted.text || "🎥 Video", 
+                gifPlayback: m.quoted.message?.videoMessage?.gifPlayback || false, 
+                ...mentionAll 
+              };
+              break;
+            case "audioMessage":
+              content = { 
+                audio: buffer, 
+                mimetype: "audio/mp4", 
+                ptt: m.quoted.message?.audioMessage?.ptt || false, 
+                ...mentionAll 
+              };
+              break;
+            case "stickerMessage":
+              content = { sticker: buffer, ...mentionAll };
+              break;
+            case "documentMessage":
+              content = {
+                document: buffer,
+                mimetype: m.quoted.message?.documentMessage?.mimetype || "application/octet-stream",
+                fileName: m.quoted.message?.documentMessage?.fileName || "file",
+                caption: m.quoted.text || "",
+                ...mentionAll
+              };
+              break;
+          }
 
-    // ── Build the message text ────────────────────────────────
-    const text = args.join(' ') || (m.quoted ? m.quoted.text : '');
-
-    if (!text && !m.quoted) {
-        return m.reply(
-            `❓ *Usage:*\n` +
-            `\`${usedPrefix}${command} <message>\`\n` +
-            `or reply to a message with \`${usedPrefix}${command}\``
-        );
-    }
-
-    // ── Hidden @mentions (hidetag) ────────────────────────────
-    const mentions = participants;
-
-    // Build invisible mention string (zero-width spaces between @tags)
-    const hiddenMentions = participants.map(() => '@\u200b').join('');
-
-    const broadcastText = text
-        ? `${text}\n\n${hiddenMentions}`
-        : hiddenMentions;
-
-    // ── Send to GROUP (hidetag broadcast) ─────────────────────
-    await conn.sendMessage(
-        m.chat,
-        {
-            text: broadcastText,
-            mentions: mentions,
-        },
-        { quoted: m }
-    );
-
-    // ── Forward / send to each member's INBOX ─────────────────
-    if (
-        command === 'hidetaginbox' ||
-        command === 'tagallinbox'  ||
-        command === 'fwdinbox'     ||
-        command === 'forwardinbox'
-    ) {
-        let sent = 0, failed = 0;
-
-        for (const jid of participants) {
-            // Skip bots / self
-            if (jid === conn.decodeJid(conn.user.id)) continue;
-
-            try {
-                await conn.sendMessage(jid, {
-                    text: text || '📢 Group announcement',
-                    mentions: [jid],
-                });
-                sent++;
-                // Small delay to avoid rate-limit
-                await delay(400);
-            } catch {
-                failed++;
-            }
+          if (content) {
+            return await conn.sendMessage(from, content, { quoted: mek });
+          }
+        } catch (e) {
+          console.error("Media download/send error:", e);
+          return reply("❌ Failed to process the media. Sending as text instead.");
         }
+      }
 
-        await conn.sendMessage(
-            m.chat,
-            {
-                text:
-                    `✅ *Inbox Forward Complete!*\n` +
-                    `📤 Sent   : ${sent}\n` +
-                    `❌ Failed : ${failed}`,
-            },
-            { quoted: m }
-        );
+      return await conn.sendMessage(from, {
+        text: m.quoted.text || "📨 Message",
+        ...mentionAll
+      }, { quoted: mek });
     }
-};
 
-// ── Helper ────────────────────────────────────────────────────
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+    if (q) {
+      if (isUrl(q)) {
+        return await conn.sendMessage(from, {
+          text: q,
+          ...mentionAll
+        }, { quoted: mek });
+      }
 
-// ── Command registration ──────────────────────────────────────
-handler.command = [
-    // Group hidetag only
-    'hidetag',
-    'everyone',
-    'alltag',
-    'mentionall',
-    'tagmembers',
-    'tageveryone',
-    'hitetag',      // common typo alias
+      await conn.sendMessage(from, {
+        text: q,
+        ...mentionAll
+      }, { quoted: mek });
+    }
 
-    // Group hidetag + forward to inbox
-    'hidetaginbox',
-    'tagallinbox',
-    'fwdinbox',
-    'forwardinbox',
-    'inboxtag',
-    'sendinbox',
-];
-
-handler.help    = ['hidetag <text>', 'tagall <text>', 'hidetaginbox <text>'];
-handler.tags    = ['group', 'admin'];
-handler.group   = true;   // group only
-handler.admin   = false;  // checked manually above (owner/sudo also allowed)
-
-module.exports = handler;
-
-/*
-══════════════════════════════════════════
-  📋 COMMAND LIST
-══════════════════════════════════════════
-
-  ── Hidetag (group broadcast only) ──
-  .hidetag      → Tag all members silently in group
-  .tagall       → Alias
-  .everyone     → Alias
-  .alltag       → Alias
-  .mentionall   → Alias
-  .tagmembers   → Alias
-  .tageveryone  → Alias
-  .hitetag      → Typo-friendly alias
-
-  ── Hidetag + Forward to each DM inbox ──
-  .hidetaginbox → Tag in group + DM every member
-  .tagallinbox  → Alias
-  .fwdinbox     → Alias
-  .forwardinbox → Alias
-  .inboxtag     → Alias
-  .sendinbox    → Alias
-
-  ── Usage ──
-  .tagall Hello everyone!
-  .hidetaginbox Important announcement!
-  (or reply to any message with the command)
-
-══════════════════════════════════════════
-*/
+  } catch (e) {
+    console.error(e);
+    reply(`❌ *Error Occurred !!*\n\n${e.message}`);
+  }
+});
