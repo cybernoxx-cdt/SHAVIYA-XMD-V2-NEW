@@ -9,10 +9,20 @@ const TEMP_DIR = path.resolve(__dirname, "../temp");
 
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
-// ───────── Reply Waiter (button + number reply දෙකම) ─────────
+// ───────── Reply Waiter (button + number reply දෙකම | once-only lock) ─────────
 function waitForReply(conn, from, sender, targetId) {
     return new Promise((resolve) => {
+        let resolved = false; // 🔒 double-trigger lock
+
+        const done = (payload) => {
+            if (resolved) return;   // දෙවෙනි call එනවිට block
+            resolved = true;
+            conn.ev.off("messages.upsert", handler);
+            resolve(payload);
+        };
+
         const handler = (update) => {
+            if (resolved) return;   // async lag නිසා late event block
             const msg = update.messages?.[0];
             if (!msg?.message) return;
             if (msg.key.remoteJid !== from) return;
@@ -45,11 +55,7 @@ function waitForReply(conn, from, sender, targetId) {
                     } catch {}
                 }
 
-                if (text) {
-                    conn.ev.off("messages.upsert", handler);
-                    resolve({ msg, text: text.trim() });
-                    return;
-                }
+                if (text) return done({ msg, text: text.trim() });
             }
 
             // ── Method 2: Button click ──
@@ -61,9 +67,7 @@ function waitForReply(conn, from, sender, targetId) {
                         const btnId = parsed.id || "";
                         const btnCtx = msg.message.interactiveResponseMessage?.contextInfo;
                         if (btnCtx?.stanzaId === targetId || btnId.includes(targetId)) {
-                            conn.ev.off("messages.upsert", handler);
-                            resolve({ msg, text: btnId.trim() });
-                            return;
+                            return done({ msg, text: btnId.trim() });
                         }
                     }
                 } catch {}
@@ -71,7 +75,12 @@ function waitForReply(conn, from, sender, targetId) {
         };
 
         conn.ev.on("messages.upsert", handler);
-        setTimeout(() => { conn.ev.off("messages.upsert", handler); }, 600000);
+        setTimeout(() => {
+            if (!resolved) {
+                resolved = true;
+                conn.ev.off("messages.upsert", handler);
+            }
+        }, 600000);
     });
 }
 
@@ -121,7 +130,7 @@ cmd(
 
       // ── Quality buttons build ──
       const qualityButtons = [];
-      let bodyText = `🔵 *Sʜᴀᴠɪʏᴀ Xᴍᴅ 𝐅𝐁 𝐃𝐋*\n\n🎬 *Title:* ${title}\n\n*╰────────────────⊷*\n`;
+      let bodyText = `🔵 *𝐒𝐇𝐀𝐕𝐈𝐘𝐀-𝐗𝐌𝐃 𝐅𝐁 𝐃𝐋*\n\n🎬 *Title:* ${title}\n\n*╰────────────────⊷*\n`;
 
       if (data.video_hd) {
         qualityButtons.push({ id: "1", text: "1️⃣ HD Video" });
