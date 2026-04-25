@@ -27,13 +27,12 @@ END:VCARD`
 
 cmd({
   pattern: "song2",
-  alias: ["play", "song2"],
+  alias: ["song2", "so"],
   desc: "YouTube Song Downloader (Multi Reply + Voice Note Fixed)",
   category: "download",
   filename: __filename,
 }, async (conn, m, store, { from, quoted, q, reply }) => {
   try {
-    /* ===== QUERY ===== */
     let query = q?.trim();
 
     if (!query && m?.quoted) {
@@ -63,15 +62,15 @@ cmd({
 
     const video = search.videos[0];
 
-    /* ===== API ===== */
-    const api = `https://api-aswin-sparky.koyeb.app/api/downloader/song?search=${encodeURIComponent(
-      video.url
-    )}`;
+    /* ===== ASITHA API + KEY ===== */
+    const api = `https://back.asitha.top/api/ytapi?url=${encodeURIComponent(video.url)}&fo=2&qu=128&apiKey=390f34ac879d9cbad9192a073a9431d6fdc482d79bdd126acee7599905d8e904`;
+
     const { data } = await axios.get(api);
-    if (!data?.status || !data?.data?.url)
+
+    if (!data || !data.downloadData || !data.downloadData.url)
       return reply("*❌ Download error*");
 
-    const songUrl = data.data.url;
+    const songUrl = data.downloadData.url;
 
     /* ===== MENU ===== */
     const sentMsg = await conn.sendMessage(
@@ -93,14 +92,14 @@ cmd({
 2️⃣ Document Type 📁  
 3️⃣ Voice Note Type 🎤  
 
-> © Powered by Sʜᴀᴠɪʏᴀ Xᴍᴅ 〽️`,
+> © Powered by Sʜᴀᴠɪʏᴀ Xᴍᴅ 💐`,
       },
       { quoted: fakevCard }
     );
 
     const messageID = sentMsg.key.id;
 
-    // 🧠 Reply listener
+    // Reply listener
     conn.ev.on("messages.upsert", async (msgData) => {
       const receivedMsg = msgData.messages[0];
       if (!receivedMsg?.message) return;
@@ -112,47 +111,39 @@ cmd({
       if (isReplyToBot) {
         await conn.sendMessage(senderID, { react: { text: '⬇️', key: receivedMsg.key } });
 
-        let mediaMsg;
-
         switch (receivedText.trim()) {
+
           case "1":
             await conn.sendMessage(senderID, { react: { text: '⬆️', key: receivedMsg.key } });
-            mediaMsg = await conn.sendMessage(senderID, {
+            await conn.sendMessage(senderID, {
               audio: { url: songUrl },
               mimetype: "audio/mpeg",
             }, { quoted: receivedMsg });
-            await conn.sendMessage(senderID, { react: { text: '✔️', key: receivedMsg.key } });
             break;
 
           case "2":
             await conn.sendMessage(senderID, { react: { text: '⬆️', key: receivedMsg.key } });
-            
-            const buffer = await axios.get(songUrl, {
-              responseType: "arraybuffer",
-            });
 
-            mediaMsg = await conn.sendMessage(senderID, {
+            const buffer = await axios.get(songUrl, { responseType: "arraybuffer" });
+
+            await conn.sendMessage(senderID, {
               document: buffer.data,
               mimetype: "audio/mpeg",
               fileName: `${video.title.replace(/[\\/:*?"<>|]/g, "")}.mp3`,
             }, { quoted: receivedMsg });
-            
-            await conn.sendMessage(senderID, { react: { text: '✔️', key: receivedMsg.key } });
             break;
 
           case "3":
             await conn.sendMessage(senderID, { react: { text: '⬆️', key: receivedMsg.key } });
-            
+
             const mp3Path = path.join(__dirname, `${Date.now()}.mp3`);
             const opusPath = path.join(__dirname, `${Date.now()}.opus`);
 
-            // Download mp3
             const stream = await axios.get(songUrl, { responseType: "stream" });
             const writer = fs.createWriteStream(mp3Path);
             stream.data.pipe(writer);
             await new Promise(r => writer.on("finish", r));
 
-            // Convert to opus
             await new Promise((resolve, reject) => {
               ffmpeg(mp3Path)
                 .audioCodec("libopus")
@@ -162,28 +153,26 @@ cmd({
                 .on("error", reject);
             });
 
-            mediaMsg = await conn.sendMessage(senderID, {
+            await conn.sendMessage(senderID, {
               audio: fs.readFileSync(opusPath),
               mimetype: "audio/ogg; codecs=opus",
               ptt: true,
             }, { quoted: receivedMsg });
 
-            // Cleanup temp files
             fs.unlinkSync(mp3Path);
             fs.unlinkSync(opusPath);
-            
-            await conn.sendMessage(senderID, { react: { text: '✔️', key: receivedMsg.key } });
             break;
 
           default:
-            await conn.sendMessage(senderID, { react: { text: '😒', key: receivedMsg.key } });
             reply("*❌ Invalid option!*");
         }
+
+        await conn.sendMessage(senderID, { react: { text: '✔️', key: receivedMsg.key } });
       }
     });
 
   } catch (error) {
-    console.error("*Song2 Plugin Error*:", error);
+    console.error("*Error*:", error);
     reply("*Error downloading or sending audio.*");
   }
 });
