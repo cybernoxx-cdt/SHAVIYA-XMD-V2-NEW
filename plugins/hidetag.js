@@ -19,7 +19,8 @@ async (conn, mek, m, {
       return /https?:\/\/(www\.)?[\w\-@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([\w\-@:%_\+.~#?&//=]*)/.test(url);
     };
 
-    if (!isGroup) return reply("❌ This command can only be used in groups.");
+    const isGrp = from.endsWith('@g.us');
+if (!isGrp) return reply("❌ This command can only be used in groups.");
     if (!isCreator) return reply("❌ This command is only for the bot owner.");
 
     const mentionAll = { mentions: participants.map(u => u.id) };
