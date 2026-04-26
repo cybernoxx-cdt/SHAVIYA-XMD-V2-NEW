@@ -21,7 +21,10 @@ async (conn, mek, m, {
 
     const isGrp = from.endsWith('@g.us');
 if (!isGrp) return reply("❌ This command can only be used in groups.");
-    if (!isCreator) return reply("❌ This command is only for the bot owner.");
+    
+    const botOwner = conn.user?.id?.split(':')[0] + '@s.whatsapp.net';
+const sender = m.key?.participant || m.key?.remoteJid;
+if (sender !== botOwner) return reply("❌ This command is only for the bot owner.");
 
     const mentionAll = { mentions: participants.map(u => u.id) };
 
