@@ -1,6 +1,5 @@
 const { cmd } = require('../command');
 
-// Fixed & Created By JawadTechX
 cmd({
   pattern: "hidetag",
   alias: ["tag", "h"],  
@@ -11,8 +10,7 @@ cmd({
   filename: __filename
 },
 async (conn, mek, m, {
-  from, q, isGroup, isAdmins,
-  participants, reply
+  from, q, participants, reply
 }) => {
   try {
     const isUrl = (url) => {
@@ -20,13 +18,13 @@ async (conn, mek, m, {
     };
 
     // Group check
-    const isGrp = from.endsWith('@g.us');
-    if (!isGrp) return reply("❌ This command can only be used in groups.");
+    if (!from.endsWith('@g.us')) return reply("❌ This command can only be used in groups.");
 
-    // Owner check using OWNER_NUMBER from config
-    const ownerNumber = process.env.OWNER_NUMBER + '@s.whatsapp.net';
-    const sender = m.key?.participant || m.key?.remoteJid;
-    if (sender !== ownerNumber) return reply("❌ This command is only for the bot owner.");
+    // Bot owner check (bot connect කරන number)
+    const botJid = conn.user?.id?.replace(/:\d+/, '');
+    const sender = (m.key?.participant || m.key?.remoteJid)?.replace(/:\d+/, '');
+
+    if (sender !== botJid) return reply("❌ This command is only for the bot owner.");
 
     const mentionAll = { mentions: participants.map(u => u.id) };
 
