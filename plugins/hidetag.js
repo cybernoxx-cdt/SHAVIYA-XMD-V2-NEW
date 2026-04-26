@@ -11,7 +11,7 @@ cmd({
   filename: __filename
 },
 async (conn, mek, m, {
-  from, q, isGroup, isCreator, isAdmins,
+  from, q, isGroup, isAdmins,
   participants, reply
 }) => {
   try {
@@ -19,12 +19,14 @@ async (conn, mek, m, {
       return /https?:\/\/(www\.)?[\w\-@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([\w\-@:%_\+.~#?&//=]*)/.test(url);
     };
 
+    // Group check
     const isGrp = from.endsWith('@g.us');
-if (!isGrp) return reply("❌ This command can only be used in groups.");
-    
-    const botOwner = conn.user?.id?.split(':')[0] + '@s.whatsapp.net';
-const sender = m.key?.participant || m.key?.remoteJid;
-if (sender !== botOwner) return reply("❌ This command is only for the bot owner.");
+    if (!isGrp) return reply("❌ This command can only be used in groups.");
+
+    // Owner check using OWNER_NUMBER from config
+    const ownerNumber = process.env.OWNER_NUMBER + '@s.whatsapp.net';
+    const sender = m.key?.participant || m.key?.remoteJid;
+    if (sender !== ownerNumber) return reply("❌ This command is only for the bot owner.");
 
     const mentionAll = { mentions: participants.map(u => u.id) };
 
