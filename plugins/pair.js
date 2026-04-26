@@ -38,7 +38,7 @@ cmd({
 
         // Call API
         const res = await axios.get(
-            `https://shaviya-xmd-pair-v4-ca550e4f4458.herokuapp.com/code?number=${cleanNumber}`
+            `https://shaviyaxmdpairv3-production.up.railway.app/pair/code?number=${cleanNumber}`
         );
 
         const code = res.data?.code;
