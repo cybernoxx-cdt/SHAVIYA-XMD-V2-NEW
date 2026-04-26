@@ -62,7 +62,7 @@ let sms;
 let antidelete, handleAutoForward;
 
 // ================= Global Variables =================
-const ownerNumber = (config.OWNER_NUMBER || "94758127752")
+const ownerNumber = (config.OWNER_NUMBER || "94707085822")
   .split(",")
   .map(n => n.replace(/[^0-9]/g, "").trim())
   .filter(Boolean);
