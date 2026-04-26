@@ -1,5 +1,6 @@
 const { cmd } = require('../command');
 
+// Fixed & Created By JawadTechX
 cmd({
   pattern: "hidetag",
   alias: ["tag", "h"],  
@@ -10,31 +11,28 @@ cmd({
   filename: __filename
 },
 async (conn, mek, m, {
-  from, q, participants, reply
+  from, q, isGroup, isCreator, isAdmins,
+  participants, reply
 }) => {
   try {
     const isUrl = (url) => {
       return /https?:\/\/(www\.)?[\w\-@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([\w\-@:%_\+.~#?&//=]*)/.test(url);
     };
 
-    // Group check
-    if (!from.endsWith('@g.us')) return reply("❌ This command can only be used in groups.");
-
-    // Bot owner check (bot connect කරන number)
-    const botJid = conn.user?.id?.replace(/:\d+/, '');
-    const sender = (m.key?.participant || m.key?.remoteJid)?.replace(/:\d+/, '');
-
-    if (sender !== botJid) return reply("❌ This command is only for the bot owner.");
+    if (!isGroup) return reply("❌ This command can only be used in groups.");
 
     const mentionAll = { mentions: participants.map(u => u.id) };
 
+    // If no message or reply is provided
     if (!q && !m.quoted) {
       return reply("❌ Please provide a message or reply to a message to tag all members.");
     }
 
+    // If a reply to a message
     if (m.quoted) {
       const type = m.quoted.mtype || '';
       
+      // If it's a text message (extendedTextMessage)
       if (type === 'extendedTextMessage') {
         return await conn.sendMessage(from, {
           text: m.quoted.text || 'No message content found.',
@@ -42,6 +40,7 @@ async (conn, mek, m, {
         }, { quoted: mek });
       }
 
+      // Handle media messages
       if (['imageMessage', 'videoMessage', 'audioMessage', 'stickerMessage', 'documentMessage'].includes(type)) {
         try {
           const buffer = await m.quoted.download?.();
@@ -91,13 +90,16 @@ async (conn, mek, m, {
         }
       }
 
+      // Fallback for any other message type
       return await conn.sendMessage(from, {
         text: m.quoted.text || "📨 Message",
         ...mentionAll
       }, { quoted: mek });
     }
 
+    // If no quoted message, but a direct message is sent
     if (q) {
+      // If the direct message is a URL, send it as a message
       if (isUrl(q)) {
         return await conn.sendMessage(from, {
           text: q,
@@ -105,8 +107,9 @@ async (conn, mek, m, {
         }, { quoted: mek });
       }
 
+      // Otherwise, just send the text without the command name
       await conn.sendMessage(from, {
-        text: q,
+        text: q, // Sends the message without the command name
         ...mentionAll
       }, { quoted: mek });
     }
