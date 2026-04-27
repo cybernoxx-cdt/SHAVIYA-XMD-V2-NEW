@@ -380,7 +380,7 @@ async function startBot(sessionId, authPath, envConfig) {
   const conn = makeWASocket({
     logger: P({ level: "silent" }),
     printQRInTerminal: false,
-    browser: Browsers.macOS("Firefox"),
+    browser: Browsers.macOS,
     syncFullHistory: false,
     auth: state,
     version,
