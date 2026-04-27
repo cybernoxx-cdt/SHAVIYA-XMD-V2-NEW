@@ -54,7 +54,7 @@ try {
     stickerFormatterAvailable = true;
     console.log('[sticker] ✅ wa-sticker-formatter loaded');
 } catch (e) {
-    console.warn('[sticker] ⚠️  wa-sticker-formatter not available — using ffmpeg fallback');
+    // wa-sticker-formatter not available — ffmpeg fallback will be used silently
 }
 
 // ── Fake vCard (author watermark) ─────────────────────────────
