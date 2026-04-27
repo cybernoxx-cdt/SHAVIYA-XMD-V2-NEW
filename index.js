@@ -455,21 +455,21 @@ async function startBot(sessionId, authPath, envConfig) {
       .ᴀʟɪᴠᴇ 💗
 
 ✦ ──────────────────── ✦
-> 🌟 *𝗣𝗢𝗪𝗘𝗥𝗘𝗗 𝗕𝗬 𝗖𝗗𝗧* 💐
+> 🌟 *Pᴏᴡᴇʀᴅ Bʏ Sʜᴀᴠɪʏᴀ* 💐
 ✦ ──────────────────── ✦`;
 
         try {
           await conn.sendMessage(
             ownerNumber[0] + "@s.whatsapp.net",
             {
-              image: { url: "https://files.catbox.moe/z2hr0o.jpg" },
+              image: { url: "https://whiteshadow-uploader.vercel.app/files/cui.jpg" },
               caption: upMsg,
               contextInfo: {
                 forwardingScore: 999,
                 isForwarded: true,
                 forwardedNewsletterMessageInfo: {
                   newsletterJid: 'shavi%',
-                  newsletterName: "💫 SHAVIYA-XMD V2",
+                  newsletterName: "🌖 SHAVIYA-XMD V2",
                   serverMessageId: 143
                 }
               }
