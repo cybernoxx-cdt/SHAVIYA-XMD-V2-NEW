@@ -2,6 +2,7 @@
 //  Ping.js — SHAVIYA-XMD V2
 //  Premium Animated Ping — Bubble Load Effect
 //  CDT — Crash Delta Team
+//  FIX: Loader msg delete removed — edits directly into final result
 // ============================================================
 
 const { cmd } = require('../command');
@@ -51,7 +52,8 @@ function getRam() {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  .ping — Animated bubble loader → small premium result
+//  .ping — Animated bubble loader → edits into final result
+//  FIX: NO delete — loader msg is edited directly to final card
 // ══════════════════════════════════════════════════════════════
 cmd({
     pattern:  'ping',
@@ -87,56 +89,67 @@ async (conn, mek, m, { from, sender, reply }) => {
             }
         }, { quoted: FakeVCard });
 
-        // Step 4: Animate frames via message edit
-        for (let i = 1; i < FRAMES.length; i++) {
+        // Step 4: Animate frames via message edit (skip last frame — reserved for final)
+        for (let i = 1; i < FRAMES.length - 1; i++) {
             await sleep(FRAME_DELAY);
-            const isLast = i === FRAMES.length - 1;
-            const label  = isLast ? '_ᴄᴏᴍᴘʟᴇᴛᴇ!_' : '_ᴄʜᴇᴄᴋɪɴɢ..._';
             try {
                 await conn.sendMessage(from, {
-                    text: '╭─「 🔍 *ᴘɪɴɢ ᴛᴇꜱᴛ* 」\n│\n│  ' + FRAMES[i] + '\n│  ' + label + '\n╰────────────⊷',
+                    text: '╭─「 🔍 *ᴘɪɴɢ ᴛᴇꜱᴛ* 」\n│\n│  ' + FRAMES[i] + '\n│  _ᴄʜᴇᴄᴋɪɴɢ..._\n╰────────────⊷',
                     edit: loaderMsg.key
                 });
             } catch (_) {}
         }
 
-        // Step 5: Measure ping & stop presence
+        // Step 5: Show final frame (✅✅✅✅✅) briefly
+        await sleep(FRAME_DELAY);
+        try {
+            await conn.sendMessage(from, {
+                text: '╭─「 🔍 *ᴘɪɴɢ ᴛᴇꜱᴛ* 」\n│\n│  ✅✅✅✅✅\n│  _ᴄᴏᴍᴘʟᴇᴛᴇ!_\n╰────────────⊷',
+                edit: loaderMsg.key
+            });
+        } catch (_) {}
+
+        // Step 6: Measure ping & stop presence
         const ping  = Date.now() - t0;
         const speed = getSpeedBadge(ping);
         const ram   = getRam();
         const ver   = config.BOT_VERSION || 'V2';
 
         await conn.sendPresenceUpdate('available', from);
-        await sleep(300);
+        await sleep(400);
 
-        // Step 6: Delete loader
-        try {
-            await conn.sendMessage(from, { delete: loaderMsg.key });
-        } catch (_) {}
-
-        await sleep(200);
-
-        // Step 7: Small premium final result
+        // Step 7: Edit loader msg into final premium result (NO delete)
         const finalText =
-`${speed.dot} *𝗣𝗜𝗡𝗚* ${speed.emoji} ${speed.dot}
-> *${ping} ms* · ${speed.label}
-> 💾 *RAM:* ${ram}
-> 🔖 *Ver:* ${ver}
-> ⚙️ *Mode:* ${(config.MODE || 'public').toUpperCase()}`;
+`╭─「 ${speed.dot} *𝗣𝗜𝗡𝗚 𝗥𝗘𝗦𝗨𝗟𝗧* ${speed.dot} 」
+│
+│  ${speed.emoji}  *${ping} ms* · ${speed.label}
+│  💾  *RAM:* ${ram}
+│  🔖  *Ver:* SHAVIYA-XMD ${ver}
+│  ⚙️  *Mode:* ${(config.MODE || 'public').toUpperCase()}
+│
+╰────────────⊷`;
 
-        await conn.sendMessage(from, {
-            text: finalText,
-            contextInfo: {
-                mentionedJid: [sender],
-                forwardingScore: 999,
-                isForwarded: true,
-                forwardedNewsletterMessageInfo: {
-                    newsletterJid: '@newsletter',
-                    newsletterName: '💠 𝗦𝗛𝗔𝗩𝗜𝗬𝗔 𝗧𝗘𝗖𝗛',
-                    serverMessageId: 143
+        try {
+            await conn.sendMessage(from, {
+                text: finalText,
+                edit: loaderMsg.key
+            });
+        } catch (_) {
+            // Edit failed (e.g. too old) — send as new msg
+            await conn.sendMessage(from, {
+                text: finalText,
+                contextInfo: {
+                    mentionedJid: [sender],
+                    forwardingScore: 999,
+                    isForwarded: true,
+                    forwardedNewsletterMessageInfo: {
+                        newsletterJid: '@newsletter',
+                        newsletterName: '💠 𝗦𝗛𝗔𝗩𝗜𝗬𝗔 𝗧𝗘𝗖𝗛',
+                        serverMessageId: 143
+                    }
                 }
-            }
-        }, { quoted: FakeVCard });
+            }, { quoted: FakeVCard });
+        }
 
     } catch (e) {
         console.error('[PING ERROR]', e);
