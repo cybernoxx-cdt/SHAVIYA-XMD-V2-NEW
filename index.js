@@ -436,7 +436,7 @@ async function startBot(sessionId, authPath, envConfig) {
         // Safe Unicode characters only — no broken box-drawing glyphs
         const upMsg =
 `✦ ──────────────────── ✦
-  🔮 *𝗦𝗛𝗔𝗩𝗜𝗬𝗔 𝗫𝗠𝗗 𝗩𝟮* 🔮
+    🔮 *𝗦𝗛𝗔𝗩𝗜𝗬𝗔 𝗫𝗠𝗗 𝗩𝟮* 🔮
 ✦ ──────────────────── ✦
 
 > 💠 *ᴄᴏɴɴᴇᴄᴛᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ* ✅
@@ -451,11 +451,8 @@ async function startBot(sessionId, authPath, envConfig) {
 ⊹ 🛡️ *Security*   ➤  Active
 ⊹ 🕐 *Time*       ➤  ${now}
 
-      .ᴍᴇɴᴜ 💠
-      .ᴀʟɪᴠᴇ 💗
-
 ✦ ──────────────────── ✦
-> 🌟 *Pᴏᴡᴇʀᴅ Bʏ Sʜᴀᴠɪʏᴀ* 💐
+  🌟 *Pᴏᴡᴇʀᴅ Bʏ Sʜᴀᴠɪʏᴀ* 💐
 ✦ ──────────────────── ✦`;
 
         try {
