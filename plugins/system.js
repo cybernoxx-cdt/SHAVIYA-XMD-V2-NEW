@@ -1,36 +1,32 @@
+const config = require('../config')
 const {cmd , commands} = require('../command')
 const os = require("os")
 const {runtime} = require('../lib/functions')
 
 cmd({
     pattern: "system",
-    alias: ["status","botinfo"],
-    desc: "check up time",
+    react: "🌖",
+    alias: ["uptime" ,"runtime"],
+    desc: "Check uptime",
     category: "main",
-    react: "📟",
     filename: __filename
 },
-async(conn, mek, m,{from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply}) => {
-try{
-
-let status =`
- ┏━━━━━━━━━━━━━━━━━━━━━┓
-┃       ⚡ SYSTEM INFO ⚡
-┗━━━━━━━━━━━━━━━━━━━━━┛
-
-⏳ *Uptime*       : ${runtime(process.uptime())}
-📟 *RAM Usage*    : ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)}MB / ${Math.round(require('os').totalmem / 1024 / 1024)}MB
-🖥️ *Host Name*    : ${os.hostname()}
-👨‍💻 *Owner*      : SHAVIYA TECH 💎
-🧬 *Version*      : 2.0.0
-
-┏━━━━━━━━━━━━━━━━━━━━━┓
-┃  © POWERED BY SHAVIYA-XMD V2 💎
-┗━━━━━━━━━━━━━━━━━━━━━┛
+async(conn, mek, m,{from, quoted, reply}) => {
+    try{
+        let status = `
+*╭─「 👑 Sʜᴀᴠɪʏᴀ Xᴍᴅ BOT INFO 」─*
+*│ 📌 CREATOR : Sʜᴀᴠɪʏᴀ*
+*│ 📟 Version: 2.0.0*
+*│ 🧬 Uptime: ${runtime(process.uptime())}*
+*│ 📈 RAM Usage: ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)}MB / ${Math.round(require('os').totalmem / 1024 / 1024)}MB*
+*│ 🕯️ Platform: heroku*
+*│ ⚙️ Hostname: ${os.hostname()}*
+*╰──────────────●●►*
+> © ᴘᴏᴡᴇʀᴇᴅ ʙʏ  Sʜᴀᴠɪʏᴀ Xᴍᴅ
 `
-return reply(`${status}`)
-}catch(e){
-console.log(e)
-reply(`${e}`)
-}
-})
+        await conn.sendMessage(from, { image: { url: config.ALIVE_IMG }, caption: status }, { quoted: mek });
+    } catch(e) {
+        console.log(e);
+        reply(`${e}`);
+    }
+});
