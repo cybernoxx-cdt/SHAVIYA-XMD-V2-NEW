@@ -430,28 +430,33 @@ async function startBot(sessionId, authPath, envConfig) {
         });
 
         const botNum = conn.user.id.split(":")[0];
+        const modeStr = (config.MODE || "public").toUpperCase();
 
-       const upMsg =
-`╔════════════════════════╗
-║ ❤️‍🔥 *SHAVIYA-XMD V2 CONNECTED* 💫 ║
-╚════════════════════════╝
-│
-├─ 🤖 *Bot*      ➠ SHAVIYA-XMD V2
-├─ 🧩 *Prefix*   ➠ [ ${prefix} ]
-├─ 💎 *Version*  ➠ V2
-├─ 📱 *Number*   ➠ +${botNum}
-├─ ⚡ *Status*   ➠ Online ✅
-├─ 🕐 *Time*     ➠ ${now}
-│
-├─────────────────────────
-│
-├─ 🛡️ *Security*  ➠ Active
-├─ 🌐 *Mode*      ➠ ${(config.MODE || "public").toUpperCase()}
-├─ 🎯 *Platform*  ➠ ʜᴇʀᴏᴋᴜ
-├─ ⚙️ *Engine*    ➠ GOD ⚡
-│
-╰━━━━━━━━━━━━━━━━━━━━━━━━⊷
-> ✨ *𝗦𝗛𝗔𝗩𝗜𝗬𝗔 𝗫𝗠𝗗 𝗩2 · 𝗣𝗥𝗘𝗠𝗜𝗨𝗠* 💎`;
+        // ── PREMIUM CONNECT MESSAGE ──
+        // Safe Unicode characters only — no broken box-drawing glyphs
+        const upMsg =
+`✦ ──────────────────── ✦
+  🔮 *𝗦𝗛𝗔𝗩𝗜𝗬𝗔 𝗫𝗠𝗗 𝗩𝟮* 🔮
+✦ ──────────────────── ✦
+
+> 💠 *ᴄᴏɴɴᴇᴄᴛᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ* ✅
+
+⊹ 🤖 *Bot*        ➤  SHAVIYA-XMD V2
+⊹ 📱 *Number*     ➤  +${botNum}
+⊹ 🔑 *Prefix*     ➤  [ ${prefix} ]
+⊹ 💎 *Version*    ➤  V2.0
+⊹ ⚡ *Engine*     ➤  GOD Core
+⊹ 🌐 *Mode*       ➤  ${modeStr}
+⊹ 🎯 *Platform*   ➤  ʜᴇʀᴏᴋᴜ
+⊹ 🛡️ *Security*   ➤  Active
+⊹ 🕐 *Time*       ➤  ${now}
+
+      .ᴍᴇɴᴜ 💠
+      .ᴀʟɪᴠᴇ 💗
+
+✦ ──────────────────── ✦
+> 🌟 *𝗣𝗢𝗪𝗘𝗥𝗘𝗗 𝗕𝗬 𝗖𝗗𝗧* 💐
+✦ ──────────────────── ✦`;
 
         try {
           await conn.sendMessage(
