@@ -26,13 +26,12 @@ const FakeVCard = {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const FRAMES = [
-    '⬜⬜⬜⬜⬜',
-    '🟦⬜⬜⬜⬜',
-    '🟦🟦⬜⬜⬜',
-    '🟦🟦🟦⬜⬜',
-    '🟦🟦🟦🟦⬜',
-    '🟦🟦🟦🟦🟦',
-    '✅✅✅✅✅',
+    '○○○○○',
+    '◍○○○○',
+    '◍◍○○○',
+    '◍◍◍○○',
+    '◍◍◍◍○',
+    '◍◍◍◍◍',
 ];
 
 const FRAME_DELAY = 280;
