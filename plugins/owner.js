@@ -5,6 +5,8 @@
 
 const { cmd }  = require('../command');
 const config   = require('../config');
+const os       = require('os');
+const { runtime } = require('../lib/functions');
 
 const VIDEO_NOTE_URL = 'https://whiteshadow-uploader.vercel.app/files/0hh.mp4';
 
@@ -41,19 +43,23 @@ async (conn, mek, m, { from, reply }) => {
         }, { quoted: mek });
 
         // ── 2. Owner info image ──
+        const ram     = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
+        const ramMax  = (os.totalmem()  / 1024 / 1024).toFixed(2);
+        const uptime  = runtime(process.uptime());
+        const host    = os.hostname();
+
         const caption =
-`✦ ─────────────────── ✦
-  🤵‍♂️ *𝗢𝗪𝗡𝗘𝗥 𝗜𝗡𝗙𝗢*
-✦ ─────────────────── ✦
-
-⊹ 👤 *Name*      ➤  ${ownerName}
-⊹ 📱 *Number*    ➤  +${ownerNumber}
-⊹ 🤖 *Bot*       ➤  SHAVIYA-XMD V2
-⊹ 🌀 *Version*   ➤  ${config.BOT_VERSION || 'V2'}
-⊹ 🛡️ *Security*  ➤  Active
-
-✦ ─────────────────── ✦
-> © Mr Savendra · Sʜᴀᴠɪʏᴀ Xᴍᴅ 𝗩𝟮 💠`;
+`*╭─「 👑 Sʜᴀᴠɪʏᴀ Xᴍᴅ BOT INFO 」─*
+*│ 📌 CREATOR : Sʜᴀᴠɪʏᴀ*
+*│ 👤 OWNER : ${ownerName}*
+*│ 📱 NUMBER : +${ownerNumber}*
+*│ 📟 Version: ${config.BOT_VERSION || '2.0.0'}*
+*│ 🧬 Uptime: ${uptime}*
+*│ 📈 RAM Usage: ${ram}MB / ${ramMax}MB*
+*│ 🕯️ Platform: heroku*
+*│ ⚙️ Hostname: ${host}*
+*╰──────────────●●►*
+> © ᴘᴏᴡᴇʀᴇᴅ ʙʏ Sʜᴀᴠɪʏᴀ Xᴍᴅ`;
 
         try {
             await conn.sendMessage(from, {
