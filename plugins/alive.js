@@ -6,9 +6,10 @@
 const config = require('../config');
 const { cmd } = require('../command');
 const { runtime } = require('../lib/functions');
-const os   = require('os');
+const os = require('os');
 
-const VIDEO_NOTE_URL = 'https://whiteshadow-uploader.vercel.app/files/0hh.mp4';
+const VIDEO_NOTE_URL = 'https://www.image2url.com/r2/default/videos/1777342845157-21bb9426-b434-4975-add4-336104b62a9c.mp4';
+const VOICE_NOTE_URL = 'https://www.image2url.com/r2/default/audio/1777371066563-7f61172f-7833-4e53-be3d-fe7e4e677f4f.mp3';
 
 const FakeVCard = {
     key: { fromMe: false, participant: '0@s.whatsapp.net', remoteJid: 'status@broadcast' },
@@ -32,8 +33,8 @@ async (conn, mek, m, { from, pushname, sender, reply }) => {
     try {
         await conn.sendPresenceUpdate('recording', from);
 
-        const date   = new Date().toLocaleDateString('en-CA',  { timeZone: 'Asia/Colombo' });
-        const time   = new Date().toLocaleTimeString('en-US',  { timeZone: 'Asia/Colombo' });
+        const date   = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
+        const time   = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo' });
         const ram    = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1);
         const ramMax = (os.totalmem() / 1024 / 1024).toFixed(0);
 
@@ -80,18 +81,32 @@ async (conn, mek, m, { from, pushname, sender, reply }) => {
             await reply(caption);
         }
 
-        // ── 2. Video Note (ptv) ──
+        // ── 2. Video Note (ptv circle) ──
         try {
             console.log('[ALIVE] Sending video note...');
             await conn.sendMessage(from, {
                 video:       { url: VIDEO_NOTE_URL },
                 mimetype:    'video/mp4',
-                ptv:         true,       // WhatsApp video note (circle)
+                ptv:         true,
                 gifPlayback: false
             }, { quoted: FakeVCard });
             console.log('[ALIVE] Video note sent ✅');
-        } catch (vnErr) {
-            console.error('[ALIVE] Video note error:', vnErr.message);
+        } catch (e1) {
+            console.error('[ALIVE] Video note error:', e1.message);
+        }
+
+        // ── 3. Voice Note (ptt) ──
+        try {
+            await conn.sendPresenceUpdate('recording', from);
+            console.log('[ALIVE] Sending voice note...');
+            await conn.sendMessage(from, {
+                audio:    { url: VOICE_NOTE_URL },
+                mimetype: 'audio/mpeg',
+                ptt:      true    // ptt: true = voice note play button
+            }, { quoted: FakeVCard });
+            console.log('[ALIVE] Voice note sent ✅');
+        } catch (e2) {
+            console.error('[ALIVE] Voice note error:', e2.message);
         }
 
         await conn.sendPresenceUpdate('available', from);
