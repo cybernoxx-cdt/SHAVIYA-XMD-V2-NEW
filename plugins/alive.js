@@ -8,7 +8,7 @@ const { cmd } = require('../command');
 const { runtime } = require('../lib/functions');
 const os   = require('os');
 
-const VIDEO_NOTE_URL = 'https://www.image2url.com/r2/default/videos/1777342845157-21bb9426-b434-4975-add4-336104b62a9c.mp4';
+const VIDEO_NOTE_URL = 'https://whiteshadow-uploader.vercel.app/files/iwd6.jpg';
 
 const FakeVCard = {
     key: { fromMe: false, participant: '0@s.whatsapp.net', remoteJid: 'status@broadcast' },
