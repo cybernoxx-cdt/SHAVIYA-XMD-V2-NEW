@@ -55,7 +55,6 @@ cmd({
     alias:    ['viewonce', 'retrieve', 'wtf'],
     desc:     'Retrieve view once message',
     category: 'tools',
-    react:    '',
     filename: __filename
 },
 async (conn, mek, m, { from, sender, reply }) => {
