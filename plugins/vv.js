@@ -1,10 +1,10 @@
 // ============================================================
 //  vv.js — SHAVIYA-XMD V2
-//  View Once Auto Retriever — No Prefix, Non-Detect
+//  View Once Auto Retriever — No Prefix, No React, Non-Detect
 //  © Mr Savendra
 // ============================================================
 
-const { cmd }        = require('../command');
+const { cmd }            = require('../command');
 const { getContentType } = require('@whiskeysockets/baileys');
 
 const FakeVCard = {
@@ -17,78 +17,79 @@ const FakeVCard = {
     }
 };
 
-// ── Helper: viewOnce message eka extract karanna ──
+// ── Extract view once from any message wrapper ──
 function extractViewOnce(message) {
     if (!message) return null;
 
-    // Direct viewOnce
-    if (message.viewOnceMessage?.message) {
-        const inner = message.viewOnceMessage.message;
-        const type  = getContentType(inner);
-        return { message: inner, type };
-    }
+    // All known viewOnce wrappers
+    const wrappers = [
+        'viewOnceMessage',
+        'viewOnceMessageV2',
+        'viewOnceMessageV2Extension'
+    ];
 
-    // viewOnceMessageV2
-    if (message.viewOnceMessageV2?.message) {
-        const inner = message.viewOnceMessageV2.message;
-        const type  = getContentType(inner);
-        return { message: inner, type };
+    for (const w of wrappers) {
+        if (message[w]?.message) {
+            const inner = message[w].message;
+            const type  = getContentType(inner);
+            if (type) return { inner, type };
+        }
     }
-
-    // viewOnceMessageV2Extension
-    if (message.viewOnceMessageV2Extension?.message) {
-        const inner = message.viewOnceMessageV2Extension.message;
-        const type  = getContentType(inner);
-        return { message: inner, type };
-    }
-
     return null;
 }
 
-// ══════════════════════════════════════════════════════════════
-//  .vv — Manual: reply to any view once msg
-//  alias: viewonce, retrieve, wtf
-//  Prefix needed only for this manual trigger
-// ══════════════════════════════════════════════════════════════
-cmd({
-    pattern:  'vv',
-    alias:    ['viewonce', 'retrieve', 'wtf'],
-    desc:     'Retrieve view once message',
-    category: 'tools',
-    filename: __filename
-},
-async (conn, mek, m, { from, sender, reply }) => {
-    try {
-        // React
-        await conn.sendMessage(from, {
-            react: { text: '👁️', key: mek.key }
-        });
+// ── Send the retrieved media ──
+async function sendViewOnce(conn, dest, inner, type) {
+    const CTX = {
+        forwardingScore: 999,
+        isForwarded: true,
+        forwardedNewsletterMessageInfo: {
+            newsletterJid: '@newsletter',
+            newsletterName: '© Mr Savendra · SHAVIYA-XMD V2',
+            serverMessageId: 143
+        }
+    };
 
-        if (!mek.message) return reply('❌ Reply to a view once message!');
-
-        // Check quoted message
-        const quoted = mek.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-        if (!quoted) return reply('📌 *Reply to a view once message!*');
-
-        const vo = extractViewOnce(quoted);
-        if (!vo) return reply('❌ This is not a view once message!');
-
-        await sendViewOnce(conn, sender, vo, FakeVCard);
-
-    } catch (e) {
-        console.error('[VV CMD ERROR]', e.message);
-        reply('❌ Failed: ' + e.message);
+    if (type === 'imageMessage') {
+        await conn.sendMessage(dest, {
+            image:   { url: inner.imageMessage.url },
+            caption: inner.imageMessage.caption || '',
+            mimetype: inner.imageMessage.mimetype || 'image/jpeg',
+            contextInfo: CTX
+        }, { quoted: FakeVCard });
+        return true;
     }
-});
+
+    if (type === 'videoMessage') {
+        await conn.sendMessage(dest, {
+            video:   { url: inner.videoMessage.url },
+            caption: inner.videoMessage.caption || '',
+            mimetype: inner.videoMessage.mimetype || 'video/mp4',
+            contextInfo: CTX
+        }, { quoted: FakeVCard });
+        return true;
+    }
+
+    if (type === 'audioMessage') {
+        await conn.sendMessage(dest, {
+            audio:    { url: inner.audioMessage.url },
+            mimetype: inner.audioMessage.mimetype || 'audio/mpeg',
+            ptt:      false,
+            contextInfo: CTX
+        }, { quoted: FakeVCard });
+        return true;
+    }
+
+    return false;
+}
 
 // ══════════════════════════════════════════════════════════════
-//  AUTO LISTENER — No prefix needed
-//  Any view once message received → auto save to sender DM
+//  AUTO LISTENER — on:body, no prefix, no react
+//  Every incoming message check karala view once nam auto save
 // ══════════════════════════════════════════════════════════════
 cmd({
-    on: 'body',
-    pattern: /^$/,     // never matches as command — only fires on:body
-    desc:    'Auto view once retriever',
+    on:       'body',
+    desc:     'Auto view once retriever — no prefix',
     category: 'tools',
     filename: __filename
 },
@@ -96,93 +97,59 @@ async (conn, mek, m, { from, sender }) => {
     try {
         if (!mek?.message) return;
 
-        const msgType = getContentType(mek.message);
-
-        // ephemeral unwrap
+        // Unwrap ephemeral if needed
         let msg = mek.message;
+        const msgType = getContentType(msg);
         if (msgType === 'ephemeralMessage') {
-            msg = mek.message.ephemeralMessage?.message || msg;
+            msg = msg.ephemeralMessage?.message || msg;
         }
 
+        // Check if this is a view once message
         const vo = extractViewOnce(msg);
-        if (!vo) return; // not a view once — ignore silently
+        if (!vo) return; // not view once — silently ignore
 
-        // Non-detect: send quietly to the person who sent it (or receiver DM)
-        // Send to the person who received it (from JID if private, or sender DM if group)
-        const dest = from.endsWith('@g.us')
-            ? sender                          // group: send to sender's DM
-            : from;                           // private: send to same chat
+        // Destination: group → sender DM, private → same chat
+        const dest = from.endsWith('@g.us') ? sender : from;
 
         // Small delay — non-detect
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 1000));
 
-        await sendViewOnce(conn, dest, vo, FakeVCard);
+        await sendViewOnce(conn, dest, vo.inner, vo.type);
 
     } catch (e) {
-        // Silent fail — never crash bot
-        if (!e.message?.includes('Bad MAC')) {
-            console.error('[VV AUTO ERROR]', e.message);
+        if (!e.message?.includes('Bad MAC') && !e.message?.includes('decrypt')) {
+            console.error('[VV AUTO]', e.message);
         }
     }
 });
 
 // ══════════════════════════════════════════════════════════════
-//  SEND HELPER
+//  MANUAL CMD — .vv / .wtf / .viewonce (reply to view once)
+//  No react — silent send
 // ══════════════════════════════════════════════════════════════
-async function sendViewOnce(conn, dest, vo, quoted) {
-    const { message, type } = vo;
+cmd({
+    pattern:  'vv',
+    alias:    ['wtf', 'viewonce', 'retrieve'],
+    desc:     'Retrieve view once message (reply)',
+    category: 'tools',
+    filename: __filename
+},
+async (conn, mek, m, { from, sender, reply }) => {
+    try {
+        // Get quoted message
+        const quoted = mek.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        if (!quoted) return reply('📌 Reply to a view once message!');
 
-    // ── Image ──
-    if (type === 'imageMessage') {
-        const img = message.imageMessage;
-        await conn.sendMessage(dest, {
-            image:   { url: img.url },
-            caption: img.caption || '👁️ *View Once — SHAVIYA-XMD V2*',
-            mimetype: img.mimetype || 'image/jpeg',
-            contextInfo: {
-                forwardingScore: 999,
-                isForwarded: true,
-                forwardedNewsletterMessageInfo: {
-                    newsletterJid: '@newsletter',
-                    newsletterName: '© Mr Savendra · SHAVIYA-XMD V2',
-                    serverMessageId: 143
-                }
-            }
-        }, { quoted });
-        return;
+        const vo = extractViewOnce(quoted);
+        if (!vo) return reply('❌ This is not a view once message!');
+
+        // Silently send to user DM (non-detect — not in group chat)
+        const dest = from.endsWith('@g.us') ? sender : from;
+
+        await sendViewOnce(conn, dest, vo.inner, vo.type);
+
+    } catch (e) {
+        console.error('[VV CMD]', e.message);
+        reply('❌ Failed: ' + e.message);
     }
-
-    // ── Video ──
-    if (type === 'videoMessage') {
-        const vid = message.videoMessage;
-        await conn.sendMessage(dest, {
-            video:   { url: vid.url },
-            caption: vid.caption || '👁️ *View Once — SHAVIYA-XMD V2*',
-            mimetype: vid.mimetype || 'video/mp4',
-            contextInfo: {
-                forwardingScore: 999,
-                isForwarded: true,
-                forwardedNewsletterMessageInfo: {
-                    newsletterJid: '@newsletter',
-                    newsletterName: '© Mr Savendra · SHAVIYA-XMD V2',
-                    serverMessageId: 143
-                }
-            }
-        }, { quoted });
-        return;
-    }
-
-    // ── Audio ──
-    if (type === 'audioMessage') {
-        const aud = message.audioMessage;
-        await conn.sendMessage(dest, {
-            audio:    { url: aud.url },
-            mimetype: aud.mimetype || 'audio/mpeg',
-            ptt:      false
-        }, { quoted });
-        return;
-    }
-
-    // Unknown type
-    console.log('[VV] Unknown view once type:', type);
-}
+});
