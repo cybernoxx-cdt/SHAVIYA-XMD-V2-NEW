@@ -27,7 +27,7 @@ function getBotName(sessionId) {
 
 function getHardThumbUrl(sessionId) {
   return getSessionConfig(sessionId).thumbUrl ||
-    "https://image2url.com/r2/default/images/1774184263251-f9306abd-80ec-4b38-830e-73649a3d687e.png";
+    "https://whiteshadow-uploader.vercel.app/files/ntqf.jpg";
 }
 
 function isMovieDocOn(sessionId) {
@@ -110,7 +110,7 @@ cmd({
     await react(conn, from, m.key, "🔍");
 
     var searchRes = await axios.get(
-      "https://api-dark-shan-yt.koyeb.app/movie/cinesubz-search?q=" + encodeURIComponent(q) + "&apikey=42a61f2a33c61caf"
+      "https://api-dark-shan-yt.koyeb.app/movie/cinesubz-search?q=" + encodeURIComponent(q) + "&apikey=6c1c1d3f4684fed0"
     );
 
     var results = searchRes.data && searchRes.data.data;
@@ -131,7 +131,7 @@ cmd({
     await react(conn, from, sel1.msg.key, "🎬");
 
     var infoRes = await axios.get(
-      "https://api-dark-shan-yt.koyeb.app/movie/cinesubz-info?url=" + encodeURIComponent(results[index].link) + "&apikey=42a61f2a33c61caf"
+      "https://api-dark-shan-yt.koyeb.app/movie/cinesubz-info?url=" + encodeURIComponent(results[index].link) + "&apikey=6c1c1d3f4684fed0"
     );
 
     var info = infoRes.data && infoRes.data.data;
@@ -160,7 +160,7 @@ cmd({
     await react(conn, from, sel2.msg.key, "⬇️");
 
     var dlRes = await axios.get(
-      "https://api-dark-shan-yt.koyeb.app/movie/cinesubz-download?url=" + encodeURIComponent(info.downloads[dIndex].link) + "&apikey=42a61f2a33c61caf"
+      "https://api-dark-shan-yt.koyeb.app/movie/cinesubz-download?url=" + encodeURIComponent(info.downloads[dIndex].link) + "&apikey=6c1c1d3f4684fed0"
     );
 
     var downloadLinks = dlRes.data && dlRes.data.data && dlRes.data.data.download;
