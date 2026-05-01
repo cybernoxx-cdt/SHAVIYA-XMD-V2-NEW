@@ -33,7 +33,7 @@ function getBotName(sessionId) {
 
 function getHardThumbUrl(sessionId) {
   return getSessionConfig(sessionId).thumbUrl ||
-    "https://image2url.com/r2/default/images/1774184263251-f9306abd-80ec-4b38-830e-73649a3d687e.png";
+    "https://whiteshadow-uploader.vercel.app/files/ntqf.jpg";
 }
 
 function isMovieDocOn(sessionId) {
@@ -114,7 +114,7 @@ function formatFileSize(bytes) {
 // ═══════════════════════════════════════════════════
 //  API Configuration
 // ═══════════════════════════════════════════════════
-const API_KEY = "42a61f2a33c61caf";
+const API_KEY = "6c1c1d3f4684fed0";
 const BASE_URL = "https://api-dark-shan-yt.koyeb.app";
 
 // ═══════════════════════════════════════════════════
