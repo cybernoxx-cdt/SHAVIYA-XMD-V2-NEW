@@ -1,6 +1,7 @@
 // ============================================================
 //  cinesubz.js — SHAVIYA-XMD V2
 //  Adapted for Cinesubz Movie Downloader
+//  ✅ Numbered Reply System (No Buttons)
 // ============================================================
 
 const { cmd } = require('../command');
@@ -56,78 +57,156 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
         topResults.forEach((mv, index) => {
             listText += `*${index + 1}.* ${mv.title} (${mv.year || 'N/A'})\n`;
         });
-        listText += `\n> **Reply with 1 - ${topResults.length}**\n> © Mr Savendra · 𝗦𝗛𝗔𝗩𝗜𝗬𝗔-𝗫𝗠𝗗 𝗩𝟮`;
+        listText += `\n> *Reply with 1 - ${topResults.length}*\n> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`;
 
         // List එක යැවීම
         const listMsg = await conn.sendMessage(from, { text: listText }, { quoted: FakeVCard });
 
         // ==========================================
-        // REPLY LISTENER (අංකය අල්ලා ගැනීමේ කොටස)
+        // MOVIE SELECTION LISTENER
         // ==========================================
-        const listener = async (update) => {
+        const movieListener = async (update) => {
             const replyMsg = update.messages[0];
             if (!replyMsg || !replyMsg.message) return;
 
             const replyContext = replyMsg.message.extendedTextMessage?.contextInfo;
-            const isReplyToBot = replyContext?.stanzaId === listMsg.key.id;
+            const isReplyToList = replyContext?.stanzaId === listMsg.key.id;
 
-            if (isReplyToBot) {
-                const userReply = replyMsg.message.extendedTextMessage.text.trim();
-                const selectedIndex = parseInt(userReply) - 1;
+            if (!isReplyToList) return;
 
-                if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= topResults.length) {
-                    return conn.sendMessage(from, { text: "❌ *වැරදි අංකයක්! කරුණාකර නිවැරදි අංකයක් reply කරන්න.*" }, { quoted: replyMsg });
+            const userReply = replyMsg.message.extendedTextMessage?.text?.trim();
+            const selectedIndex = parseInt(userReply) - 1;
+
+            if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= topResults.length) {
+                return conn.sendMessage(from, { text: "❌ *වැරදි අංකයක්! කරුණාකර නිවැරදි අංකයක් reply කරන්න.*" }, { quoted: replyMsg });
+            }
+
+            // Movie listener auto remove
+            conn.ev.off('messages.upsert', movieListener);
+
+            const selectedMovie = topResults[selectedIndex];
+
+            try {
+                await conn.sendMessage(from, { react: { text: "🎬", key: replyMsg.key } });
+
+                // API එකෙන් Direct links ගැනීම
+                const extractUrl = `https://cinesubz-api-cnw.vercel.app/api/extract?id=${selectedMovie.id}&type=mv`;
+                const extRes = await fetch(extractUrl);
+                const extData = await extRes.json();
+
+                if (!extData.status || !extData.data || extData.data.length === 0) {
+                    return conn.sendMessage(from, { text: "❌ *මෙම චිත්‍රපටියේ Direct Links ලබාගත නොහැක.*" }, { quoted: replyMsg });
                 }
 
-                const selectedMovie = topResults[selectedIndex];
+                // Direct MP4 ලින්ක් එකක් තෝරා ගැනීම
+                const directVideo = extData.data.find(v => v.is_direct_mp4) || extData.data[0];
+                const baseLink = directVideo.link;
 
-                try {
-                    await conn.sendMessage(from, { react: { text: "🎬", key: replyMsg.key } });
+                // ==========================================
+                // QUALITY SELECTION — NUMBERED REPLY
+                // ==========================================
+                const qualityList = [
+                    { label: "🎥 480p (SD)", quality: "480p" },
+                    { label: "🎥 720p (HD)", quality: "720p" }
+                ];
 
-                    // API එකෙන් Direct links ගැනීම
-                    const extractUrl = `https://cinesubz-api-cnw.vercel.app/api/extract?id=${selectedMovie.id}&type=mv`;
-                    const extRes = await fetch(extractUrl);
-                    const extData = await extRes.json();
+                let qualityText = `🎬 *${selectedMovie.title}*\n\n`;
+                qualityText += `📅 *Year:* ${selectedMovie.year || 'N/A'}\n`;
+                qualityText += `🎭 *Genres:* ${selectedMovie.genres || 'N/A'}\n`;
+                qualityText += `⭐ *IMDB:* ${selectedMovie.imdb || 'N/A'}\n\n`;
+                qualityText += `👇 *ඔබට අවශ්‍ය Quality එකේ අංකය Reply කරන්න*\n\n`;
 
-                    if (!extData.status || !extData.data || extData.data.length === 0) {
-                        return conn.sendMessage(from, { text: "❌ *මෙම චිත්‍රපටියේ Direct Links ලබාගත නොහැක.*" }, { quoted: replyMsg });
+                qualityList.forEach((q, i) => {
+                    qualityText += `*${i + 1}.* ${q.label}\n`;
+                });
+
+                qualityText += `\n> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`;
+
+                // Movie image + quality list යැවීම
+                const qualityMsg = await conn.sendMessage(from, {
+                    image: { url: selectedMovie.img },
+                    caption: qualityText
+                }, { quoted: replyMsg });
+
+                // ==========================================
+                // QUALITY SELECTION LISTENER
+                // ==========================================
+                const qualityListener = async (update2) => {
+                    const qReplyMsg = update2.messages[0];
+                    if (!qReplyMsg || !qReplyMsg.message) return;
+
+                    const qReplyContext = qReplyMsg.message.extendedTextMessage?.contextInfo;
+                    const isReplyToQuality = qReplyContext?.stanzaId === qualityMsg.key.id;
+
+                    if (!isReplyToQuality) return;
+
+                    const qUserReply = qReplyMsg.message.extendedTextMessage?.text?.trim();
+                    const qSelectedIndex = parseInt(qUserReply) - 1;
+
+                    if (isNaN(qSelectedIndex) || qSelectedIndex < 0 || qSelectedIndex >= qualityList.length) {
+                        return conn.sendMessage(from, { text: "❌ *වැරදි අංකයක්! 1 හෝ 2 reply කරන්න.*" }, { quoted: qReplyMsg });
                     }
 
-                    // Direct MP4 ලින්ක් එකක් තෝරා ගැනීම
-                    const directVideo = extData.data.find(v => v.is_direct_mp4) || extData.data[0];
-                    const baseLink = directVideo.link;
+                    // Quality listener auto remove
+                    conn.ev.off('messages.upsert', qualityListener);
 
-                    const caption = `🎬 *${selectedMovie.title}*\n\n📅 *Year:* ${selectedMovie.year}\n🎭 *Genres:* ${selectedMovie.genres}\n⭐ *IMDB:* ${selectedMovie.imdb}\n\n> *ඔබට අවශ්‍ය Quality එක පහලින් තෝරන්න* ⬇️`;
+                    const chosenQuality = qualityList[qSelectedIndex].quality;
                     const shortTitle = selectedMovie.title.substring(0, 20).replace(/[^a-zA-Z0-9 ]/g, "").trim();
 
-                    // Buttons (Baileys standard structure)
-                    const buttons = [
-                        { buttonId: `.cz_dl ${shortTitle} || 480p || ${baseLink}`, buttonText: { displayText: "🎥 480p (SD)" }, type: 1 },
-                        { buttonId: `.cz_dl ${shortTitle} || 720p || ${baseLink}`, buttonText: { displayText: "🎥 720p (HD)" }, type: 1 }
-                    ];
+                    // Download command trigger කිරීම (cz_dl)
+                    await conn.sendMessage(from, { react: { text: "📥", key: qReplyMsg.key } });
+                    await conn.sendMessage(from, { text: `⬇️ *Downloading ${shortTitle} (${chosenQuality})...*\n_මෙය විශාල file එකක් බැවින්, WhatsApp වෙත Upload වීමට ටික වේලාවක් ගත විය හැක._` }, { quoted: FakeVCard });
+
+                    // URL quality replace
+                    let finalUrl = baseLink;
+                    if (chosenQuality === '480p') {
+                        finalUrl = baseLink.replace(/(720p|1080p|1080|720)/i, '480p');
+                    } else if (chosenQuality === '720p') {
+                        finalUrl = baseLink.replace(/(480p|1080p|1080|480)/i, '720p');
+                    }
+
+                    // File size check
+                    try {
+                        const headRes = await axios.head(finalUrl);
+                        if (headRes && headRes.headers['content-length']) {
+                            const sizeMB = parseInt(headRes.headers['content-length']) / (1024 * 1024);
+                            if (sizeMB > 1950) {
+                                await conn.sendMessage(from, { react: { text: "❌", key: qReplyMsg.key } });
+                                return conn.sendMessage(from, { text: `❌ *Error: File එක 2GB වලට වඩා විශාලයි! (${sizeMB.toFixed(2)} MB)*\nWhatsApp හරහා මෙය යැවිය නොහැක.` }, { quoted: FakeVCard });
+                            }
+                        }
+                    } catch (headErr) {
+                        console.log("[SIZE CHECK SKIP] Proceeding with direct upload...");
+                    }
+
+                    // Direct upload
+                    const captionText = `🎬 *${selectedMovie.title}* [${chosenQuality}]\n\n> 👤 Downloaded by: ${pushname}\n> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`;
 
                     await conn.sendMessage(from, {
-                        image: { url: selectedMovie.img },
-                        caption: caption,
-                        footer: '© Mr Savendra · SHAVIYA-XMD V2',
-                        buttons: buttons,
-                        headerType: 4
-                    }, { quoted: replyMsg });
-                    
-                    // Listener එක අයින් කරනවා
-                    conn.ev.off('messages.upsert', listener);
+                        document: { url: finalUrl },
+                        mimetype: "video/mp4",
+                        fileName: `${shortTitle} - ${chosenQuality}.mp4`,
+                        caption: captionText
+                    }, { quoted: FakeVCard });
 
-                } catch (e) {
-                    console.error("[CINESUBZ DETAILS ERROR]", e);
-                    reply('⚠️ Error fetching details: ' + e.message);
-                }
+                    await conn.sendMessage(from, { react: { text: "✅", key: qReplyMsg.key } });
+                };
+
+                conn.ev.on('messages.upsert', qualityListener);
+
+                // Quality listener — 2 minutes timeout
+                setTimeout(() => { conn.ev.off('messages.upsert', qualityListener); }, 120000);
+
+            } catch (e) {
+                console.error("[CINESUBZ DETAILS ERROR]", e);
+                conn.sendMessage(from, { text: '⚠️ Error fetching details: ' + e.message }, { quoted: replyMsg });
             }
         };
 
-        conn.ev.on('messages.upsert', listener);
-        
-        // විනාඩි 2කින් listener එක auto අයින් වෙනවා (RAM පිරෙන එක නවත්තන්න)
-        setTimeout(() => { conn.ev.off('messages.upsert', listener); }, 120000); 
+        conn.ev.on('messages.upsert', movieListener);
+
+        // Movie listener — 2 minutes timeout
+        setTimeout(() => { conn.ev.off('messages.upsert', movieListener); }, 120000);
 
     } catch (e) {
         console.error('[CINESUBZ SEARCH ERROR]', e);
@@ -138,6 +217,7 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
 
 // =================================================
 // 2. CINESUBZ MOVIE DOWNLOAD COMMAND (.cz_dl)
+//    (Direct use — standalone download command)
 // =================================================
 cmd({
     pattern:  'cz_dl',
@@ -157,21 +237,20 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
         await conn.sendMessage(from, { react: { text: "📥", key: mek.key } });
         await conn.sendMessage(from, { text: `⬇️ *Downloading ${title} (${quality})...*\n_මෙය විශාල file එකක් බැවින්, WhatsApp වෙත Upload වීමට ටික වේලාවක් ගත විය හැක._` }, { quoted: FakeVCard });
 
-        // URL එකේ Quality එක වෙනස් කිරීම (720p -> 480p වගේ)
+        // URL quality replace
         let finalUrl = originalUrl;
         if (quality === '480p') {
             finalUrl = originalUrl.replace(/(720p|1080p|1080|720)/i, '480p');
         } else if (quality === '720p') {
             finalUrl = originalUrl.replace(/(480p|1080p|1080|480)/i, '720p');
         }
-        
-        // 1. File Size එක පරීක්ෂා කිරීම (2GB Limit Check)
+
+        // File size check
         try {
             const headRes = await axios.head(finalUrl);
             if (headRes && headRes.headers['content-length']) {
                 const sizeMB = parseInt(headRes.headers['content-length']) / (1024 * 1024);
-                // 1.95 GB (1950 MB) ට වඩා වැඩි නම් නවත්වනවා (WhatsApp limit)
-                if (sizeMB > 1950) { 
+                if (sizeMB > 1950) {
                     await conn.sendMessage(from, { react: { text: "❌", key: mek.key } });
                     return reply(`❌ *Error: File එක 2GB වලට වඩා විශාලයි! (${sizeMB.toFixed(2)} MB)*\nWhatsApp හරහා මෙය යැවිය නොහැක.`);
                 }
@@ -180,11 +259,11 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
             console.log("[SIZE CHECK SKIP] Proceeding with direct upload...");
         }
 
-        // 2. WhatsApp එකට Direct URL එකෙන් Document එකක් විදියට යැවීම
-        const captionText = `🎬 *${title}* [${quality}]\n\n> 👤 Downloaded by: ${pushname}\n> © Mr Savendra · 𝗦𝗛𝗔𝗩𝗜𝗬𝗔-𝗫𝗠𝗗 𝗩𝟮`;
+        // Direct upload
+        const captionText = `🎬 *${title}* [${quality}]\n\n> 👤 Downloaded by: ${pushname}\n> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`;
 
         await conn.sendMessage(from, {
-            document: { url: finalUrl }, // කෙලින්ම URL එකෙන් Stream කරනවා (No storage issue)
+            document: { url: finalUrl },
             mimetype: "video/mp4",
             fileName: `${title} - ${quality}.mp4`,
             caption: captionText
