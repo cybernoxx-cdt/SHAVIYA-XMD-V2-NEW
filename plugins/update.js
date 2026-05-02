@@ -1,41 +1,46 @@
 // ================================================================
 //   plugins/update.js — SHAVIYA-XMD V2
 //   .update — GitHub sync + Heroku redeploy + changelog display
-//   Owner only | CDT
+//   Owner only | Powered By Sʜᴀᴠɪʏᴀ Xᴍᴅ
 // ================================================================
 
 'use strict';
 
-const { cmd }        = require('../command');
-const { Octokit }    = require('@octokit/rest');
-const axios          = require('axios');
-const fs             = require('fs');
-const path           = require('path');
+const { cmd }     = require('../command');
+const { Octokit } = require('@octokit/rest');
+const axios       = require('axios');
+const fs          = require('fs');
+const path        = require('path');
 
 // ── Config from ENV ─────────────────────────────────────────────
-// Add these to your Heroku config vars:
-//   GITHUB_TOKEN      → your GitHub personal access token
-//   GITHUB_REPO_OWNER → your GitHub username  (e.g. "shaviyatech")
-//   GITHUB_REPO_NAME  → your repo name        (e.g. "SHAVIYA-XMD-V2")
-//   GITHUB_BRANCH     → branch to track       (default: "main")
-//   HEROKU_APP_NAME   → your Heroku app name  (e.g. "shaviya-bot")
-//   HEROKU_API_KEY    → Heroku API key (Account → API Key)
+//   GITHUB_TOKEN        → GitHub personal access token
+//   GITHUB_REPO_OWNER   → GitHub username  (e.g. "cybernoxx-cdt")
+//   GITHUB_REPO_NAME    → repo name        (e.g. "SHAVIYA-XMD-V2-NEW")
+//   GITHUB_BRANCH       → branch to track  (default: "main")
+//   HEROKU_APP_NAME     → Heroku app name  (e.g. "shaviya-xmd-2")
+//   HEROKU_API_KEY      → Heroku API key
 // ────────────────────────────────────────────────────────────────
 
-const GH_TOKEN    = process.env.GITHUB_TOKEN;
-const GH_OWNER    = process.env.GITHUB_REPO_OWNER || 'cybernoxx-cdt';
-const GH_REPO     = process.env.GITHUB_REPO_NAME || 'SHAVIYA-XMD-V2-NEW';
-const GH_BRANCH   = process.env.GITHUB_BRANCH || 'main';
-const HK_APP      = process.env.HEROKU_APP_NAME || 'shaviya-xmd-2';
-const HK_KEY      = process.env.HEROKU_API_KEY;
+const GH_TOKEN  = process.env.GITHUB_TOKEN;
+const GH_OWNER  = process.env.GITHUB_REPO_OWNER || 'cybernoxx-cdt';
+const GH_REPO   = process.env.GITHUB_REPO_NAME  || 'SHAVIYA-XMD-V2-NEW';
+const GH_BRANCH = process.env.GITHUB_BRANCH     || 'main';
+const HK_APP    = process.env.HEROKU_APP_NAME   || 'shaviya-xmd-2';
+const HK_KEY    = process.env.HEROKU_API_KEY;
+
+// ── Design tokens ────────────────────────────────────────────────
+const LINE  = '▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰';
+const SLINE = '┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄';
+const BOT   = '𝗦𝗛𝗔𝗩𝗜𝗬𝗔-𝗫𝗠𝗗 𝗩𝟮';
+const CDT   = '🌟 𝙋𝙤𝙬𝙚𝙧𝙚𝙙 𝘽𝙮 Sʜᴀᴠɪʏᴀ Xᴍᴅ';
 
 // ── Helpers ──────────────────────────────────────────────────────
 
 function missingEnv() {
-    const missing = [];
-    if (!GH_TOKEN)  missing.push('GITHUB_TOKEN');
-    if (!HK_KEY)    missing.push('HEROKU_API_KEY');
-    return missing;
+    const m = [];
+    if (!GH_TOKEN) m.push('GITHUB_TOKEN');
+    if (!HK_KEY)   m.push('HEROKU_API_KEY');
+    return m;
 }
 
 function timeAgo(dateStr) {
@@ -43,39 +48,44 @@ function timeAgo(dateStr) {
     const m = Math.floor(diff / 60000);
     const h = Math.floor(m / 60);
     const d = Math.floor(h / 24);
-    if (d > 0)  return `${d}d ago`;
-    if (h > 0)  return `${h}h ago`;
-    if (m > 0)  return `${m}m ago`;
+    if (d > 0) return `${d}d ago`;
+    if (h > 0) return `${h}h ago`;
+    if (m > 0) return `${m}m ago`;
     return 'just now';
+}
+
+function commitTypeIcon(msg) {
+    const lower = msg.toLowerCase();
+    if (lower.startsWith('fix'))      return '🔧';
+    if (lower.startsWith('feat'))     return '✨';
+    if (lower.startsWith('add'))      return '➕';
+    if (lower.startsWith('remove') || lower.startsWith('del')) return '🗑️';
+    if (lower.startsWith('update') || lower.startsWith('upd')) return '🔄';
+    if (lower.startsWith('refactor')) return '♻️';
+    if (lower.startsWith('style'))    return '🎨';
+    if (lower.startsWith('doc'))      return '📝';
+    if (lower.startsWith('perf'))     return '⚡';
+    return '📌';
 }
 
 async function getLatestCommits(octokit, count = 5) {
     const { data } = await octokit.repos.listCommits({
-        owner: GH_OWNER,
-        repo:  GH_REPO,
-        sha:   GH_BRANCH,
-        per_page: count
+        owner: GH_OWNER, repo: GH_REPO, sha: GH_BRANCH, per_page: count
     });
     return data;
 }
 
-async function getCurrentDeployedSHA() {
-    // Read from local file written after each deploy
+function getCurrentDeployedSHA() {
     const shaFile = path.join(__dirname, '../.deployed_sha');
-    try {
-        return fs.readFileSync(shaFile, 'utf8').trim();
-    } catch {
-        return null;
-    }
+    try { return fs.readFileSync(shaFile, 'utf8').trim(); } catch { return null; }
 }
 
-async function saveDeployedSHA(sha) {
+function saveDeployedSHA(sha) {
     const shaFile = path.join(__dirname, '../.deployed_sha');
     try { fs.writeFileSync(shaFile, sha); } catch {}
 }
 
 async function triggerHerokuBuild() {
-    // Trigger a rebuild by hitting Heroku Build API
     const res = await axios.post(
         `https://api.heroku.com/apps/${HK_APP}/builds`,
         {
@@ -86,9 +96,9 @@ async function triggerHerokuBuild() {
         },
         {
             headers: {
-                'Content-Type':    'application/json',
-                'Accept':          'application/vnd.heroku+json; version=3',
-                'Authorization':   `Bearer ${HK_KEY}`
+                'Content-Type':  'application/json',
+                'Accept':        'application/vnd.heroku+json; version=3',
+                'Authorization': `Bearer ${HK_KEY}`
             },
             timeout: 20000
         }
@@ -110,183 +120,242 @@ async function getHerokuBuildStatus(buildId) {
     return res.data;
 }
 
+// ── Message builders ─────────────────────────────────────────────
+
+function buildCheckMsg(commits, current, latest) {
+    const isUpToDate = current && latest.startsWith(current.substring(0, 7));
+
+    const commitLines = commits.map((c, i) => {
+        const sha    = c.sha.substring(0, 7);
+        const rawMsg = c.commit.message.split('\n')[0];
+        const msg    = rawMsg.length > 55 ? rawMsg.substring(0, 55) + '…' : rawMsg;
+        const author = c.commit.author.name;
+        const when   = timeAgo(c.commit.author.date);
+        const icon   = i === 0 ? '🆕' : commitTypeIcon(rawMsg);
+        return `${icon}  \`${sha}\`  ${msg}\n     ╰ 👤 ${author}  ·  🕐 ${when}`;
+    }).join('\n\n');
+
+    const statusBlock = isUpToDate
+        ? `✅  *Bot is fully up to date!*`
+        : `🔔  *New updates available!*\n     ╰ Reply *.update deploy* to redeploy`;
+
+    return (
+        `${LINE}\n` +
+        `   🛸  *${BOT} — UPDATE CHECK*\n` +
+        `${LINE}\n\n` +
+        `📦  *Repo*    »  \`${GH_OWNER}/${GH_REPO}\`\n` +
+        `🌿  *Branch*  »  \`${GH_BRANCH}\`\n` +
+        `🔖  *Current* »  \`${current ? current.substring(0, 7) : 'unknown'}\`\n` +
+        `🆕  *Latest*  »  \`${latest.substring(0, 7)}\`\n\n` +
+        `${statusBlock}\n\n` +
+        `${SLINE}\n` +
+        `   📋  *Recent Commits*\n` +
+        `${SLINE}\n\n` +
+        `${commitLines}\n\n` +
+        `${LINE}\n` +
+        `   ${CDT}\n` +
+        `${LINE}`
+    );
+}
+
+function buildDeployStartMsg(latestSHA, buildId, commits) {
+    const recentLog = commits.slice(0, 3).map((c, i) => {
+        const sha  = c.sha.substring(0, 7);
+        const raw  = c.commit.message.split('\n')[0];
+        const msg  = raw.length > 50 ? raw.substring(0, 50) + '…' : raw;
+        const when = timeAgo(c.commit.author.date);
+        const icon = i === 0 ? '🆕' : commitTypeIcon(raw);
+        return `${icon}  \`${sha}\`  ${msg}\n     ╰ 🕐 ${when}`;
+    }).join('\n\n');
+
+    return (
+        `${LINE}\n` +
+        `   🚀  *${BOT} — DEPLOY STARTED*\n` +
+        `${LINE}\n\n` +
+        `📦  *Repo*     »  \`${GH_OWNER}/${GH_REPO}\`\n` +
+        `🌿  *Branch*   »  \`${GH_BRANCH}\`\n` +
+        `🔖  *Deploying* »  \`${latestSHA.substring(0, 7)}\`\n` +
+        `🏗️  *Build ID*  »  \`${buildId ? buildId.substring(0, 8) : 'N/A'}\`\n\n` +
+        `${SLINE}\n` +
+        `   📋  *What's Included*\n` +
+        `${SLINE}\n\n` +
+        `${recentLog}\n\n` +
+        `${SLINE}\n` +
+        `⏳  Build running on Heroku...\n` +
+        `🔄  Bot will restart automatically\n` +
+        `✅  Back online in ~ 2–3 minutes\n` +
+        `${LINE}\n` +
+        `   ${CDT}\n` +
+        `${LINE}`
+    );
+}
+
+function buildDeploySuccessMsg(latestSHA, buildId, elapsedSec) {
+    return (
+        `${LINE}\n` +
+        `   ✅  *${BOT} — DEPLOY COMPLETE*\n` +
+        `${LINE}\n\n` +
+        `🔖  *Deployed SHA* »  \`${latestSHA.substring(0, 7)}\`\n` +
+        `🏗️  *Build ID*     »  \`${buildId.substring(0, 8)}\`\n` +
+        `⏱️  *Build Time*   »  ${elapsedSec}s\n\n` +
+        `🔄  Heroku dynos restarting...\n` +
+        `⚡  Bot is back online shortly!\n\n` +
+        `${LINE}\n` +
+        `   ${CDT}\n` +
+        `${LINE}`
+    );
+}
+
+function buildDeployFailMsg(buildId) {
+    return (
+        `${LINE}\n` +
+        `   ❌  *${BOT} — BUILD FAILED*\n` +
+        `${LINE}\n\n` +
+        `🏗️  *Build ID* »  \`${buildId ? buildId.substring(0, 8) : 'N/A'}\`\n\n` +
+        `📋  Check Heroku build logs:\n` +
+        `🔗  https://dashboard.heroku.com/apps/${HK_APP}/activity\n\n` +
+        `${LINE}\n` +
+        `   ${CDT}\n` +
+        `${LINE}`
+    );
+}
+
+
+
+function buildMissingEnvMsg(missing) {
+    return (
+        `${LINE}\n` +
+        `   ⚠️  *CONFIG VARS MISSING*\n` +
+        `${LINE}\n\n` +
+        `Add these to *Heroku → Settings → Config Vars:*\n\n` +
+        missing.map(v => `  ❌  \`${v}\``).join('\n') +
+        `\n\n${LINE}\n` +
+        `   ${CDT}\n` +
+        `${LINE}`
+    );
+}
+
 // ── CMD: .update ─────────────────────────────────────────────────
 
 cmd({
     pattern:  'update',
-    alias:    ['botupdate', 'checkupdate', 'redeploy'],
-    desc:     'Check for updates, show changelog & redeploy on Heroku',
+    alias:    [".up"],
+    desc:     'Check for updates & redeploy on Heroku',
     category: 'owner',
     react:    '🔄',
     filename: __filename
 },
-async (conn, mek, m, { from, isOwner, args, reply }) => {
+async (conn, mek, m, { from, isOwner }) => {
 
-    if (!isOwner) return reply(
-        `╔══════════════════════╗\n` +
-        `║    ⛔  ACCESS DENIED     ║\n` +
-        `╚══════════════════════╝\n\n` +
-        `This command is *owner only*.`
-    );
+    if (!isOwner) return conn.sendMessage(from, {
+        text:
+            `${LINE}\n` +
+            `   ⛔  *ACCESS DENIED*\n` +
+            `${LINE}\n\n` +
+            `🔒  This command is *owner only*.\n\n` +
+            `${LINE}\n` +
+            `   ${CDT}\n` +
+            `${LINE}`
+    }, { quoted: mek });
 
-    // ── Check ENV ──
     const missing = missingEnv();
-    if (missing.length > 0) return reply(
-        `❌ *Missing Config Vars!*\n\n` +
-        `Add these to Heroku Config Vars:\n` +
-        missing.map(v => `• \`${v}\``).join('\n') +
-        `\n\n_Settings → Heroku Dashboard → Config Vars_`
-    );
+    if (missing.length > 0) return conn.sendMessage(from, {
+        text: buildMissingEnvMsg(missing)
+    }, { quoted: mek });
 
-    const subCmd = (args[0] || '').toLowerCase();
+    // ── Step 1: Check ─────────────────────────────────────────────
+    await conn.sendMessage(from, {
+        text:
+            `${LINE}\n` +
+            `   🔍  *CHECKING FOR UPDATES...*\n` +
+            `${LINE}`
+    }, { quoted: mek });
 
-    // ── .update check — just show changelog ──
-    if (subCmd === 'check' || subCmd === '') {
-        await reply('🔍 Checking GitHub for updates...');
+    let commits, current, latest, latestSHA;
+    try {
+        const octokit = new Octokit({ auth: GH_TOKEN });
+        commits  = await getLatestCommits(octokit, 5);
+        current  = getCurrentDeployedSHA();
+        latest   = commits[0].sha;
+        latestSHA = latest;
 
-        try {
-            const octokit = new Octokit({ auth: GH_TOKEN });
-            const commits  = await getLatestCommits(octokit, 5);
-            const current  = await getCurrentDeployedSHA();
-            const latest   = commits[0].sha;
-            const isUpToDate = current && latest.startsWith(current.substring(0, 7));
+        await conn.sendMessage(from, {
+            text: buildCheckMsg(commits, current, latest)
+        }, { quoted: mek });
 
-            let log = commits.map((c, i) => {
-                const sha     = c.sha.substring(0, 7);
-                const msg     = c.commit.message.split('\n')[0].substring(0, 60);
-                const author  = c.commit.author.name;
-                const when    = timeAgo(c.commit.author.date);
-                const marker  = i === 0 ? '🆕' : '📌';
-                return `${marker} \`${sha}\` ${msg}\n    👤 ${author} · ${when}`;
-            }).join('\n\n');
-
-            const statusLine = isUpToDate
-                ? `✅ *Bot is up to date!*`
-                : `⚡ *New updates available!*\n_Use \`.update deploy\` to redeploy_`;
-
-            await conn.sendMessage(from, {
-                text:
-                    `╔══════════════════════════════╗\n` +
-                    `║    🔄  *SHAVIYA-XMD V2 UPDATE*    ║\n` +
-                    `╚══════════════════════════════╝\n\n` +
-                    `📦 *Repo:* ${GH_OWNER}/${GH_REPO}\n` +
-                    `🌿 *Branch:* ${GH_BRANCH}\n` +
-                    `🔖 *Current:* \`${current ? current.substring(0, 7) : 'unknown'}\`\n` +
-                    `🆕 *Latest:*  \`${latest.substring(0, 7)}\`\n\n` +
-                    `${statusLine}\n\n` +
-                    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                    `📋 *Recent Commits:*\n\n` +
-                    `${log}\n\n` +
-                    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                    `> 🔄 *SHAVIYA-XMD V2 · Update System*`
-            }, { quoted: mek });
-
-        } catch (e) {
-            console.error('[update check] error:', e.message);
-            reply(`❌ Failed to fetch updates.\n\nError: ${e.message}`);
-        }
-
-        return;
+    } catch (e) {
+        console.error('[update check] error:', e.message);
+        return conn.sendMessage(from, {
+            text:
+                `${LINE}\n` +
+                `   ❌  *FETCH FAILED*\n` +
+                `${LINE}\n\n` +
+                `Error: ${e.message}\n\n` +
+                `${LINE}\n   ${CDT}\n${LINE}`
+        }, { quoted: mek });
     }
 
-    // ── .update deploy — full redeploy ──
-    if (subCmd === 'deploy') {
-        await reply('⚡ Starting Heroku redeploy from GitHub...\n\n_This may take 2-3 minutes. Bot will restart._');
+    // ── Step 2: Auto Redeploy ─────────────────────────────────────
+    await conn.sendMessage(from, {
+        text:
+            `${LINE}\n` +
+            `   ⚡  *INITIATING HEROKU REDEPLOY...*\n` +
+            `${LINE}\n\n` +
+            `⏳  Connecting to Heroku...\n` +
+            `🔄  Bot will restart after deploy.\n\n` +
+            `${LINE}\n   ${CDT}\n${LINE}`
+    }, { quoted: mek });
 
-        try {
-            const octokit = new Octokit({ auth: GH_TOKEN });
-            const commits  = await getLatestCommits(octokit, 3);
-            const latest   = commits[0];
-            const latestSHA = latest.sha;
+    try {
+        const build   = await triggerHerokuBuild();
+        const buildId = build.id;
 
-            // Trigger Heroku build
-            const build = await triggerHerokuBuild();
-            const buildId = build.id;
+        saveDeployedSHA(latestSHA);
 
-            // Save new SHA
-            await saveDeployedSHA(latestSHA);
+        await conn.sendMessage(from, {
+            text: buildDeployStartMsg(latestSHA, buildId, commits.slice(0, 3))
+        }, { quoted: mek });
 
-            // Build recent commits list
-            const recentLog = commits.slice(0, 3).map((c, i) => {
-                const sha  = c.sha.substring(0, 7);
-                const msg  = c.commit.message.split('\n')[0].substring(0, 55);
-                const when = timeAgo(c.commit.author.date);
-                return `${i === 0 ? '🆕' : '📌'} \`${sha}\` ${msg} · ${when}`;
-            }).join('\n');
+        // Poll build status for up to 3 minutes
+        if (buildId) {
+            let attempts = 0;
+            const maxAttempts = 18; // 18 × 10s = 3 min
+            const poll = setInterval(async () => {
+                attempts++;
+                try {
+                    const status = await getHerokuBuildStatus(buildId);
 
-            await conn.sendMessage(from, {
-                text:
-                    `╔════════════════════════════════╗\n` +
-                    `║    🚀  *HEROKU REDEPLOY STARTED*     ║\n` +
-                    `╚════════════════════════════════╝\n\n` +
-                    `📦 *Repo:* ${GH_OWNER}/${GH_REPO}\n` +
-                    `🌿 *Branch:* ${GH_BRANCH}\n` +
-                    `🔖 *Deploying:* \`${latestSHA.substring(0, 7)}\`\n` +
-                    `🏗️ *Build ID:* \`${buildId ? buildId.substring(0, 8) : 'N/A'}\`\n\n` +
-                    `📋 *What's new:*\n${recentLog}\n\n` +
-                    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                    `⏳ Build in progress on Heroku...\n` +
-                    `🔄 Bot will restart automatically\n` +
-                    `✅ Back online in ~2-3 minutes\n\n` +
-                    `> 🚀 *SHAVIYA-XMD V2 · Auto Deploy*`
-            }, { quoted: mek });
+                    if (status.status === 'succeeded') {
+                        clearInterval(poll);
+                        await conn.sendMessage(from, {
+                            text: buildDeploySuccessMsg(latestSHA, buildId, attempts * 10)
+                        }, { quoted: mek });
 
-            // Poll build status for 3 minutes
-            if (buildId) {
-                let attempts = 0;
-                const maxAttempts = 18; // 18 × 10s = 3 min
-                const poll = setInterval(async () => {
-                    attempts++;
-                    try {
-                        const status = await getHerokuBuildStatus(buildId);
-                        if (status.status === 'succeeded') {
-                            clearInterval(poll);
-                            await conn.sendMessage(from, {
-                                text:
-                                    `╔══════════════════════════════╗\n` +
-                                    `║     ✅  *DEPLOY SUCCESSFUL!*      ║\n` +
-                                    `╚══════════════════════════════╝\n\n` +
-                                    `🔖 *Deployed:* \`${latestSHA.substring(0, 7)}\`\n` +
-                                    `🏗️ *Build:* \`${buildId.substring(0, 8)}\`\n` +
-                                    `⏱️ *Time:* ~${attempts * 10}s\n\n` +
-                                    `🔄 Heroku is restarting dynos...\n` +
-                                    `✅ Bot will be back shortly!\n\n` +
-                                    `> ✅ *SHAVIYA-XMD V2 · Deploy Done*`
-                            }, { quoted: mek });
-                        } else if (status.status === 'failed') {
-                            clearInterval(poll);
-                            await conn.sendMessage(from, {
-                                text:
-                                    `╔══════════════════════╗\n` +
-                                    `║   ❌  *BUILD FAILED!*    ║\n` +
-                                    `╚══════════════════════╝\n\n` +
-                                    `Check Heroku dashboard for build logs.\n` +
-                                    `https://dashboard.heroku.com/apps/${HK_APP}/activity\n\n` +
-                                    `> ❌ *SHAVIYA-XMD V2 · Deploy Failed*`
-                            }, { quoted: mek });
-                        }
-                    } catch {}
-                    if (attempts >= maxAttempts) clearInterval(poll);
-                }, 10000);
-            }
+                    } else if (status.status === 'failed') {
+                        clearInterval(poll);
+                        await conn.sendMessage(from, {
+                            text: buildDeployFailMsg(buildId)
+                        }, { quoted: mek });
+                    }
+                } catch {}
 
-        } catch (e) {
-            console.error('[update deploy] error:', e.message);
-            let errMsg = e.message;
-            if (e.response?.status === 401) errMsg = 'Invalid HEROKU_API_KEY';
-            if (e.response?.status === 404) errMsg = 'App not found. Check HEROKU_APP_NAME';
-            reply(`❌ Redeploy failed!\n\nError: ${errMsg}`);
+                if (attempts >= maxAttempts) clearInterval(poll);
+            }, 10000);
         }
 
-        return;
-    }
+    } catch (e) {
+        console.error('[update deploy] error:', e.message);
+        let errMsg = e.message;
+        if (e.response?.status === 401) errMsg = 'Invalid HEROKU_API_KEY — check Heroku Config Vars.';
+        if (e.response?.status === 404) errMsg = 'App not found — check HEROKU_APP_NAME.';
 
-    // ── Help ──
-    reply(
-        `🔄 *UPDATE COMMANDS*\n\n` +
-        `• \`.update\` — Check for new commits\n` +
-        `• \`.update check\` — Show changelog\n` +
-        `• \`.update deploy\` — Redeploy from GitHub\n\n` +
-        `> 🔄 *SHAVIYA-XMD V2 · Update System*`
-    );
+        conn.sendMessage(from, {
+            text:
+                `${LINE}\n` +
+                `   ❌  *REDEPLOY FAILED*\n` +
+                `${LINE}\n\n` +
+                `Error: ${errMsg}\n\n` +
+                `${LINE}\n   ${CDT}\n${LINE}`
+        }, { quoted: mek });
+    }
 });
