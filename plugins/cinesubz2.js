@@ -3,9 +3,10 @@
 //  ✅ Numbered Reply System (No Buttons)
 //  ✅ Memory Crash Fixed (Stream-safe download)
 //  ✅ Listener Leak Fixed (sender + stanza double check)
-//  ✅ Sender Check Bug Fixed (Group + DM both work)
-//  ✅ TV Series Support Added (type=tv auto detect)
-//  ✅ Reply Detection Fixed (all message types + array loop)
+//  ✅ Group & DM sender match fixed
+//  ✅ qualityTimeout hoisting bug fixed
+//  ✅ Movie timeout message added
+//  ✅ Baileys v7 upsert structure fixed
 // ============================================================
 
 const { cmd } = require('../command');
@@ -24,63 +25,27 @@ const FakeVCard = {
 };
 
 // ─────────────────────────────────────────────────────────────
-//  HELPER: Normalize JID (strip :xx device suffix)
+//  HELPER: Get the real sender JID (works in groups + DMs)
 // ─────────────────────────────────────────────────────────────
-function normJid(jid = '') {
-    return jid.split(':')[0].split('@')[0];
-}
-
-// ─────────────────────────────────────────────────────────────
-//  HELPER: Extract plain text from ANY message type
-// ─────────────────────────────────────────────────────────────
-function getMsgText(msg) {
-    if (!msg?.message) return '';
-    const m = msg.message;
-    return (
-        m.conversation ||
-        m.extendedTextMessage?.text ||
-        m.imageMessage?.caption ||
-        m.videoMessage?.caption ||
-        m.buttonsResponseMessage?.selectedButtonId ||
-        m.listResponseMessage?.singleSelectReply?.selectedRowId ||
-        ''
-    ).trim();
-}
-
-// ─────────────────────────────────────────────────────────────
-//  HELPER: Get stanzaId (which message is being replied to)
-// ─────────────────────────────────────────────────────────────
-function getStanzaId(msg) {
-    if (!msg?.message) return null;
-    const m = msg.message;
-    return (
-        m.extendedTextMessage?.contextInfo?.stanzaId ||
-        m.imageMessage?.contextInfo?.stanzaId ||
-        m.videoMessage?.contextInfo?.stanzaId ||
-        null
-    );
-}
-
-// ─────────────────────────────────────────────────────────────
-//  HELPER: Get sender JID
-// ─────────────────────────────────────────────────────────────
-function getMsgSender(msg) {
-    return normJid(msg?.key?.participant || msg?.key?.remoteJid || '');
+function getSenderJid(msg) {
+    // In groups: participant holds the sender; in DMs: remoteJid
+    return msg.key.participant || msg.key.remoteJid || '';
 }
 
 // ─────────────────────────────────────────────────────────────
 //  HELPER: Stream-safe size check
+//  Returns { ok: true, sizeMB } or { ok: false, sizeMB, reason }
 // ─────────────────────────────────────────────────────────────
-async function checkFileSize(url, limitMB = 1800) {
+async function checkFileSize(url, limitMB = 750) {
     try {
         const head = await axios.head(url, { timeout: 8000 });
         const cl = head.headers['content-length'];
-        if (!cl) return { ok: true, sizeMB: null };
+        if (!cl) return { ok: true, sizeMB: null }; // unknown — let it try
         const sizeMB = parseInt(cl) / (1024 * 1024);
         if (sizeMB > limitMB) return { ok: false, sizeMB };
         return { ok: true, sizeMB };
     } catch {
-        return { ok: true, sizeMB: null };
+        return { ok: true, sizeMB: null }; // HEAD failed — let it try
     }
 }
 
@@ -93,250 +58,252 @@ function buildQualityUrl(baseLink, quality) {
     return baseLink;
 }
 
-// ─────────────────────────────────────────────────────────────
-//  HELPER: Detect content type (movie vs tv)
-// ─────────────────────────────────────────────────────────────
-function detectContentType(item) {
-    if (!item) return 'mv';
-    const t = (item.type || item.content_type || '').toLowerCase();
-    if (t.includes('tv') || t.includes('series') || t.includes('show')) return 'tv';
-    if (item.episodes || item.seasons) return 'tv';
-    return 'mv';
-}
-
 // =================================================
-// 1. CINESUBZ SEARCH COMMAND (.cz2)
+// 1. CINESUBZ MOVIE SEARCH COMMAND (.cz2)
 // =================================================
 cmd({
     pattern:  'cz2',
     alias:    ['cinesubz2'],
     react:    '🔍',
-    desc:     'Search and Download movies/TV series from Cinesubz',
+    desc:     'Search and Download movies from Cinesubz (Shaviya Cinema)',
     category: 'download',
     filename: __filename
 },
 async (conn, mek, m, { from, q, pushname, sender, reply }) => {
     try {
-        if (!q) return reply("🎬 *කරුණාකර Movie/Series නම ලබා දෙන්න!*\n_උදා: .cz2 batman_");
+        if (!q) return reply("🎬 *කරුණාකර Movie එකේ නම ලබා දෙන්න!*\n_උදා: .cz2 batman_");
 
-        const query     = q.trim();
-        const senderJid = normJid(sender);
-
+        const query = q.trim();
         await conn.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
-        // ── Search API ─────────────────────────────────────
+        // ── Search ──────────────────────────────────────────
         const searchUrl = `https://cinesubz-api-cnw.vercel.app/api/search?q=${encodeURIComponent(query)}`;
         const res  = await fetch(searchUrl);
         const data = await res.json();
 
         if (!data.status || !data.data || data.data.length === 0) {
-            return reply("❌ *සමාවෙන්න, ඒ නමින් Movies/Series කිසිවක් හමුවූයේ නැත.*");
+            return reply("❌ *සමාවෙන්න, එම නමින් Movies කිසිවක් හමුවූයේ නැත.*");
         }
 
         const topResults = data.data.slice(0, 10);
 
-        let listText  = `🎬 *SHAVIYA CINEMA — SEARCH RESULTS*\n\n`;
-            listText += `🔍 *සෙව්වේ:* ${query}\n👤 *User:* ${pushname}\n\n`;
-            listText += `👇 *ඔබට අවශ්‍ය ෆිල්ම් / Series එකේ අංකය Reply කරන්න*\n\n`;
+        let listText = `🎬 *SHAVIYA CINEMA — MOVIE SEARCH*\n\n`;
+        listText    += `🔍 *සෙව්වේ:* ${query}\n👤 *User:* ${pushname}\n\n`;
+        listText    += `👇 *ඔබට අවශ්‍ය ෆිල්ම් එකේ අංකය Reply කරන්න*\n\n`;
         topResults.forEach((mv, i) => {
-            const icon = detectContentType(mv) === 'tv' ? '📺' : '🎬';
-            listText += `*${i + 1}.* ${icon} ${mv.title} (${mv.year || 'N/A'})\n`;
+            listText += `*${i + 1}.* ${mv.title} (${mv.year || 'N/A'})\n`;
         });
         listText += `\n> *Reply with 1 - ${topResults.length}*\n> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`;
 
-        const listMsg   = await conn.sendMessage(from, { text: listText }, { quoted: FakeVCard });
-        const listMsgId = listMsg.key.id;
+        const listMsg = await conn.sendMessage(from, { text: listText }, { quoted: FakeVCard });
 
-        // ── STEP 1 listener — Movie selection ──────────────
+        // ── STEP 1: Movie selection listener ────────────────
         let movieListenerDone = false;
 
+        // FIX: declare timeout var first so clearTimeout doesn't throw ReferenceError
+        let movieTimeout;
+
         const movieListener = async (update) => {
+            // Prevent double-fire
             if (movieListenerDone) return;
 
-            // ✅ Loop ALL messages — not just [0]
-            for (const replyMsg of (update.messages || [])) {
-                if (!replyMsg?.message) continue;
-                if (replyMsg.key?.fromMe) continue;
+            // FIX: Baileys v7 upsert gives { messages, type } — safely extract
+            const messages = update?.messages;
+            if (!messages || !Array.isArray(messages)) return;
 
-                // Must REPLY to our list message
-                if (getStanzaId(replyMsg) !== listMsgId) continue;
+            const replyMsg = messages[0];
+            if (!replyMsg?.message) return;
 
-                // Must be same sender
-                if (getMsgSender(replyMsg) !== senderJid) continue;
+            // Must be a reply to our list message AND from the same sender
+            const ctx = replyMsg.message.extendedTextMessage?.contextInfo;
+            if (!ctx || ctx.stanzaId !== listMsg.key.id) return;
 
-                const userReply     = getMsgText(replyMsg);
-                const selectedIndex = parseInt(userReply) - 1;
+            // FIX: use helper for correct group/DM sender detection
+            const msgSender = getSenderJid(replyMsg);
+            if (msgSender !== sender) return;
 
-                if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= topResults.length) {
-                    conn.sendMessage(from,
-                        { text: "❌ *වැරදි අංකයක්! කරුණාකර නිවැරදි අංකයක් reply කරන්න.*" },
+            const userReply     = replyMsg.message.extendedTextMessage?.text?.trim();
+            const selectedIndex = parseInt(userReply) - 1;
+
+            if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= topResults.length) {
+                return conn.sendMessage(from,
+                    { text: "❌ *වැරදි අංකයක්! කරුණාකර නිවැරදි අංකයක් reply කරන්න.*" },
+                    { quoted: replyMsg });
+            }
+
+            // Lock & cleanup movie listener immediately
+            movieListenerDone = true;
+            conn.ev.off('messages.upsert', movieListener);
+            clearTimeout(movieTimeout);
+
+            const selectedMovie = topResults[selectedIndex];
+
+            try {
+                await conn.sendMessage(from, { react: { text: "🔄", key: replyMsg.key } });
+
+                // ── Fetch links ──────────────────────────────
+                const extractUrl = `https://cinesubz-api-cnw.vercel.app/api/extract?id=${selectedMovie.id}&type=mv`;
+                const extRes  = await fetch(extractUrl);
+                const extData = await extRes.json();
+
+                if (!extData.status || !extData.data || extData.data.length === 0) {
+                    return conn.sendMessage(from,
+                        { text: "❌ *මෙම චිත්‍රපටියේ Direct Links ලබාගත නොහැක.*" },
                         { quoted: replyMsg });
-                    return;
                 }
 
-                // Lock immediately
-                movieListenerDone = true;
-                conn.ev.off('messages.upsert', movieListener);
-                clearTimeout(movieTimeout);
+                const directVideo = extData.data.find(v => v.is_direct_mp4) || extData.data[0];
+                const baseLink    = directVideo.link;
 
-                const selectedMovie = topResults[selectedIndex];
-                const contentType   = detectContentType(selectedMovie);
+                // ── Quality menu ─────────────────────────────
+                const qualityList = [
+                    { label: "🎥 480p  (SD)", quality: "480p" },
+                    { label: "🎥 720p  (HD)", quality: "720p" }
+                ];
 
-                try {
-                    await conn.sendMessage(from, { react: { text: "🔄", key: replyMsg.key } });
+                let qualityText  = `🎬 *${selectedMovie.title}*\n\n`;
+                    qualityText += `📅 *Year:*   ${selectedMovie.year   || 'N/A'}\n`;
+                    qualityText += `🎭 *Genres:* ${selectedMovie.genres || 'N/A'}\n`;
+                    qualityText += `⭐ *IMDB:*   ${selectedMovie.imdb   || 'N/A'}\n\n`;
+                    qualityText += `👇 *ඔබට අවශ්‍ය Quality එකේ අංකය Reply කරන්න*\n\n`;
+                qualityList.forEach((q, i) => { qualityText += `*${i + 1}.* ${q.label}\n`; });
+                    qualityText += `\n> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴇ © ⚜️`;
 
-                    // ── Fetch download links ──────────────────
-                    const extractUrl = `https://cinesubz-api-cnw.vercel.app/api/extract?id=${selectedMovie.id}&type=${contentType}`;
-                    const extRes  = await fetch(extractUrl);
-                    const extData = await extRes.json();
+                const qualityMsg = await conn.sendMessage(from, {
+                    image:   { url: selectedMovie.img },
+                    caption: qualityText
+                }, { quoted: replyMsg });
 
-                    if (!extData.status || !extData.data || extData.data.length === 0) {
-                        conn.sendMessage(from,
-                            { text: `❌ *${contentType === 'tv' ? 'TV Series' : 'Movie'} Direct Links ලබාගත නොහැක.*\n_ටිකක් ඉඳලා try කරන්න._` },
-                            { quoted: replyMsg });
-                        return;
+                // ── STEP 2: Quality selection listener ───────
+                let qualityListenerDone = false;
+
+                // FIX: declare timeout var first
+                let qualityTimeout;
+
+                const qualityListener = async (update2) => {
+                    if (qualityListenerDone) return;
+
+                    // FIX: safe extraction for Baileys v7
+                    const msgs2 = update2?.messages;
+                    if (!msgs2 || !Array.isArray(msgs2)) return;
+
+                    const qMsg = msgs2[0];
+                    if (!qMsg?.message) return;
+
+                    const qCtx = qMsg.message.extendedTextMessage?.contextInfo;
+                    if (!qCtx || qCtx.stanzaId !== qualityMsg.key.id) return;
+
+                    // FIX: correct sender check
+                    const qMsgSender = getSenderJid(qMsg);
+                    if (qMsgSender !== sender) return;
+
+                    const qUserReply     = qMsg.message.extendedTextMessage?.text?.trim();
+                    const qSelectedIndex = parseInt(qUserReply) - 1;
+
+                    if (isNaN(qSelectedIndex) || qSelectedIndex < 0 || qSelectedIndex >= qualityList.length) {
+                        return conn.sendMessage(from,
+                            { text: "❌ *වැරදි අංකයක්! 1 හෝ 2 reply කරන්න.*" },
+                            { quoted: qMsg });
                     }
 
-                    const directVideo = extData.data.find(v => v.is_direct_mp4) || extData.data[0];
-                    const baseLink    = directVideo.link;
+                    // Lock & cleanup quality listener immediately
+                    qualityListenerDone = true;
+                    conn.ev.off('messages.upsert', qualityListener);
+                    clearTimeout(qualityTimeout);
 
-                    // ── Quality selection menu ────────────────
-                    const qualityList = [
-                        { label: "🎥 480p  (SD)", quality: "480p" },
-                        { label: "🎥 720p  (HD)", quality: "720p" }
-                    ];
+                    const chosenQuality = qualityList[qSelectedIndex].quality;
+                    const shortTitle    = selectedMovie.title.substring(0, 25)
+                                            .replace(/[^a-zA-Z0-9 ]/g, "").trim();
+                    const finalUrl      = buildQualityUrl(baseLink, chosenQuality);
 
-                    const typeLabel  = contentType === 'tv' ? '📺 TV Series' : '🎬 Movie';
-                    let qualityText  = `${typeLabel}: *${selectedMovie.title}*\n\n`;
-                        qualityText += `📅 *Year:*   ${selectedMovie.year   || 'N/A'}\n`;
-                        qualityText += `🎭 *Genres:* ${selectedMovie.genres || 'N/A'}\n`;
-                        qualityText += `⭐ *IMDB:*   ${selectedMovie.imdb   || 'N/A'}\n\n`;
-                        qualityText += `👇 *Quality අංකය Reply කරන්න*\n\n`;
-                    qualityList.forEach((ql, i) => { qualityText += `*${i + 1}.* ${ql.label}\n`; });
-                        qualityText += `\n> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`;
+                    await conn.sendMessage(from, { react: { text: "📥", key: qMsg.key } });
 
-                    const qualityMsg   = await conn.sendMessage(from, {
-                        image:   { url: selectedMovie.img },
-                        caption: qualityText
-                    }, { quoted: replyMsg });
-                    const qualityMsgId = qualityMsg.key.id;
+                    // ── Size check (750 MB safe limit for Heroku) ──
+                    const sizeCheck = await checkFileSize(finalUrl, 750);
+                    if (!sizeCheck.ok) {
+                        await conn.sendMessage(from, { react: { text: "❌", key: qMsg.key } });
+                        return conn.sendMessage(from, {
+                            text: `❌ *File එක WhatsApp Limit ඉක්මවා ඇත!*\n` +
+                                  `📦 *Size:* ${sizeCheck.sizeMB.toFixed(0)} MB\n` +
+                                  `⚠️ Heroku RAM crash වෙන නිසා 750MB+ files skip කරනවා.`
+                        }, { quoted: FakeVCard });
+                    }
 
-                    // ── STEP 2 listener — Quality selection ──
-                    let qualityListenerDone = false;
+                    await conn.sendMessage(from, {
+                        text: `⬇️ *Downloading: ${shortTitle}* [${chosenQuality}]\n` +
+                              `${sizeCheck.sizeMB ? `📦 *Size:* ${sizeCheck.sizeMB.toFixed(0)} MB\n` : ''}` +
+                              `_Upload වීමට ටික වේලාවක් ගත විය හැක..._`
+                    }, { quoted: FakeVCard });
 
-                    const qualityListener = async (update2) => {
-                        if (qualityListenerDone) return;
+                    // ── Stream-safe document send ─────────────
+                    try {
+                        const captionText =
+                            `🎬 *${selectedMovie.title}* [${chosenQuality}]\n\n` +
+                            `> 👤 Downloaded by: ${pushname}\n` +
+                            `> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`;
 
-                        for (const qMsg of (update2.messages || [])) {
-                            if (!qMsg?.message) continue;
-                            if (qMsg.key?.fromMe) continue;
+                        await conn.sendMessage(from, {
+                            video:    { url: finalUrl },   // ✅ stream-safe (NOT document)
+                            mimetype: 'video/mp4',
+                            caption:  captionText,
+                            fileName: `${shortTitle} - ${chosenQuality}.mp4`
+                        }, { quoted: FakeVCard });
 
-                            if (getStanzaId(qMsg) !== qualityMsgId) continue;
-                            if (getMsgSender(qMsg) !== senderJid) continue;
+                        await conn.sendMessage(from, { react: { text: "✅", key: qMsg.key } });
 
-                            const qUserReply     = getMsgText(qMsg);
-                            const qSelectedIndex = parseInt(qUserReply) - 1;
+                    } catch (dlErr) {
+                        console.error('[CINESUBZ UPLOAD ERROR]', dlErr.message);
+                        await conn.sendMessage(from, { react: { text: "❌", key: qMsg.key } });
 
-                            if (isNaN(qSelectedIndex) || qSelectedIndex < 0 || qSelectedIndex >= qualityList.length) {
-                                conn.sendMessage(from,
-                                    { text: "❌ *වැරදි අංකයක්! 1 හෝ 2 reply කරන්න.*" },
-                                    { quoted: qMsg });
-                                return;
-                            }
-
-                            qualityListenerDone = true;
-                            conn.ev.off('messages.upsert', qualityListener);
-                            clearTimeout(qualityTimeout);
-
-                            const chosenQuality = qualityList[qSelectedIndex].quality;
-                            const shortTitle    = selectedMovie.title.substring(0, 25)
-                                                    .replace(/[^a-zA-Z0-9 ]/g, "").trim();
-                            const finalUrl      = buildQualityUrl(baseLink, chosenQuality);
-
-                            await conn.sendMessage(from, { react: { text: "📥", key: qMsg.key } });
-
-                            // Size check
-                            const sizeCheck = await checkFileSize(finalUrl, 1800);
-                            if (!sizeCheck.ok) {
-                                await conn.sendMessage(from, { react: { text: "❌", key: qMsg.key } });
-                                conn.sendMessage(from, {
-                                    text: `❌ *File WhatsApp Limit ඉක්මවා ඇත!*\n` +
-                                          `📦 *Size:* ${sizeCheck.sizeMB.toFixed(0)} MB\n` +
-                                          `⚠️ 1800MB+ Heroku crash කරවනවා.`
-                                }, { quoted: FakeVCard });
-                                return;
-                            }
-
-                            conn.sendMessage(from, {
-                                text: `⬇️ *Downloading: ${shortTitle}* [${chosenQuality}]\n` +
-                                      `${sizeCheck.sizeMB ? `📦 *Size:* ${sizeCheck.sizeMB.toFixed(0)} MB\n` : ''}` +
-                                      `_Upload වීමට ටික වේලාවක් ගත විය හැක..._`
+                        // Fallback — send as document if video upload fails
+                        try {
+                            await conn.sendMessage(from, {
+                                document: { url: finalUrl },
+                                mimetype: 'video/mp4',
+                                fileName: `${shortTitle} - ${chosenQuality}.mp4`,
+                                caption:  `🎬 *${selectedMovie.title}* [${chosenQuality}]\n> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`
                             }, { quoted: FakeVCard });
-
-                            // Send video (stream-safe)
-                            try {
-                                await conn.sendMessage(from, {
-                                    video:    { url: finalUrl },
-                                    mimetype: 'video/mp4',
-                                    caption:  `🎬 *${selectedMovie.title}* [${chosenQuality}]\n> 👤 Sʜᴀᴠɪʏᴀ Xᴍᴅ\n> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`,
-                                    fileName: `${shortTitle} - ${chosenQuality}.mp4`
-                                }, { quoted: FakeVCard });
-
-                                conn.sendMessage(from, { react: { text: "✅", key: qMsg.key } });
-
-                            } catch (dlErr) {
-                                console.error('[CINESUBZ UPLOAD ERROR]', dlErr.message);
-                                conn.sendMessage(from, { react: { text: "❌", key: qMsg.key } });
-
-                                // Fallback: document
-                                try {
-                                    await conn.sendMessage(from, {
-                                        document: { url: finalUrl },
-                                        mimetype: 'video/mp4',
-                                        fileName: `${shortTitle} - ${chosenQuality}.mp4`,
-                                        caption:  `🎬 *${selectedMovie.title}* [${chosenQuality}]\n> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`
-                                    }, { quoted: FakeVCard });
-                                    conn.sendMessage(from, { react: { text: "✅", key: qMsg.key } });
-                                } catch (fbErr) {
-                                    conn.sendMessage(from,
-                                        { text: `❌ *Download Failed!*\n${fbErr.message}` },
-                                        { quoted: FakeVCard });
-                                }
-                            }
-
-                            return;
-                        }
-                    };
-
-                    conn.ev.on('messages.upsert', qualityListener);
-                    const qualityTimeout = setTimeout(() => {
-                        if (!qualityListenerDone) {
-                            qualityListenerDone = true;
-                            conn.ev.off('messages.upsert', qualityListener);
+                            await conn.sendMessage(from, { react: { text: "✅", key: qMsg.key } });
+                        } catch (fbErr) {
                             conn.sendMessage(from,
-                                { text: "⏰ *Timeout. .cz2 command නැවත භාවිතා කරන්න.*" },
+                                { text: `❌ *Download Failed!*\nError: ${fbErr.message}` },
                                 { quoted: FakeVCard });
                         }
-                    }, 90000);
+                    }
+                };
 
-                } catch (e) {
-                    console.error("[CINESUBZ DETAILS ERROR]", e);
-                    conn.sendMessage(from,
-                        { text: `⚠️ *Error:* ${e.message}` },
-                        { quoted: replyMsg });
-                }
+                conn.ev.on('messages.upsert', qualityListener);
+                // FIX: assign AFTER declaration — no hoisting issue
+                qualityTimeout = setTimeout(() => {
+                    if (!qualityListenerDone) {
+                        qualityListenerDone = true;
+                        conn.ev.off('messages.upsert', qualityListener);
+                        conn.sendMessage(from,
+                            { text: "⏰ *Quality selection timeout. කරුණාකර නැවත .cz2 command භාවිතා කරන්න.*" },
+                            { quoted: FakeVCard });
+                    }
+                }, 90000); // 90 seconds
 
-                return;
+            } catch (e) {
+                console.error("[CINESUBZ DETAILS ERROR]", e);
+                conn.sendMessage(from,
+                    { text: `⚠️ *Error fetching details:* ${e.message}` },
+                    { quoted: replyMsg });
             }
         };
 
         conn.ev.on('messages.upsert', movieListener);
-        const movieTimeout = setTimeout(() => {
+        // FIX: assign AFTER declaration
+        movieTimeout = setTimeout(() => {
             if (!movieListenerDone) {
                 movieListenerDone = true;
                 conn.ev.off('messages.upsert', movieListener);
+                // FIX: user notify added (was missing before)
+                conn.sendMessage(from,
+                    { text: "⏰ *Movie selection timeout. කරුණාකර නැවත .cz2 command භාවිතා කරන්න.*" },
+                    { quoted: FakeVCard });
             }
-        }, 90000);
+        }, 90000); // 90 seconds
 
     } catch (e) {
         console.error('[CINESUBZ SEARCH ERROR]', e);
@@ -360,7 +327,7 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
     try {
         if (!q || !q.includes('||')) return;
 
-        const parts       = q.split(' || ');
+        const parts = q.split(' || ');
         const title       = parts[0]?.trim();
         const quality     = parts[1]?.trim();
         const originalUrl = parts[2]?.trim();
@@ -369,27 +336,32 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
         await conn.sendMessage(from, { react: { text: "📥", key: mek.key } });
 
         const finalUrl  = buildQualityUrl(originalUrl, quality);
-        const sizeCheck = await checkFileSize(finalUrl, 1800);
+        const sizeCheck = await checkFileSize(finalUrl, 750);
 
         if (!sizeCheck.ok) {
             await conn.sendMessage(from, { react: { text: "❌", key: mek.key } });
-            return reply(`❌ *File Size Limit Exceeded!*\n📦 ${sizeCheck.sizeMB.toFixed(0)} MB — 1800MB limit.`);
+            return reply(`❌ *File Size Limit Exceeded!*\n📦 ${sizeCheck.sizeMB.toFixed(0)} MB — 750MB limit.\nHeroku RAM crash වෙනවා.`);
         }
 
-        conn.sendMessage(from, {
+        await conn.sendMessage(from, {
             text: `⬇️ *Downloading ${title} [${quality}]...*\n` +
                   `${sizeCheck.sizeMB ? `📦 *Size:* ${sizeCheck.sizeMB.toFixed(0)} MB\n` : ''}` +
                   `_Upload වීමට ටික වේලාවක් ගත විය හැක..._`
         }, { quoted: FakeVCard });
 
+        const captionText =
+            `🎬 *${title}* [${quality}]\n\n` +
+            `> 👤 Downloaded by: ${pushname}\n` +
+            `> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`;
+
         await conn.sendMessage(from, {
             video:    { url: finalUrl },
             mimetype: 'video/mp4',
-            caption:  `🎬 *${title}* [${quality}]\n> 👤 Sʜᴀᴠɪʏᴀ Xᴍᴅ\n> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`,
+            caption:  captionText,
             fileName: `${title} - ${quality}.mp4`
         }, { quoted: FakeVCard });
 
-        conn.sendMessage(from, { react: { text: "✅", key: mek.key } });
+        await conn.sendMessage(from, { react: { text: "✅", key: mek.key } });
 
     } catch (e) {
         console.error('[CINESUBZ DL ERROR]', e);
