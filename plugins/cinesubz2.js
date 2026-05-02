@@ -316,7 +316,7 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
 
         const captionText =
             `🎬 *${title}* [${quality}]\n\n` +
-            `> 👤 Downloaded by: ${pushname}\n` +
+            `> 👤 Downloaded by: Sʜᴀᴠɪʏᴀ Xᴍᴅ\n` +
             `> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`;
 
         await conn.sendMessage(from, {
