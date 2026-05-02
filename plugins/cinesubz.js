@@ -57,15 +57,20 @@ async function makeThumbnail(moviePosterUrl, hardThumbUrl, movieDocOn) {
   }
 }
 
-function waitForReply(conn, from, replyToId, timeout) {
+function waitForReply(conn, from, sender, replyToId, timeout) {
   if (!timeout) timeout = 120000;
   return new Promise(function(resolve, reject) {
     var handler = function(update) {
       var msg = update.messages && update.messages[0];
       if (!msg || !msg.message) return;
+      // ✅ FIX: correct chat check
+      if (msg.key.remoteJid !== from) return;
+      // ✅ FIX: correct user check
+      var msgSender = msg.key.participant || msg.key.remoteJid;
+      if (!msgSender.includes(sender.split('@')[0])) return;
       var ctx  = msg.message.extendedTextMessage && msg.message.extendedTextMessage.contextInfo;
       var text = msg.message.conversation || (msg.message.extendedTextMessage && msg.message.extendedTextMessage.text);
-      if (msg.key.remoteJid === from && ctx && ctx.stanzaId === replyToId) {
+      if (ctx && ctx.stanzaId === replyToId) {
         conn.ev.off("messages.upsert", handler);
         resolve({ msg: msg, text: text });
       }
@@ -102,7 +107,7 @@ cmd({
   react: "🍿",
   filename: __filename
 }, async function(conn, mek, m, opts) {
-  var from = opts.from, q = opts.q, reply = opts.reply, sessionId = opts.sessionId;
+  var from = opts.from, q = opts.q, reply = opts.reply, sessionId = opts.sessionId, sender = opts.sender;
   try {
     if (!q) return reply("Example: .cz Avengers");
 
@@ -125,7 +130,7 @@ cmd({
       text: listText + "\nReply with number\n\n" + footer
     }, { quoted: mek });
 
-    var sel1 = await waitForReply(conn, from, listMsg.key.id);
+    var sel1 = await waitForReply(conn, from, sender, listMsg.key.id);
     var index = parseInt(sel1.text) - 1;
     if (isNaN(index) || !results[index]) return reply("Invalid number.");
     await react(conn, from, sel1.msg.key, "🎬");
@@ -154,7 +159,7 @@ cmd({
       caption: infoText + "\n\nReply with download number\n" + footer
     }, { quoted: sel1.msg });
 
-    var sel2   = await waitForReply(conn, from, infoMsg.key.id);
+    var sel2   = await waitForReply(conn, from, sender, infoMsg.key.id);
     var dIndex = parseInt(sel2.text) - 1;
     if (isNaN(dIndex) || !info.downloads[dIndex]) return reply("Invalid download number.");
     await react(conn, from, sel2.msg.key, "⬇️");
