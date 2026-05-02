@@ -360,8 +360,8 @@ async function handleMovieDownload(conn, from, sender, dlLinks, title, quotedMsg
 //  MAIN MOVIE COMMAND
 // ═══════════════════════════════════════════════════
 cmd({
-  pattern: "movie",
-  alias: ["cinetv", "ct"],
+  pattern: "cinetv",
+  alias: ["ct"],
   desc: "Download movies & TV series from CineSubz",
   category: "downloader",
   react: "🎬",
