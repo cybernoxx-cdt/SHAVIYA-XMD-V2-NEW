@@ -79,6 +79,8 @@ function waitForReply(conn, from, sender, targetId, timeout = 1800000) { // 30 m
     const handler = (update) => {
       const msg = update.messages?.[0];
       if (!msg?.message) return;
+      // ✅ FIX: bot own messages ignore
+      if (msg.key.fromMe) return;
       const text = msg.message.conversation || msg.message?.extendedTextMessage?.text || "";
       const context = msg.message?.extendedTextMessage?.contextInfo;
       const msgSender = msg.key.participant || msg.key.remoteJid;
@@ -418,16 +420,7 @@ cmd({
     listText += `💫 *${FOOTER}*`;
 
     const sentSearch = await conn.sendMessage(from, { 
-      text: listText,
-      contextInfo: {
-        forwardingScore: 999,
-        isForwarded: true,
-        forwardedNewsletterMessageInfo: {
-          newsletterJid: '120363304437429368@newsletter',
-          newsletterName: 'SHAVIYA-XMD',
-          serverMessageId: 1
-        }
-      }
+      text: listText
     }, { quoted: m });
 
     // Handle TV Series
