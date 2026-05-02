@@ -3,10 +3,6 @@
 //  ✅ Numbered Reply System (No Buttons)
 //  ✅ Memory Crash Fixed (Stream-safe download)
 //  ✅ Listener Leak Fixed (sender + stanza double check)
-//  ✅ Group & DM sender match fixed
-//  ✅ qualityTimeout hoisting bug fixed
-//  ✅ Movie timeout message added
-//  ✅ Baileys v7 upsert structure fixed
 // ============================================================
 
 const { cmd } = require('../command');
@@ -23,14 +19,6 @@ const FakeVCard = {
         }
     }
 };
-
-// ─────────────────────────────────────────────────────────────
-//  HELPER: Get the real sender JID (works in groups + DMs)
-// ─────────────────────────────────────────────────────────────
-function getSenderJid(msg) {
-    // In groups: participant holds the sender; in DMs: remoteJid
-    return msg.key.participant || msg.key.remoteJid || '';
-}
 
 // ─────────────────────────────────────────────────────────────
 //  HELPER: Stream-safe size check
@@ -100,29 +88,20 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
         // ── STEP 1: Movie selection listener ────────────────
         let movieListenerDone = false;
 
-        // FIX: declare timeout var first so clearTimeout doesn't throw ReferenceError
-        let movieTimeout;
-
         const movieListener = async (update) => {
             // Prevent double-fire
             if (movieListenerDone) return;
 
-            // FIX: Baileys v7 upsert gives { messages, type } — safely extract
-            const messages = update?.messages;
-            if (!messages || !Array.isArray(messages)) return;
-
-            const replyMsg = messages[0];
+            const replyMsg = update.messages?.[0];
             if (!replyMsg?.message) return;
 
             // Must be a reply to our list message AND from the same sender
             const ctx = replyMsg.message.extendedTextMessage?.contextInfo;
-            if (!ctx || ctx.stanzaId !== listMsg.key.id) return;
+            if (ctx?.stanzaId !== listMsg.key.id) return;
+            if ((replyMsg.key.participant || replyMsg.key.remoteJid) !== sender &&
+                replyMsg.key.remoteJid !== sender) return;
 
-            // FIX: use helper for correct group/DM sender detection
-            const msgSender = getSenderJid(replyMsg);
-            if (msgSender !== sender) return;
-
-            const userReply     = replyMsg.message.extendedTextMessage?.text?.trim();
+            const userReply    = replyMsg.message.extendedTextMessage?.text?.trim();
             const selectedIndex = parseInt(userReply) - 1;
 
             if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= topResults.length) {
@@ -167,7 +146,7 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                     qualityText += `⭐ *IMDB:*   ${selectedMovie.imdb   || 'N/A'}\n\n`;
                     qualityText += `👇 *ඔබට අවශ්‍ය Quality එකේ අංකය Reply කරන්න*\n\n`;
                 qualityList.forEach((q, i) => { qualityText += `*${i + 1}.* ${q.label}\n`; });
-                    qualityText += `\n> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴇ © ⚜️`;
+                    qualityText += `\n> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`;
 
                 const qualityMsg = await conn.sendMessage(from, {
                     image:   { url: selectedMovie.img },
@@ -177,27 +156,18 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                 // ── STEP 2: Quality selection listener ───────
                 let qualityListenerDone = false;
 
-                // FIX: declare timeout var first
-                let qualityTimeout;
-
                 const qualityListener = async (update2) => {
                     if (qualityListenerDone) return;
 
-                    // FIX: safe extraction for Baileys v7
-                    const msgs2 = update2?.messages;
-                    if (!msgs2 || !Array.isArray(msgs2)) return;
-
-                    const qMsg = msgs2[0];
+                    const qMsg = update2.messages?.[0];
                     if (!qMsg?.message) return;
 
                     const qCtx = qMsg.message.extendedTextMessage?.contextInfo;
-                    if (!qCtx || qCtx.stanzaId !== qualityMsg.key.id) return;
+                    if (qCtx?.stanzaId !== qualityMsg.key.id) return;
+                    if ((qMsg.key.participant || qMsg.key.remoteJid) !== sender &&
+                        qMsg.key.remoteJid !== sender) return;
 
-                    // FIX: correct sender check
-                    const qMsgSender = getSenderJid(qMsg);
-                    if (qMsgSender !== sender) return;
-
-                    const qUserReply     = qMsg.message.extendedTextMessage?.text?.trim();
+                    const qUserReply    = qMsg.message.extendedTextMessage?.text?.trim();
                     const qSelectedIndex = parseInt(qUserReply) - 1;
 
                     if (isNaN(qSelectedIndex) || qSelectedIndex < 0 || qSelectedIndex >= qualityList.length) {
@@ -236,6 +206,7 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                     }, { quoted: FakeVCard });
 
                     // ── Stream-safe document send ─────────────
+                    // Baileys streams from URL — avoid buffering entire file in RAM
                     try {
                         const captionText =
                             `🎬 *${selectedMovie.title}* [${chosenQuality}]\n\n` +
@@ -273,8 +244,7 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                 };
 
                 conn.ev.on('messages.upsert', qualityListener);
-                // FIX: assign AFTER declaration — no hoisting issue
-                qualityTimeout = setTimeout(() => {
+                const qualityTimeout = setTimeout(() => {
                     if (!qualityListenerDone) {
                         qualityListenerDone = true;
                         conn.ev.off('messages.upsert', qualityListener);
@@ -293,15 +263,10 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
         };
 
         conn.ev.on('messages.upsert', movieListener);
-        // FIX: assign AFTER declaration
-        movieTimeout = setTimeout(() => {
+        const movieTimeout = setTimeout(() => {
             if (!movieListenerDone) {
                 movieListenerDone = true;
                 conn.ev.off('messages.upsert', movieListener);
-                // FIX: user notify added (was missing before)
-                conn.sendMessage(from,
-                    { text: "⏰ *Movie selection timeout. කරුණාකර නැවත .cz2 command භාවිතා කරන්න.*" },
-                    { quoted: FakeVCard });
             }
         }, 90000); // 90 seconds
 
