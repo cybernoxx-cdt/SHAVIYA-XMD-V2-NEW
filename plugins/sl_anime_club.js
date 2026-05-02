@@ -3,6 +3,7 @@ const axios = require("axios");
 const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
+const fg = require('api-dylux'); // ✅ cinetv_fixed ලෙ same — proper GDrive resolve
 
 // ───────── SESSION CONFIG ─────────
 function getSessionConfig(sessionId) {
@@ -17,12 +18,11 @@ function getBotName(sessionId) {
 }
 function getHardThumbUrl(sessionId) {
   return getSessionConfig(sessionId).thumbUrl ||
-    "https://image2url.com/r2/default/images/1774184263251-f9306abd-80ec-4b38-830e-73649a3d687e.png";
+    "https://whiteshadow-uploader.vercel.app/files/8xh.jpg";
 }
 
 // ───────── CONFIGURATION ─────────
 const API_BASE = "https://sl-anime1.vercel.app/api/handler";
-const GDRIVE_API_KEY = "AIzaSyB7OnWWJpaxzG70ko0aWXKgzjBpb4KZR98";
 
 // ───────── Thumbnail ─────────
 async function makeThumbnail(url) {
@@ -40,7 +40,6 @@ async function react(conn, jid, key, emoji) {
 }
 
 // ───────── Wait for Reply (multi-reply loop) ─────────
-// handler remove නොකරයි — loop ලෙස multiple replies listen කරයි
 function waitForReply(conn, from, sender, targetId, timeout = 600000) {
   return new Promise((resolve) => {
     const handler = (update) => {
@@ -88,57 +87,98 @@ function waitForReplyOnce(conn, from, sender, targetId, timeout = 600000) {
   });
 }
 
-// ───────── GDrive Download & Send (URL stream, no buffer crash) ─────────
-async function sendGDriveFile(conn, from, directLink, title, epNum, quality, quotedMsg, thumbUrl, sessionId) {
-  const driveMatch = directLink.match(/(?:drive\.google\.com\/file\/d\/|id=)([\w-]+)/);
-  if (!driveMatch) {
-    return conn.sendMessage(from, { text: "❌ GDrive link parse කිරීමේ දෝෂයක්." }, { quoted: quotedMsg });
+// ═══════════════════════════════════════════════════
+//  ✅ FIX: resolveGDriveLink — api-dylux fg.GDriveDl use කරනවා
+//  cinetv_fixed.js ලෙ same pattern — proper stream URL resolve කරයි
+//  ❌ OLD: googleapis alt=media&key= (quota/restrict → 2.5KB error JSON)
+// ═══════════════════════════════════════════════════
+async function resolveGDriveLink(driveUrl, label) {
+  try {
+    console.log(`🔗 [ANIME] ${label} → Resolving GDrive: ${driveUrl}`);
+    const r = await fg.GDriveDl(driveUrl);
+    console.log(`📦 [ANIME] ${label} GDrive OK: ${r.fileName} | ${r.fileSize}`);
+    return {
+      url: r.downloadUrl,
+      fileName: r.fileName,
+      fileSize: r.fileSize,
+      mimetype: r.mimetype || 'video/mp4',
+    };
+  } catch (e) {
+    console.log(`❌ [ANIME] ${label} GDrive resolve failed:`, e.message);
+    return null;
   }
-  const fileId = driveMatch[1];
-  await react(conn, from, quotedMsg.key, "📥");
+}
 
+// ═══════════════════════════════════════════════════
+//  ✅ Smart Size Parser
+// ═══════════════════════════════════════════════════
+function parseSizeMB(raw) {
+  if (!raw) return null;
+  const str = raw.toString().trim().toUpperCase();
+  const num = parseFloat(str.replace(/[^0-9.]/g, ''));
+  if (isNaN(num)) return null;
+  if (str.includes('GB')) return num * 1024;
+  if (str.includes('KB')) return num / 1024;
+  if (str.includes('MB')) return num;
+  if (num > 1048576) return num / (1024 * 1024);
+  return null;
+}
+
+async function getRealSizeMB(url) {
+  try {
+    const res = await axios.head(url, { timeout: 10000 });
+    const cl = res.headers['content-length'];
+    if (cl) return parseInt(cl) / (1024 * 1024);
+  } catch (_) {}
+  return null;
+}
+
+// ═══════════════════════════════════════════════════
+//  ✅ Smart Send — size check කරලා send / link card
+//  Heroku 512MB dyno → 450MB safe limit
+// ═══════════════════════════════════════════════════
+const MAX_SEND_MB = 450;
+
+async function smartSend(conn, from, dlResult, title, epNum, quality, thumb, quotedMsg, sessionId) {
   const FOOTER = getBotName(sessionId);
-  const finalFileName = `${title} - Ep ${epNum} [${quality}].mp4`.replace(/[\/\\:*?"<>|]/g, "");
+  const fileName = dlResult.fileName || `${title} - Ep ${epNum} [${quality}].mp4`;
   const caption = `✅ *Download Complete*\n\n🎬 *Anime:* ${title}\n📺 *Episode:* ${epNum}\n💎 *Quality:* ${quality}\n\n${FOOTER}`;
 
-  // ✅ Strategy 1: URL stream via googleapis (no RAM buffer)
-  const streamUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${GDRIVE_API_KEY}`;
+  let sizeMB = parseSizeMB(dlResult.fileSize);
+  if (!sizeMB && dlResult.url) {
+    console.log(`📏 [ANIME] HEAD check: ${title} Ep ${epNum}`);
+    sizeMB = await getRealSizeMB(dlResult.url);
+  }
 
-  try {
-    const thumb = await makeThumbnail(thumbUrl || getHardThumbUrl(sessionId));
+  console.log(`📦 [ANIME] Size: ${sizeMB ? sizeMB.toFixed(1) + ' MB' : 'unknown'} | Limit: ${MAX_SEND_MB} MB`);
+
+  if (!sizeMB || sizeMB <= MAX_SEND_MB) {
+    // ✅ Size OK — document ලෙස send
     const docMsg = await conn.sendMessage(from, {
-      document: { url: streamUrl },
-      fileName: finalFileName,
-      mimetype: "video/mp4",
+      document: { url: dlResult.url },
+      fileName: fileName.replace(/[\/\\:*?"<>|]/g, ""),
+      mimetype: dlResult.mimetype || 'video/mp4',
       jpegThumbnail: thumb || undefined,
       caption,
     }, { quoted: quotedMsg });
     await react(conn, from, docMsg.key, "✅");
-
-  } catch (e) {
-    console.log("⚠️ GDrive URL stream failed:", e.message);
-    // ✅ Strategy 2: usercontent download URL fallback
-    try {
-      const fallbackUrl = `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`;
-      const thumb = await makeThumbnail(thumbUrl || getHardThumbUrl(sessionId));
-      const docMsg = await conn.sendMessage(from, {
-        document: { url: fallbackUrl },
-        fileName: finalFileName,
-        mimetype: "video/mp4",
-        jpegThumbnail: thumb || undefined,
-        caption,
-      }, { quoted: quotedMsg });
-      await react(conn, from, docMsg.key, "✅");
-    } catch (e2) {
-      console.log("❌ GDrive fallback failed:", e2.message);
-      await conn.sendMessage(from, {
-        text: `❌ File send කිරීමේ දෝෂය.\n\n📎 Manual link:\nhttps://drive.google.com/file/d/${fileId}/view\n\n${caption}`
-      }, { quoted: quotedMsg });
-    }
+    console.log(`✅ [ANIME] Sent: ${fileName}`);
+  } else {
+    // ⚠️ Too large — link card
+    const formattedMB = sizeMB >= 1024
+      ? `${(sizeMB / 1024).toFixed(2)} GB`
+      : `${sizeMB.toFixed(0)} MB`;
+    const linkMsg = await conn.sendMessage(from, {
+      text: `🎬 *${title}*\n📺 *Episode:* ${epNum}\n💎 *Quality:* ${quality}\n📦 *Size:* ${formattedMB}\n\n⚠️ File too large for WhatsApp. Direct link:\n${dlResult.url}\n\n${FOOTER}`
+    }, { quoted: quotedMsg });
+    await react(conn, from, linkMsg.key, "🔗");
   }
 }
 
-// ───────── Download Handler (single episode) ─────────
+// ═══════════════════════════════════════════════════
+//  ✅ Download Handler (single episode)
+//  direct_link → GDrive resolve → smart send
+// ═══════════════════════════════════════════════════
 async function handleDownload(conn, from, sender, url, title, quotedMsg, epNum, thumbUrl, sessionId) {
   try {
     const dlRes = await axios.get(`${API_BASE}?action=download&url=${encodeURIComponent(url)}`, { timeout: 20000 });
@@ -160,7 +200,28 @@ async function handleDownload(conn, from, sender, url, title, quotedMsg, epNum, 
     const chosen = dlLinks[parseInt(qSel.text) - 1];
     if (!chosen) return conn.sendMessage(from, { text: "❌ වලංගු quality අංකයක් ඇතුලත් කරන්න." }, { quoted: qSel.msg });
 
-    await sendGDriveFile(conn, from, chosen.direct_link, title, epNum, chosen.quality, qSel.msg, thumbUrl, sessionId);
+    await react(conn, from, qSel.msg.key, "📥");
+
+    // ✅ GDrive link resolve
+    const driveUrl = chosen.direct_link
+      .replace('https://drive.usercontent.google.com/download?id=', 'https://drive.google.com/file/d/')
+      .replace('&export=download&authuser=0', '/view')
+      .replace('&export=download', '/view');
+
+    const dlResult = await resolveGDriveLink(driveUrl, `${title} Ep${epNum}`);
+    if (!dlResult) {
+      // Fallback: direct URL try
+      console.log(`⚠️ [ANIME] GDrive resolve failed, trying direct URL: ${chosen.direct_link}`);
+      const thumb = await makeThumbnail(thumbUrl || getHardThumbUrl(sessionId));
+      await smartSend(conn, from,
+        { url: chosen.direct_link, fileName: null, fileSize: null, mimetype: 'video/mp4' },
+        title, epNum, chosen.quality, thumb, qSel.msg, sessionId
+      );
+      return;
+    }
+
+    const thumb = await makeThumbnail(thumbUrl || getHardThumbUrl(sessionId));
+    await smartSend(conn, from, dlResult, title, epNum, chosen.quality, thumb, qSel.msg, sessionId);
 
   } catch (e) {
     console.log("❌ handleDownload error:", e.message);
@@ -168,11 +229,14 @@ async function handleDownload(conn, from, sender, url, title, quotedMsg, epNum, 
   }
 }
 
-// ───────── Download All Episodes (0 input) ─────────
+// ═══════════════════════════════════════════════════
+//  ✅ Download ALL Episodes (0 input)
+//  Quality once → loop each ep → resolve → smart send
+// ═══════════════════════════════════════════════════
 async function handleAllEpisodes(conn, from, sender, episodes, title, quotedMsg, thumbUrl, sessionId) {
   const FOOTER = getBotName(sessionId);
 
-  // Quality selection once for all
+  // Quality selection once (from first episode)
   const firstEp = episodes[0];
   let firstDlLinks;
   try {
@@ -207,10 +271,12 @@ async function handleAllEpisodes(conn, from, sender, episodes, title, quotedMsg,
     text: `⏳ *Sending All ${episodes.length} Episodes...*\n📺 *${title}*\n💎 *Quality:* ${chosenQuality}\n\n${FOOTER}`
   }, { quoted: qSel.msg });
 
-  // Send episodes one by one sequentially
+  // ✅ Sequential — resolve each episode properly
   for (let i = 0; i < episodes.length; i++) {
     const ep = episodes[i];
     try {
+      console.log(`📥 [ANIME] Episode ${ep.ep_num} (${i + 1}/${episodes.length})...`);
+
       const dlRes = await axios.get(`${API_BASE}?action=download&url=${encodeURIComponent(ep.link)}`, { timeout: 20000 });
       const dlLinks = dlRes.data?.download_links;
       if (!dlLinks?.length) {
@@ -218,15 +284,35 @@ async function handleAllEpisodes(conn, from, sender, episodes, title, quotedMsg,
         continue;
       }
 
-      // Same quality or closest match
+      // Same quality හෝ closest match
       const chosen = dlLinks.find(d => d.quality === chosenQuality) || dlLinks[0];
-      await sendGDriveFile(conn, from, chosen.direct_link, title, ep.ep_num, chosen.quality, qSel.msg, thumbUrl, sessionId);
 
-      // Small delay between episodes to avoid rate limiting
+      // ✅ GDrive proper resolve (not raw googleapis key)
+      const driveUrl = chosen.direct_link
+        .replace('https://drive.usercontent.google.com/download?id=', 'https://drive.google.com/file/d/')
+        .replace('&export=download&authuser=0', '/view')
+        .replace('&export=download', '/view');
+
+      const dlResult = await resolveGDriveLink(driveUrl, `${title} Ep${ep.ep_num}`);
+      const thumb = await makeThumbnail(thumbUrl || getHardThumbUrl(sessionId));
+
+      if (!dlResult) {
+        console.log(`⚠️ [ANIME] EP${ep.ep_num} GDrive failed, trying direct...`);
+        await smartSend(conn, from,
+          { url: chosen.direct_link, fileName: null, fileSize: null, mimetype: 'video/mp4' },
+          title, ep.ep_num, chosen.quality, thumb, qSel.msg, sessionId
+        );
+      } else {
+        await smartSend(conn, from, dlResult, title, ep.ep_num, chosen.quality, thumb, qSel.msg, sessionId);
+      }
+
+      console.log(`✅ [ANIME] Sent EP ${ep.ep_num}`);
+
+      // Rate limit avoid — episodes අතර delay
       if (i < episodes.length - 1) await new Promise(r => setTimeout(r, 3000));
 
     } catch (e) {
-      console.log(`❌ EP ${ep.ep_num} error:`, e.message);
+      console.log(`❌ [ANIME] EP ${ep.ep_num} error:`, e.message);
       await conn.sendMessage(from, { text: `⚠️ EP ${ep.ep_num}: Error - ${e.message}` }, { quoted: qSel.msg });
     }
   }
