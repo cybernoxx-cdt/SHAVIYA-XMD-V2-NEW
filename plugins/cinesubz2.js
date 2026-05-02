@@ -3,6 +3,8 @@
 //  ✅ Numbered Reply System (No Buttons)
 //  ✅ Memory Crash Fixed (Stream-safe download)
 //  ✅ Listener Leak Fixed (sender + stanza double check)
+//  ✅ Sender Check Bug Fixed (Group + DM both work)
+//  ✅ TV Series Support Added (type=tv auto detect)
 // ============================================================
 
 const { cmd } = require('../command');
@@ -19,6 +21,15 @@ const FakeVCard = {
         }
     }
 };
+
+// ─────────────────────────────────────────────────────────────
+//  HELPER: Normalize sender JID (fix group vs DM check)
+// ─────────────────────────────────────────────────────────────
+function getSenderJid(msg) {
+    // In groups: key.participant has the real sender
+    // In DMs: key.remoteJid is the sender
+    return (msg.key.participant || msg.key.remoteJid || '').split(':')[0];
+}
 
 // ─────────────────────────────────────────────────────────────
 //  HELPER: Stream-safe size check
@@ -46,22 +57,38 @@ function buildQualityUrl(baseLink, quality) {
     return baseLink;
 }
 
+// ─────────────────────────────────────────────────────────────
+//  HELPER: Detect content type from API result
+//  Returns 'mv' for movies, 'tv' for series
+// ─────────────────────────────────────────────────────────────
+function detectContentType(item) {
+    if (!item) return 'mv';
+    const t = (item.type || item.content_type || '').toLowerCase();
+    if (t.includes('tv') || t.includes('series') || t.includes('show')) return 'tv';
+    // Some APIs use 'episodes' field presence to indicate TV
+    if (item.episodes || item.seasons) return 'tv';
+    return 'mv';
+}
+
 // =================================================
-// 1. CINESUBZ MOVIE SEARCH COMMAND (.cz2)
+// 1. CINESUBZ MOVIE/TV SEARCH COMMAND (.cz2)
 // =================================================
 cmd({
     pattern:  'cz2',
     alias:    ['cinesubz2'],
     react:    '🔍',
-    desc:     'Search and Download movies from Cinesubz (Shaviya Cinema)',
+    desc:     'Search and Download movies/TV series from Cinesubz (Shaviya Cinema)',
     category: 'download',
     filename: __filename
 },
 async (conn, mek, m, { from, q, pushname, sender, reply }) => {
     try {
-        if (!q) return reply("🎬 *කරුණාකර Movie එකේ නම ලබා දෙන්න!*\n_උදා: .cz2 batman_");
+        if (!q) return reply("🎬 *කරුණාකර Movie/Series නම ලබා දෙන්න!*\n_උදා: .cz2 batman_");
 
         const query = q.trim();
+        // Normalize sender JID once for reuse in listeners
+        const senderJid = sender.split(':')[0];
+
         await conn.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
         // ── Search ──────────────────────────────────────────
@@ -70,38 +97,40 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
         const data = await res.json();
 
         if (!data.status || !data.data || data.data.length === 0) {
-            return reply("❌ *සමාවෙන්න, එම නමින් Movies කිසිවක් හමුවූයේ නැත.*");
+            return reply("❌ *සමාවෙන්න, එම නමින් Movies/Series කිසිවක් හමුවූයේ නැත.*");
         }
 
         const topResults = data.data.slice(0, 10);
 
-        let listText = `🎬 *SHAVIYA CINEMA — MOVIE SEARCH*\n\n`;
+        let listText = `🎬 *SHAVIYA CINEMA — SEARCH RESULTS*\n\n`;
         listText    += `🔍 *සෙව්වේ:* ${query}\n👤 *User:* ${pushname}\n\n`;
-        listText    += `👇 *ඔබට අවශ්‍ය ෆිල්ම් එකේ අංකය Reply කරන්න*\n\n`;
+        listText    += `👇 *ඔබට අවශ්‍ය ෆිල්ම් / Series එකේ අංකය Reply කරන්න*\n\n`;
         topResults.forEach((mv, i) => {
-            listText += `*${i + 1}.* ${mv.title} (${mv.year || 'N/A'})\n`;
+            const typeTag = detectContentType(mv) === 'tv' ? '📺' : '🎬';
+            listText += `*${i + 1}.* ${typeTag} ${mv.title} (${mv.year || 'N/A'})\n`;
         });
         listText += `\n> *Reply with 1 - ${topResults.length}*\n> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`;
 
         const listMsg = await conn.sendMessage(from, { text: listText }, { quoted: FakeVCard });
 
-        // ── STEP 1: Movie selection listener ────────────────
+        // ── STEP 1: Movie/Series selection listener ──────────
         let movieListenerDone = false;
 
         const movieListener = async (update) => {
-            // Prevent double-fire
             if (movieListenerDone) return;
 
             const replyMsg = update.messages?.[0];
             if (!replyMsg?.message) return;
 
-            // Must be a reply to our list message AND from the same sender
+            // Must be a reply to our list message
             const ctx = replyMsg.message.extendedTextMessage?.contextInfo;
             if (ctx?.stanzaId !== listMsg.key.id) return;
-            if ((replyMsg.key.participant || replyMsg.key.remoteJid) !== sender &&
-                replyMsg.key.remoteJid !== sender) return;
 
-            const userReply    = replyMsg.message.extendedTextMessage?.text?.trim();
+            // ✅ FIXED: normalize sender JID for both group and DM
+            const msgSenderJid = getSenderJid(replyMsg);
+            if (msgSenderJid !== senderJid) return;
+
+            const userReply     = replyMsg.message.extendedTextMessage?.text?.trim();
             const selectedIndex = parseInt(userReply) - 1;
 
             if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= topResults.length) {
@@ -116,18 +145,21 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
             clearTimeout(movieTimeout);
 
             const selectedMovie = topResults[selectedIndex];
+            // ✅ FIXED: auto detect TV vs Movie type
+            const contentType   = detectContentType(selectedMovie);
 
             try {
                 await conn.sendMessage(from, { react: { text: "🔄", key: replyMsg.key } });
 
-                // ── Fetch links ──────────────────────────────
-                const extractUrl = `https://cinesubz-api-cnw.vercel.app/api/extract?id=${selectedMovie.id}&type=mv`;
+                // ── Fetch links (type=mv or type=tv) ─────────
+                const extractUrl = `https://cinesubz-api-cnw.vercel.app/api/extract?id=${selectedMovie.id}&type=${contentType}`;
                 const extRes  = await fetch(extractUrl);
                 const extData = await extRes.json();
 
                 if (!extData.status || !extData.data || extData.data.length === 0) {
+                    // ✅ Better error message showing what type was tried
                     return conn.sendMessage(from,
-                        { text: "❌ *මෙම චිත්‍රපටියේ Direct Links ලබාගත නොහැක.*" },
+                        { text: `❌ *${contentType === 'tv' ? 'TV Series' : 'Movie'} එකේ Direct Links ලබාගත නොහැක.*\n_API response empty. ටිකක් ඉඳලා try කරන්න._` },
                         { quoted: replyMsg });
                 }
 
@@ -140,7 +172,9 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                     { label: "🎥 720p  (HD)", quality: "720p" }
                 ];
 
-                let qualityText  = `🎬 *${selectedMovie.title}*\n\n`;
+                const typeLabel = contentType === 'tv' ? '📺 TV Series' : '🎬 Movie';
+
+                let qualityText  = `${typeLabel}: *${selectedMovie.title}*\n\n`;
                     qualityText += `📅 *Year:*   ${selectedMovie.year   || 'N/A'}\n`;
                     qualityText += `🎭 *Genres:* ${selectedMovie.genres || 'N/A'}\n`;
                     qualityText += `⭐ *IMDB:*   ${selectedMovie.imdb   || 'N/A'}\n\n`;
@@ -164,10 +198,12 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
 
                     const qCtx = qMsg.message.extendedTextMessage?.contextInfo;
                     if (qCtx?.stanzaId !== qualityMsg.key.id) return;
-                    if ((qMsg.key.participant || qMsg.key.remoteJid) !== sender &&
-                        qMsg.key.remoteJid !== sender) return;
 
-                    const qUserReply    = qMsg.message.extendedTextMessage?.text?.trim();
+                    // ✅ FIXED: normalize sender JID here too
+                    const qMsgSenderJid = getSenderJid(qMsg);
+                    if (qMsgSenderJid !== senderJid) return;
+
+                    const qUserReply     = qMsg.message.extendedTextMessage?.text?.trim();
                     const qSelectedIndex = parseInt(qUserReply) - 1;
 
                     if (isNaN(qSelectedIndex) || qSelectedIndex < 0 || qSelectedIndex >= qualityList.length) {
@@ -188,7 +224,7 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
 
                     await conn.sendMessage(from, { react: { text: "📥", key: qMsg.key } });
 
-                    // ── Size check (750 MB safe limit for Heroku) ──
+                    // ── Size check (1800 MB safe limit for Heroku) ──
                     const sizeCheck = await checkFileSize(finalUrl, 1800);
                     if (!sizeCheck.ok) {
                         await conn.sendMessage(from, { react: { text: "❌", key: qMsg.key } });
@@ -206,7 +242,6 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                     }, { quoted: FakeVCard });
 
                     // ── Stream-safe document send ─────────────
-                    // Baileys streams from URL — avoid buffering entire file in RAM
                     try {
                         const captionText =
                             `🎬 *${selectedMovie.title}* [${chosenQuality}]\n\n` +
@@ -214,7 +249,7 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                             `> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`;
 
                         await conn.sendMessage(from, {
-                            video:    { url: finalUrl },   // ✅ stream-safe (NOT document)
+                            video:    { url: finalUrl },
                             mimetype: 'video/mp4',
                             caption:  captionText,
                             fileName: `${shortTitle} - ${chosenQuality}.mp4`
