@@ -24,7 +24,7 @@ const FakeVCard = {
 //  HELPER: Stream-safe size check
 //  Returns { ok: true, sizeMB } or { ok: false, sizeMB, reason }
 // ─────────────────────────────────────────────────────────────
-async function checkFileSize(url, limitMB = 750) {
+async function checkFileSize(url, limitMB = 1800) {
     try {
         const head = await axios.head(url, { timeout: 8000 });
         const cl = head.headers['content-length'];
@@ -189,13 +189,13 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                     await conn.sendMessage(from, { react: { text: "📥", key: qMsg.key } });
 
                     // ── Size check (750 MB safe limit for Heroku) ──
-                    const sizeCheck = await checkFileSize(finalUrl, 750);
+                    const sizeCheck = await checkFileSize(finalUrl, 1800);
                     if (!sizeCheck.ok) {
                         await conn.sendMessage(from, { react: { text: "❌", key: qMsg.key } });
                         return conn.sendMessage(from, {
                             text: `❌ *File එක WhatsApp Limit ඉක්මවා ඇත!*\n` +
                                   `📦 *Size:* ${sizeCheck.sizeMB.toFixed(0)} MB\n` +
-                                  `⚠️ Heroku RAM crash වෙන නිසා 750MB+ files skip කරනවා.`
+                                  `⚠️ Heroku RAM crash වෙන නිසා 1800MB+ files skip කරනවා.`
                         }, { quoted: FakeVCard });
                     }
 
@@ -210,7 +210,7 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                     try {
                         const captionText =
                             `🎬 *${selectedMovie.title}* [${chosenQuality}]\n\n` +
-                            `> 👤 Downloaded by: ${pushname}\n` +
+                            `> 👤 Downloaded by: Sʜᴀᴠɪʏᴀ Xᴍᴅ\n` +
                             `> Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️`;
 
                         await conn.sendMessage(from, {
@@ -301,11 +301,11 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
         await conn.sendMessage(from, { react: { text: "📥", key: mek.key } });
 
         const finalUrl  = buildQualityUrl(originalUrl, quality);
-        const sizeCheck = await checkFileSize(finalUrl, 750);
+        const sizeCheck = await checkFileSize(finalUrl, 1800);
 
         if (!sizeCheck.ok) {
             await conn.sendMessage(from, { react: { text: "❌", key: mek.key } });
-            return reply(`❌ *File Size Limit Exceeded!*\n📦 ${sizeCheck.sizeMB.toFixed(0)} MB — 750MB limit.\nHeroku RAM crash වෙනවා.`);
+            return reply(`❌ *File Size Limit Exceeded!*\n📦 ${sizeCheck.sizeMB.toFixed(0)} MB — 1800MB limit.\nHeroku RAM crash වෙනවා.`);
         }
 
         await conn.sendMessage(from, {
