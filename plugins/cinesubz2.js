@@ -25,8 +25,8 @@ const FakeVCard = {
 // 1. CINESUBZ MOVIE SEARCH COMMAND (.cz)
 // =================================================
 cmd({
-    pattern:  'cz',
-    alias:    ['cinesubz', 'movie'],
+    pattern:  'cz2',
+    alias:    ['cinesubz2'],
     react:    '🔍',
     desc:     'Search and Download movies from Cinesubz',
     category: 'download',
