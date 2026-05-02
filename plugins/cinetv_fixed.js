@@ -73,7 +73,7 @@ async function makeThumbnail(moviePosterUrl, hardThumbUrl, movieDocOn) {
 // ═══════════════════════════════════════════════════
 //  Wait for Reply Function
 // ═══════════════════════════════════════════════════
-function waitForReply(conn, from, sender, targetId, timeout = 600000) {
+function waitForReply(conn, from, sender, targetId, timeout = 1800000) { // 30 minutes
   return new Promise((resolve) => {
     let settled = false;
     const handler = (update) => {
@@ -83,7 +83,8 @@ function waitForReply(conn, from, sender, targetId, timeout = 600000) {
       const context = msg.message?.extendedTextMessage?.contextInfo;
       const msgSender = msg.key.participant || msg.key.remoteJid;
       const isTargetReply = context?.stanzaId === targetId;
-      const isCorrectUser = msgSender.includes(sender.split('@')[0]) || msgSender.includes("@lid");
+      const senderNum = sender.split('@')[0];
+      const isCorrectUser = msgSender.includes(senderNum);
       
       if (msg.key.remoteJid === from && isCorrectUser && isTargetReply && !isNaN(text) && text !== "") {
         if (settled) return;
@@ -359,7 +360,7 @@ async function handleMovieDownload(conn, from, sender, dlLinks, title, quotedMsg
 //  MAIN MOVIE COMMAND
 // ═══════════════════════════════════════════════════
 cmd({
-  pattern: "cmovie",
+  pattern: "movie",
   alias: ["cinetv", "ct"],
   desc: "Download movies & TV series from CineSubz",
   category: "downloader",
@@ -529,23 +530,39 @@ cmd({
                       `💫 *${FOOTER}*`
               }, { quoted: qSel.msg });
 
-              // Download each episode
-              for (const ep of chosenSeason.episodes) {
-                try {
-                  console.log(`📥 [SHAVIYA-XMD] Episode ${ep.e_no}...`);
-                  const epInfoRes = await axios.get(`${BASE_URL}/episode/cinesubz-info?url=${encodeURIComponent(ep.link)}&apikey=${API_KEY}`);
-                  const epDlLinks = epInfoRes.data.data.download;
-                  const matchedDl = epDlLinks[parseInt(qSel.text) - 1] || epDlLinks[0];
-                  
-                  if (!matchedDl) continue;
+              // ✅ SPEED FIX: Parallel API calls, sequential send
+              // Step 1: All episode info + resolve in parallel
+              console.log(`⚡ [SHAVIYA-XMD] Fetching all ${chosenSeason.episodes.length} episodes in parallel...`);
+              const thumb = await makeThumbnail(tvData.image || null, hardThumb, movieDocOn);
+              const qIdx = parseInt(qSel.text) - 1;
 
-                  const dlResult = await resolveDownloadLink(matchedDl.link, `S${chosenSeason.s_no}E${ep.e_no}`);
-                  if (!dlResult) {
+              const resolvedEpisodes = await Promise.all(
+                chosenSeason.episodes.map(async (ep) => {
+                  try {
+                    const epInfoRes = await axios.get(`${BASE_URL}/episode/cinesubz-info?url=${encodeURIComponent(ep.link)}&apikey=${API_KEY}`);
+                    const epDlLinks = epInfoRes.data.data.download;
+                    const matchedDl = epDlLinks[qIdx] || epDlLinks[0];
+                    if (!matchedDl) return { ep, matchedDl: null, dlResult: null };
+
+                    const dlResult = await resolveDownloadLink(matchedDl.link, `S${chosenSeason.s_no}E${ep.e_no}`);
+                    return { ep, matchedDl, dlResult };
+                  } catch (err) {
+                    console.log(`❌ [SHAVIYA-XMD] Resolve E${ep.e_no}:`, err.message);
+                    return { ep, matchedDl: null, dlResult: null };
+                  }
+                })
+              );
+
+              console.log(`✅ [SHAVIYA-XMD] All resolved. Sending sequentially...`);
+
+              // Step 2: Send sequentially (order maintain කරන්න)
+              for (const { ep, matchedDl, dlResult } of resolvedEpisodes) {
+                try {
+                  if (!matchedDl || !dlResult) {
                     console.log(`❌ [SHAVIYA-XMD] No link: E${ep.e_no}`);
                     continue;
                   }
 
-                  const thumb = await makeThumbnail(tvData.image || null, hardThumb, movieDocOn);
                   const cleanName = dlResult.fileName 
                     ? dlResult.fileName.replace(/\[Cinesubz\.co\]/gi, '').trim() 
                     : `${tvData.title} S${chosenSeason.s_no}E${ep.e_no} (${matchedDl.quality}).mp4`;
@@ -564,15 +581,13 @@ cmd({
                                    `──────────────\n` +
                                    `💫 *${FOOTER}*`;
 
-                  // Smart send — size check, no crash
                   await smartSendMovie(conn, from, dlResult,
                     `${tvData.title} S${chosenSeason.s_no}E${ep.e_no}`,
                     matchedDl.quality, thumb, epCaption, qSel.msg);
 
                   console.log(`✅ [SHAVIYA-XMD] Sent E${ep.e_no}`);
-                  
                 } catch (err) {
-                  console.log(`❌ [SHAVIYA-XMD] Episode ${ep.e_no} failed:`, err.message);
+                  console.log(`❌ [SHAVIYA-XMD] Send E${ep.e_no} failed:`, err.message);
                 }
               }
 
