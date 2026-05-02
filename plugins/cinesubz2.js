@@ -69,6 +69,11 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
             const replyMsg = update.messages[0];
             if (!replyMsg || !replyMsg.message) return;
 
+            // ✅ FIX: correct chat + correct user check
+            if (replyMsg.key.remoteJid !== from) return;
+            const msgSender = replyMsg.key.participant || replyMsg.key.remoteJid;
+            if (!msgSender.includes(sender.split('@')[0])) return;
+
             const replyContext = replyMsg.message.extendedTextMessage?.contextInfo;
             const isReplyToList = replyContext?.stanzaId === listMsg.key.id;
 
@@ -134,6 +139,11 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                 const qualityListener = async (update2) => {
                     const qReplyMsg = update2.messages[0];
                     if (!qReplyMsg || !qReplyMsg.message) return;
+
+                    // ✅ FIX: correct chat + correct user check
+                    if (qReplyMsg.key.remoteJid !== from) return;
+                    const qMsgSender = qReplyMsg.key.participant || qReplyMsg.key.remoteJid;
+                    if (!qMsgSender.includes(sender.split('@')[0])) return;
 
                     const qReplyContext = qReplyMsg.message.extendedTextMessage?.contextInfo;
                     const isReplyToQuality = qReplyContext?.stanzaId === qualityMsg.key.id;
