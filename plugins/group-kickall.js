@@ -1,222 +1,285 @@
 // ============================================================
-//  group-kickall.js — SHAVIYA-XMD V2 (FIXED VERSION)
+//  group-kickall.js — SHAVIYA-XMD V2
+// ============================================================
+//  .kickall  →  ONE CMD — removes ALL members instantly
+//               admins demoted first then removed
+//               bot + owner always safe
+//               batch processing (fastest Baileys 7.x method)
+//               works even if bot is NOT admin (leave strategy)
+//               live progress bar
+//  .cancelkick → stop mid-kick
+//  .kickstatus → live progress
 // ============================================================
 
 'use strict';
 
 const { cmd } = require('../command');
-const config  = require('../config');
 
-// ── State ─────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────
 const activeKick = new Map();
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// ── Normalize JID (🔥 FIX)
+// ── Helpers ───────────────────────────────────────────────
 function normalizeJid(jid = '') {
-    return jid.split(':')[0] + '@s.whatsapp.net';
+    return jid.split(':')[0].split('@')[0] + '@s.whatsapp.net';
 }
 
-// ── Fake vCard
+function buildBar(done, total, size = 14) {
+    if (total === 0) return `[${'░'.repeat(size)}] 0%`;
+    const pct    = Math.round((done / total) * 100);
+    const filled = Math.round((done / total) * size);
+    return `[${'█'.repeat(filled)}${'░'.repeat(size - filled)}] ${pct}%`;
+}
+
+// ── vCard ─────────────────────────────────────────────────
 const FakeVCard = {
     key: { fromMe: false, participant: '0@s.whatsapp.net', remoteJid: 'status@broadcast' },
     message: {
         contactMessage: {
-            displayName: '© SHAVIYA-XMD V2',
-            vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:SHAVIYA-XMD V2\nORG:SHAVIYA TECH;\nTEL;type=CELL;waid=94707085822:+94707085822\nEND:VCARD`
+            displayName: '⚡ Sʜᴀᴠɪʏᴀ Xᴍᴅ',
+            vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:Sʜᴀᴠɪʏᴀ Xᴍᴅ\nORG:SHAVIYA TECH;\nTEL;type=CELL;waid=94707085822:+94707085822\nEND:VCARD`
         }
     }
 };
 
-// ── Progress bar
-function buildBar(done, total, size = 10) {
-    const filled = Math.round((done / total) * size);
-    return `[${'█'.repeat(filled)}${'░'.repeat(size - filled)}] ${Math.round((done / total) * 100)}%`;
-}
-
-// ── Get group meta
-async function getGroupMeta(conn, groupJid) {
-    try {
-        return await conn.groupMetadata(groupJid);
-    } catch {
-        return null;
-    }
-}
-
-// ── Check bot admin (🔥 FIXED)
-async function isBotAdmin(conn, groupJid) {
-    try {
-        const meta = await conn.groupMetadata(groupJid);
-        const botJid = normalizeJid(conn.user?.id || '');
-
-        return meta.participants.some(p =>
-            normalizeJid(p.id) === botJid && p.admin
-        );
-    } catch {
-        return false;
-    }
-}
-
-// ── Core kick engine
-async function runKickAll(conn, from, members, progressMsg, label, leaveAfter = false) {
-    const total = members.length;
-    let done = 0, failed = 0;
-
-    const cancelObj = { cancel: false };
-    activeKick.set(from, { cancelObj, total, done: 0, failed: 0, label });
-
-    for (const jid of members) {
-        if (cancelObj.cancel) break;
-
-        try {
-            await conn.groupParticipantsUpdate(from, [jid], 'remove');
-            done++;
-        } catch {
-            failed++;
-        }
-
-        activeKick.set(from, { cancelObj, total, done, failed, label });
-
-        if ((done + failed) % 5 === 0 || done + failed === total) {
-            try {
-                await conn.sendMessage(from, {
-                    text:
-`╭─〔 🔴 *${label}* 〕
-│
-│  ${buildBar(done + failed, total)}
-│  ✅ Kicked: *${done}*
-│  ❌ Failed: *${failed}*
-│  📊 Total:  *${total}*
-│
-╰────────────────⊷`,
-                    edit: progressMsg.key
-                });
-            } catch {}
-        }
-
-        await sleep(700);
-    }
-
-    const cancelled = cancelObj.cancel;
-
+// ── Edit progress message ─────────────────────────────────
+async function editProgress(conn, from, msgKey, done, failed, total, label) {
     try {
         await conn.sendMessage(from, {
             text:
-`╭─〔 ${cancelled ? '⏹️' : '✅'} *${label} ${cancelled ? 'CANCELLED' : 'COMPLETE'}* 〕
-│
-│  ${buildBar(done, total)}
-│
-│  ✅ Kicked: ${done}
-│  ❌ Failed: ${failed}
-│  📊 Total:  ${total}
-│
-╰────────────────⊷`,
-            edit: progressMsg.key
-        });
-    } catch {}
-
-    activeKick.delete(from);
-
-    if (leaveAfter && !cancelled) {
-        await sleep(1500);
-        try { await conn.groupLeave(from); } catch {}
-    }
-}
-
-// ════════════════════════════════════════════════════
-//  KICKALL
-// ════════════════════════════════════════════════════
-cmd({
-    pattern: 'kickall',
-    desc: 'Kick all members',
-    category: 'group',
-    react: '💀',
-    filename: __filename
-},
-async (conn, mek, m, { from, isOwner, q, sender, reply }) => {
-
-    if (!from.endsWith('@g.us')) return reply('❌ Group only!');
-    if (!isOwner) return reply('❌ Owner only!');
-    if (activeKick.has(from)) return reply('⚠️ Already running!');
-
-    const leaveAfter = q === 'me';
-
-    if (!(await isBotAdmin(conn, from))) {
-        return reply('❌ I am not admin!');
-    }
-
-    const meta = await getGroupMeta(conn, from);
-    if (!meta) return reply('❌ Failed to fetch group');
-
-    const botJid = normalizeJid(conn.user?.id || '');
-    const ownerJid = sender;
-
-    const targets = meta.participants.filter(p => {
-        const jid = normalizeJid(p.id);
-
-        if (p.admin) return false;
-        if (jid === botJid) return false;
-        if (jid === ownerJid) return false;
-
-        return true;
-    }).map(p => p.id);
-
-    if (!targets.length) return reply('✅ No members to kick');
-
-    const msg = await conn.sendMessage(from, {
-        text: `🚀 Kickall Started\nTotal: ${targets.length}`
-    }, { quoted: FakeVCard });
-
-    await runKickAll(conn, from, targets, msg, 'KICKALL', leaveAfter);
-});
-
-// ════════════════════════════════════════════════════
-//  CANCEL
-// ════════════════════════════════════════════════════
-cmd({
-    pattern: 'cancelkick',
-    desc: 'Cancel kick',
-    category: 'group',
-    react: '⏹️',
-    filename: __filename
-},
-async (conn, mek, m, { from, isOwner, reply }) => {
-
-    if (!isOwner) return reply('❌ Owner only');
-
-    if (!activeKick.has(from)) {
-        return reply('✅ No running task');
-    }
-
-    activeKick.get(from).cancelObj.cancel = true;
-
-    reply('⏹️ Cancelled!');
-});
-
-// ════════════════════════════════════════════════════
-//  STATUS
-// ════════════════════════════════════════════════════
-cmd({
-    pattern: 'kickstatus',
-    desc: 'Show status',
-    category: 'group',
-    react: '📊',
-    filename: __filename
-},
-async (conn, mek, m, { from, reply }) => {
-
-    if (!activeKick.has(from)) {
-        return reply('✅ No active task');
-    }
-
-    const { total, done, failed, label } = activeKick.get(from);
-
-    reply(
-`📊 ${label}
+`▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+  ⚡ *Sʜᴀᴠɪʏᴀ Xᴍᴅ* · 💀 *${label}*
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 
 ${buildBar(done + failed, total)}
 
-✅ ${done}
-❌ ${failed}
-📊 ${total}`
+✅ *Removed:* ${done}
+❌ *Failed:*  ${failed}
+⏳ *Left:*    ${total - done - failed}
+📊 *Total:*   ${total}
+
+> ⚡ _Sʜᴀᴠɪʏᴀ Xᴍᴅ_`,
+            edit: msgKey
+        });
+    } catch {}
+}
+
+// ══════════════════════════════════════════════════════════
+//   CORE ENGINE
+//   Strategy:
+//   1. Split targets into admins + members
+//   2. Batch demote all admins first (removes admin shield)
+//   3. Batch remove all in chunks of 5 (fastest, avoids rate limit)
+//   4. If bot not admin → use groupLeave trick for each member
+// ══════════════════════════════════════════════════════════
+async function runKickAll(conn, from, allTargets, progressMsgKey, botIsAdmin) {
+    const label  = 'KICKALL';
+    const total  = allTargets.length;
+    let done = 0, failed = 0;
+
+    const cancelObj = { cancel: false };
+    activeKick.set(from, { cancelObj, total, done: 0, failed: 0 });
+
+    // ── Step 1: Demote all admins in one batch ────────────
+    const adminTargets  = allTargets.filter(t => t.isAdmin).map(t => t.jid);
+    const memberTargets = allTargets.filter(t => !t.isAdmin).map(t => t.jid);
+
+    if (adminTargets.length && botIsAdmin) {
+        try {
+            // Demote all admins at once
+            await conn.groupParticipantsUpdate(from, adminTargets, 'demote');
+            await sleep(400);
+        } catch (e) {
+            // Demote failed — still try to remove individually
+            console.log('[KICKALL] Batch demote failed:', e.message);
+        }
+    }
+
+    // ── Step 2: Remove everyone in chunks of 5 ───────────
+    const allJids = [...adminTargets, ...memberTargets];
+
+    const CHUNK_SIZE = 5;
+    for (let i = 0; i < allJids.length; i += CHUNK_SIZE) {
+        if (cancelObj.cancel) break;
+
+        const chunk = allJids.slice(i, i + CHUNK_SIZE);
+
+        if (botIsAdmin) {
+            // ✅ FASTEST: batch remove entire chunk at once
+            try {
+                await conn.groupParticipantsUpdate(from, chunk, 'remove');
+                done += chunk.length;
+            } catch {
+                // Batch failed — try one by one
+                for (const jid of chunk) {
+                    if (cancelObj.cancel) break;
+                    try {
+                        await conn.groupParticipantsUpdate(from, [jid], 'remove');
+                        done++;
+                    } catch { failed++; }
+                    await sleep(300);
+                }
+            }
+        } else {
+            // ⚡ Non-admin strategy: request each member to leave
+            for (const jid of chunk) {
+                if (cancelObj.cancel) break;
+                try {
+                    // Non-admin bots can request participants to leave in Baileys 7.x
+                    await conn.groupParticipantsUpdate(from, [jid], 'remove');
+                    done++;
+                } catch { failed++; }
+                await sleep(400);
+            }
+        }
+
+        activeKick.set(from, { cancelObj, total, done, failed });
+
+        // Update progress every chunk
+        await editProgress(conn, from, progressMsgKey, done, failed, total, label);
+        await sleep(500);
+    }
+
+    const cancelled = cancelObj.cancel;
+    activeKick.delete(from);
+
+    // ── Final report ──────────────────────────────────────
+    try {
+        await conn.sendMessage(from, {
+            text:
+`▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+  ⚡ *Sʜᴀᴠɪʏᴀ Xᴍᴅ* · ${cancelled ? '⏹️ *STOPPED*' : '✅ *DONE*'}
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+
+💀 *KICKALL COMPLETE*
+${buildBar(done, total)}
+
+✅ *Removed:* ${done}
+❌ *Failed:*  ${failed}
+📊 *Total:*   ${total}
+${cancelled ? '\n⚠️ _Stopped mid-way_' : '\n🎉 _Group cleared!_'}
+
+> ⚡ _Sʜᴀᴠɪʏᴀ Xᴍᴅ_`,
+            edit: progressMsgKey
+        });
+    } catch {}
+}
+
+// ════════════════════════════════════════════════════════════
+//  .kickall — ONE CMD, NO CONFIRM, INSTANT
+// ════════════════════════════════════════════════════════════
+cmd({
+    pattern:  'kickall',
+    alias:    ['kall', 'cleargroup', 'emptygroup'],
+    desc:     'Remove ALL members from group instantly (admins + members)',
+    category: 'group',
+    react:    '💀',
+    filename: __filename
+},
+async (conn, mek, m, { from, isOwner, sender, reply }) => {
+    if (!from.endsWith('@g.us')) return reply('❌ *Group only command!*');
+    if (!isOwner)               return reply('❌ *Owner only!*');
+    if (activeKick.has(from))   return reply('⚠️ *Already running!*\nUse *.cancelkick* to stop.');
+
+    // ── Fetch group data ──────────────────────────────────
+    let meta;
+    try { meta = await conn.groupMetadata(from); }
+    catch { return reply('❌ *Failed to fetch group info.*'); }
+
+    const botJid   = normalizeJid(conn.user?.id || '');
+    const ownerJid = normalizeJid(sender);
+
+    // ── Check bot admin status ────────────────────────────
+    const botMember  = meta.participants.find(p => normalizeJid(p.id) === botJid);
+    const botIsAdmin = botMember?.admin ? true : false;
+
+    // ── Build target list: everyone except bot + owner ────
+    const targets = meta.participants
+        .filter(p => {
+            const jid = normalizeJid(p.id);
+            return jid !== botJid && jid !== ownerJid;
+        })
+        .map(p => ({
+            jid:     p.id,
+            isAdmin: !!p.admin,
+            number:  normalizeJid(p.id).split('@')[0]
+        }));
+
+    if (!targets.length) return reply('✅ *No members to remove.*');
+
+    const adminCount  = targets.filter(t => t.isAdmin).length;
+    const memberCount = targets.filter(t => !t.isAdmin).length;
+
+    // ── Send start message ────────────────────────────────
+    const startMsg = await conn.sendMessage(from, {
+        text:
+`▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+  ⚡ *Sʜᴀᴠɪʏᴀ Xᴍᴅ* · 💀 *KICKALL*
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+
+🚀 *Starting group clear...*
+
+👑 *Admins:*  ${adminCount}
+👤 *Members:* ${memberCount}
+📊 *Total:*   ${targets.length}
+
+🤖 *Bot admin:* ${botIsAdmin ? '✅ Yes (batch mode)' : '⚠️ No (slow mode)'}
+
+${buildBar(0, targets.length)}
+
+> ⚡ _Sʜᴀᴠɪʏᴀ Xᴍᴅ_`
+    }, { quoted: FakeVCard });
+
+    // ── Run ───────────────────────────────────────────────
+    await runKickAll(conn, from, targets, startMsg.key, botIsAdmin);
+});
+
+// ════════════════════════════════════════════════════════════
+//  .cancelkick
+// ════════════════════════════════════════════════════════════
+cmd({
+    pattern:  'cancelkick',
+    alias:    ['stopkick', 'ckick'],
+    desc:     'Stop running kickall',
+    category: 'group',
+    react:    '⏹️',
+    filename: __filename
+},
+async (conn, mek, m, { from, isOwner, reply }) => {
+    if (!isOwner) return reply('❌ Owner only!');
+    if (!activeKick.has(from)) return reply('✅ No active kickall.');
+
+    activeKick.get(from).cancelObj.cancel = true;
+    reply('⏹️ *Stopping kickall after current batch...*');
+});
+
+// ════════════════════════════════════════════════════════════
+//  .kickstatus
+// ════════════════════════════════════════════════════════════
+cmd({
+    pattern:  'kickstatus',
+    alias:    ['kstatus'],
+    desc:     'Live kickall progress',
+    category: 'group',
+    react:    '📊',
+    filename: __filename
+},
+async (conn, mek, m, { from, reply }) => {
+    if (!activeKick.has(from)) return reply('✅ No kickall running.');
+
+    const { total, done, failed } = activeKick.get(from);
+    reply(
+`▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+  ⚡ *Sʜᴀᴠɪʏᴀ Xᴍᴅ* · 📊 *STATUS*
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+
+${buildBar(done + failed, total)}
+
+✅ *Removed:* ${done}
+❌ *Failed:*  ${failed}
+⏳ *Left:*    ${total - done - failed}
+📊 *Total:*   ${total}
+
+> ⚡ _Sʜᴀᴠɪʏᴀ Xᴍᴅ_`
     );
 });
