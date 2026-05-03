@@ -1,16 +1,14 @@
 // ============================================
 //   plugins/antidelete.js — SHAVIYA-XMD V2
 // ============================================
-//   ✅ FIX 1: LID JID (@lid) resolved to real number via contacts map
-//   ✅ FIX 2: fromMe messages also cached (owner's sent msgs can be deleted too)
-//   ✅ FIX 3: deletedId correctly taken from protocolMessage.key.id only
-//   ✅ FIX 4: messageStubType=1 fallback uses update.key directly (different path)
-//   ✅ FIX 5: Group sender — participant extracted correctly even in Baileys 7.x
-//   ✅ FIX 6: Number shown as @mention (blue chip) + plain (+number)
-//   ✅ FIX 7: All media types handled — image, video, audio, sticker, doc, contact, location
-//   ✅ FIX 8: Cache keyed by message ID — no wrong-ID lookups
-//   ✅ FIX 9: Cache size enforced + hourly cleanup
-//   ✅ FIX 10: Debug logs removed from production (clean console)
+//   ✅ LID JID resolved to real number via contacts map
+//   ✅ fromMe messages cached (owner sent msgs)
+//   ✅ deletedId from protocolMessage.key.id (correct)
+//   ✅ messageStubType fallback handled separately
+//   ✅ GROUP: shows SENDER + DELETED BY separately (@mention both)
+//   ✅ DM: shows SENDER @mention
+//   ✅ All media types handled
+//   ✅ Cache size enforced + 2hr cleanup
 // ============================================
 
 'use strict';
@@ -22,7 +20,6 @@ const { getSetting } = require('../lib/settings');
 const msgCache = new Map();
 const MAX_CACHE = 2000;
 
-// Clean cache every 30 min — remove msgs older than 2 hours
 setInterval(() => {
     const cutoff = Date.now() - 7_200_000;
     for (const [k, v] of msgCache.entries()) {
@@ -30,13 +27,10 @@ setInterval(() => {
     }
 }, 1_800_000);
 
-// ── Resolve real JID from LID if needed ──────────────────
-// WhatsApp multi-device sends @lid JIDs for some users.
-// We must resolve via conn.contacts to get the real @s.whatsapp.net JID.
+// ── Resolve @lid → real @s.whatsapp.net ──────────────────
 function resolveSenderJid(rawJid, conn) {
     if (!rawJid) return '';
     if (!rawJid.endsWith('@lid')) return rawJid;
-
     try {
         const contacts = conn.contacts || {};
         const lidPart  = rawJid.split('@')[0];
@@ -48,15 +42,10 @@ function resolveSenderJid(rawJid, conn) {
         );
         if (resolved?.id) return resolved.id;
     } catch {}
-
-    // Could not resolve LID — return as-is, number will show as unknown
     return rawJid;
 }
 
-// ── Extract clean phone number from any JID ───────────────
-// Handles: 94711234567@s.whatsapp.net
-//          94711234567:5@s.whatsapp.net
-//          94711234567:5@g.us
+// ── Extract clean digits-only number from any JID ────────
 function extractNumber(jid) {
     if (!jid) return '';
     return jid.split('@')[0].split(':')[0].replace(/\D/g, '');
@@ -65,7 +54,6 @@ function extractNumber(jid) {
 // ── Download media buffer ─────────────────────────────────
 async function downloadMedia(msgContent) {
     let mediaType, mediaMsg;
-
     if      (msgContent.imageMessage)    { mediaType = 'image';    mediaMsg = msgContent.imageMessage; }
     else if (msgContent.videoMessage)    { mediaType = 'video';    mediaMsg = msgContent.videoMessage; }
     else if (msgContent.audioMessage)    { mediaType = 'audio';    mediaMsg = msgContent.audioMessage; }
@@ -85,21 +73,18 @@ async function downloadMedia(msgContent) {
 }
 
 // ══════════════════════════════════════════════════════════
-//   onMessage — cache EVERY incoming message (including fromMe)
-//   Called from index.js → messages.upsert
+//   onMessage — cache every incoming message
 // ══════════════════════════════════════════════════════════
 async function onMessage(conn, mek, sessionId) {
     try {
         if (!mek?.message) return;
 
-        // Unwrap ephemeral / viewOnce wrappers
         const msgContent =
             mek.message?.ephemeralMessage?.message ||
             mek.message?.viewOnceMessage?.message  ||
             mek.message;
         if (!msgContent) return;
 
-        // Skip pure protocol/stub messages — nothing useful to cache
         const keys = Object.keys(msgContent);
         if (
             keys.includes('protocolMessage') ||
@@ -111,21 +96,15 @@ async function onMessage(conn, mek, sessionId) {
         const chat    = mek.key.remoteJid;
         const isGroup = chat?.endsWith('@g.us');
 
-        // ── Determine real sender JID ──────────────────────
         let rawSenderJid;
-
         if (mek.key.fromMe) {
-            // Bot itself sent this message
             rawSenderJid = conn.user?.id || '';
         } else if (isGroup) {
-            // Group: real sender is in participant field
             rawSenderJid = mek.key.participant || mek.participant || '';
         } else {
-            // DM: remoteJid IS the other person
             rawSenderJid = chat;
         }
 
-        // ✅ FIX 1: Resolve @lid → real @s.whatsapp.net
         const senderJid    = resolveSenderJid(rawSenderJid, conn);
         const senderNumber = extractNumber(senderJid);
         const pushName     = mek.pushName || (mek.key.fromMe ? 'Me' : senderNumber) || 'Unknown';
@@ -142,7 +121,6 @@ async function onMessage(conn, mek, sessionId) {
             sessionId,
         });
 
-        // Enforce cache size limit (FIFO)
         if (msgCache.size > MAX_CACHE) {
             msgCache.delete(msgCache.keys().next().value);
         }
@@ -152,11 +130,15 @@ async function onMessage(conn, mek, sessionId) {
     }
 }
 
-// ── Build header info block ───────────────────────────────
-async function buildInfo(conn, cached) {
+// ══════════════════════════════════════════════════════════
+//   buildInfo — header with SENDER + DELETED BY
+//   From uploaded antidel.js: group shows both separately
+// ══════════════════════════════════════════════════════════
+async function buildInfo(conn, cached, update) {
     const { senderNumber, pushName, chat, isGroup, fromMe } = cached;
 
-    const mentionJid = senderNumber ? `${senderNumber}@s.whatsapp.net` : null;
+    const senderMentionJid  = senderNumber ? `${senderNumber}@s.whatsapp.net` : null;
+    const senderDisplay     = senderMentionJid ? `@${senderNumber} (+${senderNumber})` : 'Unknown';
 
     const time = new Date().toLocaleString('en-GB', {
         timeZone: 'Asia/Colombo',
@@ -166,7 +148,11 @@ async function buildInfo(conn, cached) {
     });
 
     let locationLine;
+    let mentions = senderMentionJid ? [senderMentionJid] : [];
+    let deletedByLine = '';
+
     if (isGroup) {
+        // ── Group: get group name + who deleted ──────────
         let groupName = '';
         try {
             const meta = await conn.groupMetadata(chat);
@@ -174,36 +160,42 @@ async function buildInfo(conn, cached) {
         } catch {
             groupName = chat.split('@')[0];
         }
-        locationLine = `👥 *Group:*   ${groupName}`;
+        locationLine = `👥 *Group:*      ${groupName}`;
+
+        // Deleter — from update.key.participant (who sent the delete action)
+        const rawDeleterJid  = update?.key?.participant || update?.key?.remoteJid || '';
+        const deleterJid     = resolveSenderJid(rawDeleterJid, conn);
+        const deleterNumber  = extractNumber(deleterJid);
+
+        if (deleterNumber && deleterNumber !== senderNumber) {
+            // Someone else deleted — show separately
+            const deleterMentionJid = `${deleterNumber}@s.whatsapp.net`;
+            mentions.push(deleterMentionJid);
+            deletedByLine = `\n🗑️ *Deleted By:* @${deleterNumber} (+${deleterNumber})`;
+        } else if (deleterNumber === senderNumber) {
+            deletedByLine = `\n🗑️ *Deleted By:* Self`;
+        }
+
     } else {
         locationLine = fromMe
-            ? `💬 *Chat:*    Sent by Me (Bot)`
-            : `💬 *Chat:*    Private DM`;
+            ? `💬 *Chat:*       Sent by Me (Bot)`
+            : `💬 *Chat:*       Private DM`;
     }
-
-    // ✅ @mention = blue clickable chip in WhatsApp
-    const numberDisplay = mentionJid
-        ? `@${senderNumber} (+${senderNumber})`
-        : 'Unknown';
 
     const text =
 `🗑️ *DELETED MESSAGE DETECTED*
 ━━━━━━━━━━━━━━━━━━━━━
-👤 *Name:*    ${pushName}
-📱 *Number:*  ${numberDisplay}
+👤 *Name:*      ${pushName}
+📱 *Sender:*    ${senderDisplay}${deletedByLine}
 ${locationLine}
-🕐 *Time:*    ${time}
+🕐 *Time:*      ${time}
 ━━━━━━━━━━━━━━━━━━━━━`;
 
-    return {
-        text,
-        mentions: mentionJid ? [mentionJid] : [],
-    };
+    return { text, mentions };
 }
 
 // ══════════════════════════════════════════════════════════
 //   onDelete — detect revoke & forward to owner DM
-//   Called from index.js → messages.update
 // ══════════════════════════════════════════════════════════
 async function onDelete(conn, updates, sessionId) {
     try {
@@ -217,26 +209,24 @@ async function onDelete(conn, updates, sessionId) {
             try {
                 const updateMsg = update.update?.message;
 
-                // ── Detect revoke / delete ─────────────────
                 const proto = updateMsg?.protocolMessage;
                 const isProtocolRevoke =
                     proto?.type === 0 ||
                     proto?.type === 'REVOKE';
 
-                const isStubRevoke =
-                    update.update?.messageStubType === 1;
+                // From uploaded file: update.update.message === null also means delete
+                const isNullRevoke  = update.update?.message === null;
+                const isStubRevoke  = update.update?.messageStubType === 1;
 
-                if (!isProtocolRevoke && !isStubRevoke) continue;
+                if (!isProtocolRevoke && !isNullRevoke && !isStubRevoke) continue;
 
-                // ✅ FIX 3 & 4:
-                // CASE A — protocolMessage revoke: deleted msg ID is inside proto.key.id
-                //           update.key.id = the DELETE ACTION itself (wrong — don't use)
-                // CASE B — messageStubType=1: update.key.id IS the deleted msg ID
+                // Correct deletedId resolution:
+                // protocolMessage → proto.key.id (NOT update.key.id)
+                // null/stub       → update.key.id IS the deleted message
                 let deletedId;
                 if (isProtocolRevoke) {
                     deletedId = proto?.key?.id;
                 } else {
-                    // stub revoke — key is the deleted message itself
                     deletedId = update.key?.id;
                 }
 
@@ -246,7 +236,7 @@ async function onDelete(conn, updates, sessionId) {
                 if (!cached) continue;
 
                 const { msgContent } = cached;
-                const { text: info, mentions } = await buildInfo(conn, cached);
+                const { text: info, mentions } = await buildInfo(conn, cached, update);
 
                 const sendText = (body) =>
                     conn.sendMessage(ownerJid, { text: body, mentions });
@@ -338,7 +328,7 @@ async function onDelete(conn, updates, sessionId) {
                     await sendText(`${info}\n\n👤 *Contact deleted*\n📛 *Name:* ${cname}`);
                 }
 
-                // ── CONTACT LIST (multiple contacts) ──────
+                // ── CONTACT LIST ──────────────────────────
                 else if (msgContent.contactsArrayMessage) {
                     const count = msgContent.contactsArrayMessage.contacts?.length || 0;
                     await sendText(`${info}\n\n👥 *Contacts deleted* (${count} contacts)`);
@@ -364,13 +354,12 @@ async function onDelete(conn, updates, sessionId) {
                     await sendText(`${info}\n\n📊 *Poll deleted*\n❓ *Question:* ${question}`);
                 }
 
-                // ── UNKNOWN / OTHER ───────────────────────
+                // ── UNKNOWN ───────────────────────────────
                 else {
                     const msgType = Object.keys(msgContent)[0] || 'unknown';
                     await sendText(`${info}\n\n❓ *Deleted* (${msgType})`);
                 }
 
-                // Remove from cache after handling
                 msgCache.delete(deletedId);
 
             } catch (innerErr) {
