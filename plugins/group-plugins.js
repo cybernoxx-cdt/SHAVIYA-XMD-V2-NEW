@@ -39,7 +39,7 @@ async (conn, mek, m, { from, isOwner, quoted, reply, sender }) => {
 // ── .add ──────────────────────────────────────
 cmd({
     pattern: 'add',
-    desc: 'Add a member to the group',
+    desc: 'Add a member to the group. Sends invite link if add fails.',
     category: 'group',
     react: '➕',
     filename: __filename
@@ -50,12 +50,52 @@ async (conn, mek, m, { from, isOwner, q, reply }) => {
     if (!q) return reply('📝 Usage: .add 94712345678');
 
     const number = q.replace(/[^0-9]/g, '');
-    const jid = number + '@s.whatsapp.net';
+    const jid    = number + '@s.whatsapp.net';
+
     try {
-        await conn.groupParticipantsUpdate(from, [jid], 'add');
-        reply(`✅ +${number} added to the group!`);
+        const result = await conn.groupParticipantsUpdate(from, [jid], 'add');
+        const status = result?.[0]?.status;
+
+        if (status === 200 || status === '200') {
+            // Successfully added
+            return reply(`✅ *+${number} added to the group!*`);
+        }
+
+        // Add failed (privacy settings / not on WhatsApp / etc.)
+        // → Send invite link to the person via DM
+        throw new Error(`status ${status}`);
+
     } catch (e) {
-        reply(`❌ Failed: ${e.message}`);
+        // Generate group invite link and send to the person
+        try {
+            const inviteCode = await conn.groupInviteCode(from);
+            const inviteLink = `https://chat.whatsapp.com/${inviteCode}`;
+            const meta       = await conn.groupMetadata(from);
+            const groupName  = meta.subject || 'Group';
+
+            // Send invite link to the number via DM
+            await conn.sendMessage(jid, {
+                text:
+\`👋 *Hi +${number}!*
+
+You have been invited to join *${groupName}*.
+
+🔗 *Invite Link:*
+${inviteLink}
+
+> ⚡ Sʜᴀᴠɪʏᴀ Xᴍᴅ\`
+            });
+
+            reply(
+\`⚠️ *Could not add +${number} directly.*
+_(Privacy settings or not on WhatsApp)_
+
+✅ *Invite link sent to them via DM!*
+🔗 \${inviteLink}\`
+            );
+        } catch (invErr) {
+            reply(`❌ *Add failed & could not send invite link.*\n_${e.message}_`);
+        }
     }
 });
 
