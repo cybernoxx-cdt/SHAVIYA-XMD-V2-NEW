@@ -235,6 +235,14 @@ async function onDelete(conn, updates, sessionId) {
                 const cached = msgCache.get(deletedId);
                 if (!cached) continue;
 
+                // ✅ Skip if the deleted message was sent by the owner (bot itself)
+                if (cached.fromMe) continue;
+
+                // ✅ Skip if the deleter is the owner (owner deleted someone else's msg in group)
+                const deleterRaw = update?.key?.participant || update?.key?.remoteJid || '';
+                const deleterNum = deleterRaw.split('@')[0].split(':')[0].replace(/\D/g, '');
+                if (deleterNum && deleterNum === rawOwner) continue;
+
                 const { msgContent } = cached;
                 const { text: info, mentions } = await buildInfo(conn, cached, update);
 
