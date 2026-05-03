@@ -61,31 +61,6 @@ async (conn, mek, m, { from, isOwner, q, reply }) => {
             return reply('✅ *+' + number + ' added to the group!*');
         }
 
-        // Status not 200 — try invite link fallback
-        throw new Error('status ' + status);
-
-    } catch (e) {
-        try {
-            const inviteCode = await conn.groupInviteCode(from);
-            const inviteLink = 'https://chat.whatsapp.com/' + inviteCode;
-            const meta       = await conn.groupMetadata(from);
-            const groupName  = meta.subject || 'Group';
-
-            await conn.sendMessage(jid, {
-                text: '👋 *Hi +' + number + '!*\n\nYou have been invited to join *' + groupName + '*.' +
-                      '\n\n🔗 *Invite Link:*\n' + inviteLink + '\n\n> ⚡ Sʜᴀᴠɪʏᴀ Xᴍᴅ'
-            });
-
-            reply(
-                '⚠️ *Could not add +' + number + ' directly.*\n' +
-                '_(Privacy settings or not on WhatsApp)_\n\n' +
-                '✅ *Invite link sent to them via DM!*\n' +
-                '🔗 ' + inviteLink
-            );
-        } catch (invErr) {
-            reply('❌ *Add failed & could not send invite link.*\n_' + e.message + '_');
-        }
-    }
 });
 
 // ── .promote ──────────────────────────────────
