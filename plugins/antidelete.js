@@ -1,9 +1,11 @@
 // ============================================
 //   plugins/antidelete.js — SHAVIYA-XMD V2
 //   FULLY FIXED:
-//   ✅ BUG 1: Media (image/video/audio) now downloads correctly
+//   ✅ BUG 1: Media (image/video/audio) downloads correctly
 //   ✅ BUG 2: Sender number shown correctly (groups + DMs)
 //   ✅ BUG 3: Clean, readable message format
+//   ✅ BUG 4: Number shown as clickable @mention (not plain text)
+//   ✅ BUG 5: senderNumber strips @s/@g domain correctly always
 // ============================================
 
 'use strict';
@@ -23,11 +25,20 @@ setInterval(() => {
     }
 }, 1_800_000);
 
+// ── Extract clean phone number from any JID format ────────
+// Handles:
+//   94711234567@s.whatsapp.net        → 94711234567
+//   94711234567:5@s.whatsapp.net      → 94711234567
+//   94711234567:5@g.us                → 94711234567
+//   94711234567@g.us (rare)           → 94711234567
+function extractNumber(jid) {
+    if (!jid) return '';
+    // Strip @domain first, then strip :device suffix
+    return jid.split('@')[0].split(':')[0];
+}
+
 // ── Download helper using Baileys directly ────────────────
-// BUG 1 FIX: conn.downloadMediaMessage() doesn't exist in V2.
-// Must use downloadContentFromMessage() from @whiskeysockets/baileys.
 async function downloadMedia(msgContent) {
-    // Determine media type and the correct message object
     let mediaType, mediaMsg;
 
     if (msgContent.imageMessage) {
@@ -64,14 +75,12 @@ async function downloadMedia(msgContent) {
 
 // ══════════════════════════════════════════════════════════
 //   onMessage — cache every incoming message
-//   Called from index.js  →  messages.upsert
 // ══════════════════════════════════════════════════════════
 async function onMessage(conn, mek, sessionId) {
     try {
         if (!mek?.message) return;
         if (mek.key.fromMe) return;
 
-        // Unwrap ephemeral/viewOnce wrapper
         const msgContent =
             mek.message?.ephemeralMessage?.message ||
             mek.message?.viewOnceMessage?.message ||
@@ -83,27 +92,23 @@ async function onMessage(conn, mek, sessionId) {
         const chat    = mek.key.remoteJid;
         const isGroup = chat?.endsWith('@g.us');
 
-        // FIXED: Group → participant holds real sender JID
-        //        DM    → remoteJid IS the sender
-        //        If participant missing in group → store empty, show Unknown (not fake group JID)
-        let sender;
+        // Real sender JID
+        let senderJid;
         if (isGroup) {
-            sender = mek.key.participant || mek.participant || '';
+            senderJid = mek.key.participant || mek.participant || '';
         } else {
-            sender = chat;
+            senderJid = chat;
         }
 
-        // Strip @domain and multidevice suffix (e.g. 94711:5@s.whatsapp.net → 94711)
-        const senderNumber = sender
-            ? sender.split('@')[0].split(':')[0]
-            : '';
-        const pushName = mek.pushName || senderNumber || 'Unknown';
+        // ✅ FIX: Always extract clean number — strips @domain AND :device
+        const senderNumber = extractNumber(senderJid);
+        const pushName     = mek.pushName || senderNumber || 'Unknown';
 
         msgCache.set(id, {
             mek,
             msgContent,
             chat,
-            sender,
+            senderJid,
             senderNumber,
             pushName,
             isGroup,
@@ -111,7 +116,6 @@ async function onMessage(conn, mek, sessionId) {
             sessionId,
         });
 
-        // Enforce cache limit
         if (msgCache.size > MAX_CACHE) {
             msgCache.delete(msgCache.keys().next().value);
         }
@@ -121,14 +125,66 @@ async function onMessage(conn, mek, sessionId) {
 }
 
 // ══════════════════════════════════════════════════════════
+//   buildInfo — header text + mention array
+//   Returns { text, mentions }
+//   Number appears as @mention (clickable chip in WhatsApp)
+// ══════════════════════════════════════════════════════════
+async function buildInfo(conn, cached) {
+    const { senderNumber, senderJid, pushName, chat, isGroup } = cached;
+
+    // ✅ FIX: mention JID must be @s.whatsapp.net — always
+    const mentionJid = senderNumber
+        ? `${senderNumber}@s.whatsapp.net`
+        : null;
+
+    const time = new Date().toLocaleString('en-GB', {
+        timeZone: 'Asia/Colombo',
+        day:      '2-digit',
+        month:    'short',
+        year:     'numeric',
+        hour:     '2-digit',
+        minute:   '2-digit',
+        second:   '2-digit',
+        hour12:   true,
+    });
+
+    let locationLine;
+    if (isGroup) {
+        let groupName = '';
+        try {
+            const meta = await conn.groupMetadata(chat);
+            groupName  = meta.subject;
+        } catch {
+            groupName = chat.split('@')[0];
+        }
+        locationLine = `👥 *Group:*   ${groupName}`;
+    } else {
+        locationLine = `💬 *Chat:*    Private DM`;
+    }
+
+    // ✅ Number shown as @mention — WhatsApp renders it as blue clickable chip
+    const numberDisplay = mentionJid ? `@${senderNumber}` : 'Unknown';
+
+    const text =
+`🗑️ *DELETED MESSAGE DETECTED*
+━━━━━━━━━━━━━━━━━━━━━
+👤 *Name:*    ${pushName}
+📱 *Number:*  ${numberDisplay}
+${locationLine}
+🕐 *Time:*    ${time}
+━━━━━━━━━━━━━━━━━━━━━`;
+
+    const mentions = mentionJid ? [mentionJid] : [];
+    return { text, mentions };
+}
+
+// ══════════════════════════════════════════════════════════
 //   onDelete — detect revoke & forward to owner DM
-//   Called from index.js  →  messages.update
 // ══════════════════════════════════════════════════════════
 async function onDelete(conn, updates, sessionId) {
     try {
         if (!getSetting('antidelete')) return;
 
-        // Owner JID — send all deleted msgs here
         const rawOwner = conn.user?.id?.split(':')[0]?.split('@')[0];
         if (!rawOwner) return;
         const ownerJid = rawOwner + '@s.whatsapp.net';
@@ -137,7 +193,6 @@ async function onDelete(conn, updates, sessionId) {
             try {
                 const updateMsg = update.update?.message;
 
-                // Detect message revoke
                 const isRevoke =
                     updateMsg?.protocolMessage?.type === 0 ||
                     updateMsg?.protocolMessage?.type === 'REVOKE' ||
@@ -145,7 +200,6 @@ async function onDelete(conn, updates, sessionId) {
 
                 if (!isRevoke) continue;
 
-                // ID of the deleted message
                 const deletedId =
                     updateMsg?.protocolMessage?.key?.id ||
                     update.key?.id;
@@ -153,58 +207,21 @@ async function onDelete(conn, updates, sessionId) {
                 if (!deletedId) continue;
 
                 const cached = msgCache.get(deletedId);
-                if (!cached) {
-                    // Message wasn't cached (bot missed it or too old)
-                    continue;
-                }
+                if (!cached) continue;
 
-                const { mek, msgContent, chat, senderNumber, pushName, isGroup } = cached;
+                const { msgContent } = cached;
+                const { text: info, mentions } = await buildInfo(conn, cached);
 
-                // Group name
-                let groupName = '';
-                if (isGroup) {
-                    try {
-                        const meta = await conn.groupMetadata(chat);
-                        groupName = meta.subject;
-                    } catch {
-                        groupName = chat.split('@')[0];
-                    }
-                }
+                // Helper to send text with mention
+                const sendText = (body) =>
+                    conn.sendMessage(ownerJid, { text: body, mentions });
 
-                // BUG 3 FIX: Clean readable format, no broken box characters
-                // Sri Lanka time
-                const time = new Date().toLocaleString('en-GB', {
-                    timeZone:  'Asia/Colombo',
-                    day:       '2-digit',
-                    month:     'short',
-                    year:      'numeric',
-                    hour:      '2-digit',
-                    minute:    '2-digit',
-                    second:    '2-digit',
-                    hour12:    true,
-                });
-
-                const displayNumber = senderNumber ? `+${senderNumber}` : 'Unknown';
-
-                const info =
-`🗑️ *DELETED MESSAGE DETECTED*
-━━━━━━━━━━━━━━━━━━━━━
-👤 *Name:*    ${pushName}
-📱 *Number:*  ${displayNumber}
-${isGroup
-    ? `👥 *Group:*   ${groupName}`
-    : `💬 *Chat:*    Private DM`}
-🕐 *Time:*    ${time}
-━━━━━━━━━━━━━━━━━━━━━`;
-
-                // ── Text message ──
+                // ── Text ──
                 if (msgContent.conversation || msgContent.extendedTextMessage) {
-                    const text =
+                    const txt =
                         msgContent.conversation ||
                         msgContent.extendedTextMessage?.text || '';
-                    await conn.sendMessage(ownerJid, {
-                        text: `${info}\n\n💬 *Content:*\n${text}`,
-                    });
+                    await sendText(`${info}\n\n💬 *Content:*\n${txt}`);
                 }
 
                 // ── Image ──
@@ -213,13 +230,12 @@ ${isGroup
                     const buffer  = await downloadMedia(msgContent);
                     if (buffer) {
                         await conn.sendMessage(ownerJid, {
-                            image:   buffer,
-                            caption: `${info}\n\n📷 *Image deleted*${caption ? `\n💬 *Caption:* ${caption}` : ''}`,
+                            image:    buffer,
+                            caption:  `${info}\n\n📷 *Image deleted*${caption ? `\n💬 *Caption:* ${caption}` : ''}`,
+                            mentions,
                         });
                     } else {
-                        await conn.sendMessage(ownerJid, {
-                            text: `${info}\n\n📷 *Image deleted*${caption ? `\n💬 *Caption:* ${caption}` : ''}\n\n⚠️ _Media expired — could not download_`,
-                        });
+                        await sendText(`${info}\n\n📷 *Image deleted*${caption ? `\n💬 *Caption:* ${caption}` : ''}\n\n⚠️ _Media expired — could not download_`);
                     }
                 }
 
@@ -229,13 +245,12 @@ ${isGroup
                     const buffer  = await downloadMedia(msgContent);
                     if (buffer) {
                         await conn.sendMessage(ownerJid, {
-                            video:   buffer,
-                            caption: `${info}\n\n🎥 *Video deleted*${caption ? `\n💬 *Caption:* ${caption}` : ''}`,
+                            video:    buffer,
+                            caption:  `${info}\n\n🎥 *Video deleted*${caption ? `\n💬 *Caption:* ${caption}` : ''}`,
+                            mentions,
                         });
                     } else {
-                        await conn.sendMessage(ownerJid, {
-                            text: `${info}\n\n🎥 *Video deleted*${caption ? `\n💬 *Caption:* ${caption}` : ''}\n\n⚠️ _Media expired — could not download_`,
-                        });
+                        await sendText(`${info}\n\n🎥 *Video deleted*${caption ? `\n💬 *Caption:* ${caption}` : ''}\n\n⚠️ _Media expired — could not download_`);
                     }
                 }
 
@@ -243,10 +258,7 @@ ${isGroup
                 else if (msgContent.audioMessage) {
                     const isPtt  = msgContent.audioMessage.ptt;
                     const buffer = await downloadMedia(msgContent);
-                    // Send info header first
-                    await conn.sendMessage(ownerJid, {
-                        text: `${info}\n\n${isPtt ? '🎤 *Voice note deleted*' : '🎵 *Audio deleted*'}`,
-                    });
+                    await sendText(`${info}\n\n${isPtt ? '🎤 *Voice note deleted*' : '🎵 *Audio deleted*'}`);
                     if (buffer) {
                         await conn.sendMessage(ownerJid, {
                             audio:    buffer,
@@ -254,18 +266,14 @@ ${isGroup
                             ptt:      isPtt,
                         });
                     } else {
-                        await conn.sendMessage(ownerJid, {
-                            text: '⚠️ _Media expired — could not download audio_',
-                        });
+                        await sendText('⚠️ _Media expired — could not download audio_');
                     }
                 }
 
                 // ── Sticker ──
                 else if (msgContent.stickerMessage) {
                     const buffer = await downloadMedia(msgContent);
-                    await conn.sendMessage(ownerJid, {
-                        text: `${info}\n\n🎭 *Sticker deleted*`,
-                    });
+                    await sendText(`${info}\n\n🎭 *Sticker deleted*`);
                     if (buffer) {
                         await conn.sendMessage(ownerJid, { sticker: buffer });
                     }
@@ -282,40 +290,32 @@ ${isGroup
                             mimetype,
                             fileName: fname,
                             caption:  `${info}\n\n📄 *Document deleted*\n📎 *File:* ${fname}`,
+                            mentions,
                         });
                     } else {
-                        await conn.sendMessage(ownerJid, {
-                            text: `${info}\n\n📄 *Document deleted*\n📎 *File:* ${fname}\n\n⚠️ _Media expired_`,
-                        });
+                        await sendText(`${info}\n\n📄 *Document deleted*\n📎 *File:* ${fname}\n\n⚠️ _Media expired_`);
                     }
                 }
 
                 // ── Contact ──
                 else if (msgContent.contactMessage) {
                     const cname = msgContent.contactMessage.displayName || 'Unknown';
-                    await conn.sendMessage(ownerJid, {
-                        text: `${info}\n\n👤 *Contact deleted*\n📛 *Name:* ${cname}`,
-                    });
+                    await sendText(`${info}\n\n👤 *Contact deleted*\n📛 *Name:* ${cname}`);
                 }
 
                 // ── Location ──
                 else if (msgContent.locationMessage) {
                     const lat = msgContent.locationMessage.degreesLatitude;
                     const lng = msgContent.locationMessage.degreesLongitude;
-                    await conn.sendMessage(ownerJid, {
-                        text: `${info}\n\n📍 *Location deleted*\n🌐 https://maps.google.com/?q=${lat},${lng}`,
-                    });
+                    await sendText(`${info}\n\n📍 *Location deleted*\n🌐 https://maps.google.com/?q=${lat},${lng}`);
                 }
 
-                // ── Unknown / other ──
+                // ── Unknown ──
                 else {
                     const msgType = Object.keys(msgContent)[0] || 'unknown';
-                    await conn.sendMessage(ownerJid, {
-                        text: `${info}\n\n❓ *Deleted* (${msgType})`,
-                    });
+                    await sendText(`${info}\n\n❓ *Deleted* (${msgType})`);
                 }
 
-                // Remove from cache after handling
                 msgCache.delete(deletedId);
 
             } catch (innerErr) {
