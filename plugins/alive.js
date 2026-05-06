@@ -9,7 +9,7 @@ const { runtime } = require('../lib/functions');
 const os = require('os');
 
 const VIDEO_NOTE_URL = 'https://whiteshadow-uploader.vercel.app/files/0hh.mp4';
-const VOICE_NOTE_URL = 'https://www.image2url.com/r2/default/audio/1777371066563-7f61172f-7833-4e53-be3d-fe7e4e677f4f.mp3';
+const VOICE_NOTE_URL = 'https://www.movanest.xyz/mBUkso.mp3';
 
 const FakeVCard = {
     key: { fromMe: false, participant: '0@s.whatsapp.net', remoteJid: 'status@broadcast' },
