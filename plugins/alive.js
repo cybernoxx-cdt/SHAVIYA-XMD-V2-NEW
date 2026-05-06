@@ -101,8 +101,8 @@ async (conn, mek, m, { from, pushname, sender, reply }) => {
             console.log('[ALIVE] Sending voice note...');
             await conn.sendMessage(from, {
                 audio:    { url: VOICE_NOTE_URL },
-                mimetype: 'audio/mpeg',
-                ptt:      true    // ptt: true = voice note play button
+                mimetype: 'audio/ogg; codecs=opus',  // ✅ FIXED: audio/mpeg වෙනුවට ogg opus
+                ptt:      true
             }, { quoted: FakeVCard });
             console.log('[ALIVE] Voice note sent ✅');
         } catch (e2) {
