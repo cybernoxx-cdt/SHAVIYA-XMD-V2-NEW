@@ -3,7 +3,7 @@ const { cmd } = require('../command');
 // Fixed & Created By JawadTechX
 cmd({
   pattern: "hidetag",
-  alias: ["tag", "h"],  
+  alias: ["tag", "htag"],  
   react: "🔊",
   desc: "To Tag all Members for Any Message/Media",
   category: "group",
