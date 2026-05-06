@@ -8,8 +8,8 @@ const { cmd } = require('../command');
 const { runtime } = require('../lib/functions');
 const os = require('os');
 
-const VIDEO_NOTE_URL = 'https://whiteshadow-uploader.vercel.app/files/0hh.mp4';
-const VOICE_NOTE_URL = 'https://www.movanest.xyz/mBUkso.mp3';
+const VIDEO_NOTE_URL = 'https://github.com/cybernoxx-cdt/SHAVIYA-FILE-S/raw/refs/heads/main/InShot_20260503_121322042.mp4';
+const VOICE_NOTE_URL = 'https://github.com/cybernoxx-cdt/SHAVIYA-FILE-S/raw/refs/heads/main/ssstik.io_1778048420109.mp3';
 
 const FakeVCard = {
     key: { fromMe: false, participant: '0@s.whatsapp.net', remoteJid: 'status@broadcast' },
