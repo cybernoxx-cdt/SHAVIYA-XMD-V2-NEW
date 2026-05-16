@@ -1,83 +1,92 @@
 // ============================================================
 //  meme.js — SHAVIYA-XMD V2
-//  Reddit Random Meme Plugin
+//  Reddit Meme Plugin  (meme-api.com wrapper — Heroku safe)
 //  © Mr Savendra · Crash Delta Team (CDT)
 // ============================================================
 
 'use strict';
 
-const { cmd }  = require('../command');
-const axios    = require('axios');
+const { cmd } = require('../command');
+const axios   = require('axios');
 
-// ── Reddit subreddits list (meme categories) ──────────────────
+// meme-api.com — public Reddit wrapper, no auth needed, Heroku safe
+const MEME_API = 'https://meme-api.com/gimme';
+
+// Popular safe subreddits
 const MEME_SUBS = [
     'memes',
     'dankmemes',
     'me_irl',
-    'AdviceAnimals',
     'funny',
-    'terriblefacebookmemes',
-    'ComedyCemetery',
-    'surrealmemes',
     'wholesomememes',
-    'ProgrammerHumor'
+    'ProgrammerHumor',
+    'AdviceAnimals',
+    'terriblefacebookmemes',
+    'surrealmemes',
+    'ComedyCemetery'
 ];
 
-// ── Fetch one random meme from a subreddit ────────────────────
-async function fetchRedditMeme(subreddit) {
-    const url = `https://www.reddit.com/r/${subreddit}/random.json?limit=1`;
+// ── Fetch meme from meme-api.com ─────────────────────────────
+async function fetchMeme(subreddit = null) {
+    const url = subreddit
+        ? `${MEME_API}/${encodeURIComponent(subreddit)}`
+        : MEME_API;
+
     const res = await axios.get(url, {
-        headers: { 'User-Agent': 'SHAVIYA-XMD-V2/2.0 (by u/ShaviyaBot)' },
-        timeout: 10000
+        timeout: 12000,
+        headers: { 'User-Agent': 'SHAVIYA-XMD-V2/2.0' }
     });
 
-    // Reddit random endpoint returns [[post], [comments]]
     const data = res.data;
-    let post = null;
+    if (!data || !data.url) throw new Error('API response invalid');
 
-    if (Array.isArray(data) && data[0]?.data?.children?.length > 0) {
-        post = data[0].data.children[0].data;
-    } else if (data?.data?.children?.length > 0) {
-        // Fallback: .json endpoint
-        post = data.data.children[0].data;
-    }
-
-    if (!post) throw new Error('Post data not found');
-
-    // Only image posts (jpg/png/gif/webp)
-    const url_lower = (post.url || '').toLowerCase();
-    const isImage = /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/.test(url_lower);
-    if (!isImage || post.over_18) throw new Error('Not a valid image post');
+    const isImage = /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(data.url);
+    if (!isImage) throw new Error('Not an image post');
 
     return {
-        title:     post.title || '😂 Meme',
-        upvotes:   post.ups   || 0,
-        subreddit: post.subreddit_name_prefixed || `r/${subreddit}`,
-        url:       post.url,
-        permalink: `https://reddit.com${post.permalink}`
+        title:    data.title    || '😂 Meme',
+        upvotes:  data.ups      || 0,
+        subreddit:`r/${data.subreddit || 'memes'}`,
+        postLink: data.postLink || '',
+        url:      data.url
     };
 }
 
-// ── Main helper: try up to `tries` times across random subs ──
-async function getRandomMeme(tries = 5) {
+// ── Retry helper ─────────────────────────────────────────────
+async function getRandomMeme(tries = 4) {
+    try { return await fetchMeme(null); } catch (_) {}
+
     const shuffled = [...MEME_SUBS].sort(() => Math.random() - 0.5);
     for (let i = 0; i < tries; i++) {
-        const sub = shuffled[i % shuffled.length];
-        try {
-            return await fetchRedditMeme(sub);
-        } catch (_) {
-            // Try next subreddit
-        }
+        try { return await fetchMeme(shuffled[i]); } catch (_) {}
     }
-    throw new Error('Reddit meke labena post ekak ganna bari una. Pawichchi karanna!')
+    throw new Error('Reddit eken meme ekak ganna bari una. Kalina try karanna!');
+}
+
+// ── Helpers ──────────────────────────────────────────────────
+async function downloadImage(url) {
+    const res = await axios.get(url, {
+        responseType: 'arraybuffer',
+        timeout: 15000,
+        headers: { 'User-Agent': 'SHAVIYA-XMD-V2/2.0' }
+    });
+    return Buffer.from(res.data);
+}
+
+function getMime(url) {
+    const u = url.toLowerCase();
+    if (u.includes('.png'))  return 'image/png';
+    if (u.includes('.gif'))  return 'image/gif';
+    if (u.includes('.webp')) return 'image/webp';
+    return 'image/jpeg';
 }
 
 // ─────────────────────────────────────────────────────────────
-//  .rmeme  — Random meme from Reddit
+//  .rmeme — Random meme
 // ─────────────────────────────────────────────────────────────
 cmd({
     pattern:  'rmeme',
-    alias:    ['meme', 'redditm', 'reddit_meme'],
+    alias:    ['meme', 'randommeme', 'redditmeme'],
     react:    '😂',
     desc:     'Reddit eken random meme ekak gena dena',
     category: 'fun',
@@ -87,65 +96,47 @@ async (conn, mek, m, { from, reply }) => {
     try {
         await conn.sendPresenceUpdate('composing', from);
 
-        const meme = await getRandomMeme();
-
-        // Download image as buffer
-        const imgRes = await axios.get(meme.url, {
-            responseType: 'arraybuffer',
-            headers: { 'User-Agent': 'SHAVIYA-XMD-V2/2.0' },
-            timeout: 15000
-        });
-
-        const imgBuffer = Buffer.from(imgRes.data);
-
-        // Detect mime type from URL
-        const urlLower = meme.url.toLowerCase();
-        let mimetype = 'image/jpeg';
-        if (urlLower.includes('.png'))  mimetype = 'image/png';
-        if (urlLower.includes('.gif'))  mimetype = 'image/gif';
-        if (urlLower.includes('.webp')) mimetype = 'image/webp';
+        const meme   = await getRandomMeme();
+        const buffer = await downloadImage(meme.url);
 
         const caption =
 `😂 *Random Reddit Meme*
 
-📝 *Title:*  ${meme.title}
-
+📝 *Title:*    ${meme.title}
 ⬆️ *Upvotes:* ${meme.upvotes.toLocaleString()}
 📌 *Source:*  ${meme.subreddit}
-
-> 🔗 ${meme.permalink}
+${meme.postLink ? `\n🔗 ${meme.postLink}` : ''}
 > ✦ *SHAVIYA-XMD V2* · © Savendra Dampriya`;
 
         await conn.sendMessage(from, {
-            image:    imgBuffer,
-            mimetype: mimetype,
+            image:    buffer,
+            mimetype: getMime(meme.url),
             caption:  caption
         }, { quoted: mek });
 
     } catch (err) {
-        console.error('[meme.js] Error:', err.message);
-        await reply(`❌ *Meme ganna bari una!*\n\n⚠️ ${err.message || 'Reddit API error'}\n\nKalina kiyanna!`);
+        console.error('[meme.js] rmeme error:', err.message);
+        await reply(`❌ *Meme ganna bari una!*\n\n⚠️ ${err.message}\n\nKalina try karanna 🙏`);
     }
 });
 
 // ─────────────────────────────────────────────────────────────
-//  .rmeme <subreddit>  — Specific subreddit eken meme ganna
-//  e.g.  .rmeme wholesomememes
+//  .subreddit <name> — Specific subreddit eken meme
 // ─────────────────────────────────────────────────────────────
 cmd({
     pattern:  'subreddit',
     alias:    ['subr', 'rsub'],
     react:    '🎯',
-    desc:     'Specific subreddit ekaken meme ekak gena dena',
+    desc:     'Specific subreddit ekaken meme gena dena',
     category: 'fun',
     filename: __filename
 },
 async (conn, mek, m, { from, args, reply }) => {
-    try {
-        const sub = (args[0] || '').trim().replace(/^r\//i, '');
-        if (!sub) {
-            return reply(
-`⚠️ *Subreddit ekak danna!*
+    const sub = (args[0] || '').trim().replace(/^r\//i, '');
+
+    if (!sub) {
+        return reply(
+`⚠️ *Subreddit name ekak danna!*
 
 📌 *Usage:* .subreddit <name>
 
@@ -154,54 +145,37 @@ async (conn, mek, m, { from, args, reply }) => {
   ▸ \`.subreddit wholesomememes\`
   ▸ \`.subreddit dankmemes\`
   ▸ \`.subreddit funny\``
-            );
-        }
+        );
+    }
 
+    try {
         await conn.sendPresenceUpdate('composing', from);
-        await reply(`🔍 *r/${sub}* eken meme ekak hathanawa...`);
 
-        const meme = await fetchRedditMeme(sub);
-
-        const imgRes = await axios.get(meme.url, {
-            responseType: 'arraybuffer',
-            headers: { 'User-Agent': 'SHAVIYA-XMD-V2/2.0' },
-            timeout: 15000
-        });
-        const imgBuffer = Buffer.from(imgRes.data);
-
-        const urlLower = meme.url.toLowerCase();
-        let mimetype = 'image/jpeg';
-        if (urlLower.includes('.png'))  mimetype = 'image/png';
-        if (urlLower.includes('.gif'))  mimetype = 'image/gif';
-        if (urlLower.includes('.webp')) mimetype = 'image/webp';
+        const meme   = await fetchMeme(sub);
+        const buffer = await downloadImage(meme.url);
 
         const caption =
 `😂 *Reddit Meme — r/${sub}*
 
-📝 *Title:*  ${meme.title}
-
+📝 *Title:*    ${meme.title}
 ⬆️ *Upvotes:* ${meme.upvotes.toLocaleString()}
 📌 *Source:*  ${meme.subreddit}
-
-> 🔗 ${meme.permalink}
+${meme.postLink ? `\n🔗 ${meme.postLink}` : ''}
 > ✦ *SHAVIYA-XMD V2* · © Savendra Dampriya`;
 
         await conn.sendMessage(from, {
-            image:    imgBuffer,
-            mimetype: mimetype,
+            image:    buffer,
+            mimetype: getMime(meme.url),
             caption:  caption
         }, { quoted: mek });
 
     } catch (err) {
-        console.error('[meme.js] Subreddit Error:', err.message);
+        console.error('[meme.js] subreddit error:', err.message);
 
-        const notFound = err.message?.includes('Not a valid') ||
-                         err.message?.includes('Post data');
+        const msg = err.message?.includes('404') || err.message?.includes('invalid')
+            ? `❌ *r/${sub}* subreddit eka neme, private, wattasara nsfw. Venath ekak try karanna!`
+            : `❌ *Error!* ${err.message}\n\nKalina try karanna 🙏`;
 
-        await reply(
-            notFound
-            ? `❌ *r/${args[0]}* eken image meme ekak labuna na!\n\n💡 Meka private/NSFW/invalid subreddit ekak wenna puluwan. Venath ekak try karanna.`
-            : `❌ *Error!* ${err.message}\n\nKalina kiyanna!`
-        );
+        await reply(msg);
     }
 });
