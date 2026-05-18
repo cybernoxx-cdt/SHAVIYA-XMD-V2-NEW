@@ -59,8 +59,16 @@ async (conn, mek, m, { from, isOwner, q, reply }) => {
 
         if (status === 200 || status === '200') {
             return reply('✅ *+' + number + ' added to the group!*');
+        } else {
+            // Add failed - send invite link instead
+            const inviteCode = await conn.groupInviteCode(from);
+            await conn.sendMessage(from, {
+                text: `⚠️ Couldn't add *+${number}* directly.\n\n📩 *Invite link sent to them instead:*\nhttps://chat.whatsapp.com/${inviteCode}`
+            });
         }
-
+    } catch (e) {
+        reply(`❌ Failed: ${e.message}\nMake sure I am admin!`);
+    }
 });
 
 // ── .promote ──────────────────────────────────
