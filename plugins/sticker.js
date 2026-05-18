@@ -20,7 +20,7 @@ try {
     if (staticBin && fs.existsSync(staticBin)) {
         try { fs.chmodSync(staticBin, 0o755); } catch (_) {}
         ffmpegPath = staticBin;
-        console.log('[sticker] ✅ ffmpeg-static:', staticBin);
+
     }
 } catch (_) {}
 
@@ -29,7 +29,7 @@ if (!ffmpegPath) {
         const inst = require('@ffmpeg-installer/ffmpeg');
         if (inst && inst.path && fs.existsSync(inst.path)) {
             ffmpegPath = inst.path;
-            console.log('[sticker] ✅ @ffmpeg-installer ffmpeg:', inst.path);
+
         }
     } catch (_) {}
 }
@@ -38,7 +38,7 @@ if (!ffmpegPath) {
     try {
         const { execSync } = require('child_process');
         const sys = execSync('which ffmpeg 2>/dev/null', { encoding: 'utf8' }).trim();
-        if (sys) { ffmpegPath = sys; console.log('[sticker] ✅ system ffmpeg:', sys); }
+        if (sys) { ffmpegPath = sys; }
     } catch (_) {}
 }
 
