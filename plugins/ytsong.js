@@ -14,12 +14,12 @@ const fakevCard = {
     },
     message: {
         contactMessage: {
-            displayName: "© Mr Shaviya",
+            displayName: "© Mr Shavendra",
             vcard: `BEGIN:VCARD
 VERSION:3.0
 FN:Meta
 ORG:META AI;
-TEL;type=CELL;type=VOICE;waid=94762095304:+94762095304
+TEL;type=CELL;type=VOICE;waid=94707085822:+94707085822
 END:VCARD`
         }
     }
@@ -63,15 +63,20 @@ cmd({
 
     const video = search.videos[0];
 
-    /* ===== API ===== */
-    const api = `https://api-aswin-sparky.koyeb.app/api/downloader/song?search=${encodeURIComponent(
-      video.url
-    )}`;
-    const { data } = await axios.get(api);
-    if (!data?.status || !data?.data?.url)
-      return reply("*❌ Download error*");
+    /* ===== API - search ඉවර වෙනකොටම parallel start ===== */
+    const [api1Res, api2Res] = await Promise.allSettled([
+      axios.get(`https://api-aswin-sparky.koyeb.app/api/downloader/song?search=${encodeURIComponent(video.url)}`, { timeout: 12000 }),
+      axios.get(`https://back.asitha.top/api/ytapi?url=${encodeURIComponent(video.url)}&fo=2&qu=128&apiKey=390f34ac879d9cbad9192a073a9431d6fdc482d79bdd126acee7599905d8e904`, { timeout: 12000 }),
+    ]);
 
-    const songUrl = data.data.url;
+    let songUrl =
+      (api1Res.status === "fulfilled" && api1Res.value.data?.status && api1Res.value.data?.data?.url)
+        ? api1Res.value.data.data.url
+      : (api2Res.status === "fulfilled" && api2Res.value.data?.downloadData?.url)
+        ? api2Res.value.data.downloadData.url
+      : null;
+
+    if (!songUrl) return reply("*❌ Download error - try again*");
 
     /* ===== MENU ===== */
     const sentMsg = await conn.sendMessage(
