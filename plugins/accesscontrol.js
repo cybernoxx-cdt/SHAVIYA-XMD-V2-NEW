@@ -134,10 +134,19 @@ function getAccessConfigSync(sessionId) {
 //  reason: ''    → index.js will NOT send any message (silent)
 // ═══════════════════════════════════════════════════════════════
 global.checkAccess = function(sessionId, senderNumber, isOwner, isGroup) {
-  // Preload cache if not loaded yet
+  // Cache නැත්නම් — file ෙකන් sync read කරලා cache ෙද්, background ෙක MongoDB sync
   if (!_configCache[sessionId]) {
-    preloadCache(sessionId);
-    return { allowed: true }; // Allow while loading
+    try {
+      const file = getLocalFile(sessionId);
+      if (fs.existsSync(file)) {
+        _configCache[sessionId] = JSON.parse(fs.readFileSync(file, 'utf8'));
+      } else {
+        _configCache[sessionId] = { mode: 'public', premium: [], banned: [] };
+      }
+    } catch (_) {
+      _configCache[sessionId] = { mode: 'public', premium: [], banned: [] };
+    }
+    preloadCache(sessionId); // MongoDB ෙකන් background update
   }
 
   const cfg  = getAccessConfigSync(sessionId);
