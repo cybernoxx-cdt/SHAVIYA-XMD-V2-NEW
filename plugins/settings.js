@@ -43,6 +43,7 @@ const SETTINGS_LIST = [
     // ── UI ──
     { id: 10, label: 'Button Mode',        icon: '🔘', key: 'button',          group: 'ui'   },
     { id: 11, label: 'Movie Doc Thumb',    icon: '🎬', key: 'moviedoc',        group: 'ui'   },
+    { id: 12, label: 'Always Offline',      icon: '👻', key: 'alwaysOffline',   group: 'ui'   },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -302,6 +303,7 @@ async (conn, mek, m, { isOwner, args, reply }) => {
 ├─ \`.set antibot on\`
 ├─ \`.set button on\`
 └─ \`.set moviedoc on\`
+└─ `.set alwaysoffline on`
 
 *String settings:*
 ├─ \`.set mode public\`
@@ -327,6 +329,7 @@ _Use .settings for full interactive menu._`
         antibot:         'antiBot',
         button:          'button',
         moviedoc:        'moviedoc',
+        alwaysoffline:   'alwaysOffline',
     };
 
     // String keys map
@@ -351,7 +354,7 @@ _Use .settings for full interactive menu._`
     if (strMap[keyRaw]) {
         const { key: sk, valid } = strMap[keyRaw];
         const saveVal = args.slice(1).join(' ').trim();
-        if (!saveVal) return reply(`❌ Value දෙන්න!\nExample: \`.set ${keyRaw} public\``);
+        if (!saveVal) return reply(`❌ Please provide a value!\nExample: \`.set ${keyRaw} public\``);
         if (valid && !valid.includes(saveVal.toLowerCase())) {
             return reply(`❌ Invalid: *${saveVal}*\nValid values: ${valid.join(', ')}`);
         }
@@ -383,10 +386,10 @@ async (conn, mek, m, { isOwner, args, reply }) => {
         return reply(
 `⚠️ *Reset All Settings?*
 
-මෙය සියලු settings default values ලෙ reset කරයි.
-MongoDB + local file දෙකෙන්ම erase වෙනවා.
+This will reset all settings to their default values.
+All data will be erased from MongoDB and local file.
 
-_Confirm කරන්න:_ \`.resetbot confirm\``
+_To confirm type:_ \`.resetbot confirm\``
         );
     }
 
