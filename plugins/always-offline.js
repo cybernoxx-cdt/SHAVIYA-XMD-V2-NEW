@@ -1,8 +1,9 @@
 // ============================================================
 //  always-offline.js — SHAVIYA-XMD V2
 //  👻 Always Offline / Invisible Mode Plugin
-//  ✅ MongoDB persistence — restart ෙකන් පස්සෙත් state save වෙනවා
-//  ✅ File fallback — MongoDB නැතත් data/offline_state.json ෙල save
+//  ✅ MongoDB persistence — state saved after restart
+//  ✅ File fallback — saves to data/offline_state.json
+//  ✅ Startup hook — presence applied immediately on bot start
 //  © Mr Savendra · Crash Delta Team (CDT)
 // ============================================================
 
@@ -11,7 +12,7 @@ const fs      = require('fs');
 const path    = require('path');
 
 // ─── FILE FALLBACK PATH ──────────────────────────────────────
-const DATA_DIR    = path.join(__dirname, '../data');
+const DATA_DIR      = path.join(__dirname, '../data');
 const FALLBACK_FILE = path.join(DATA_DIR, 'offline_state.json');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -38,7 +39,7 @@ function getModel() {
 
 // ─── READ STATE ──────────────────────────────────────────────
 async function readState() {
-    // 1. MongoDB try
+    // 1. MongoDB first
     try {
         const Model = getModel();
         if (Model) {
@@ -62,7 +63,7 @@ async function readState() {
 
 // ─── WRITE STATE ─────────────────────────────────────────────
 async function writeState(value) {
-    // 1. MongoDB try
+    // 1. MongoDB
     try {
         const Model = getModel();
         if (Model) {
@@ -84,10 +85,11 @@ async function writeState(value) {
     }
 }
 
-// ─── GLOBAL STATE INIT ───────────────────────────────────────
+// ─── GLOBAL STATE ────────────────────────────────────────────
 if (global._alwaysOffline === undefined) global._alwaysOffline = false;
 
 // ─── PRESENCE HOOK ───────────────────────────────────────────
+// Registered once — keeps bot offline on every incoming message
 let _hookRegistered = false;
 
 function registerOfflineHook(conn) {
@@ -103,22 +105,42 @@ function registerOfflineHook(conn) {
             } catch (_) {}
         }
     });
+
+    console.log('[OFFLINE] Presence hook registered');
 }
 
 // ─── STARTUP LOAD ────────────────────────────────────────────
-// Bot start වෙද්දී MongoDB / file ෙකන් state load කරගන්නවා
-// mongoose connection ready වෙන්න ටිකක් ගත වෙන නිසා 3s delay
+// Load saved state from MongoDB/file on bot start
+// 4s delay — wait for mongoose + global._activeConns to be ready
 setTimeout(async () => {
     try {
         const saved = await readState();
         global._alwaysOffline = saved;
+
+        const connMap = global._activeConns;
+
         if (saved) {
-            console.log('[OFFLINE] ✅ Always Offline mode loaded from DB — ON');
+            // State is ON — apply offline presence immediately
+            console.log('[OFFLINE] Always Offline mode loaded — ON');
+            if (connMap && connMap.size > 0) {
+                for (const [, conn] of connMap) {
+                    registerOfflineHook(conn);
+                    try { await conn.sendPresenceUpdate('unavailable'); } catch (_) {}
+                }
+            }
+        } else {
+            // State is OFF — apply online presence
+            console.log('[OFFLINE] Always Offline mode — OFF');
+            if (connMap && connMap.size > 0) {
+                for (const [, conn] of connMap) {
+                    try { await conn.sendPresenceUpdate('available'); } catch (_) {}
+                }
+            }
         }
     } catch (e) {
         console.error('[OFFLINE] Startup load error:', e.message);
     }
-}, 3000);
+}, 4000);
 
 // ─────────────────────────────────────────────────────────────
 // CMD — .alwaysoffline on / off / status
@@ -134,45 +156,53 @@ cmd({
 },
 async (conn, mek, m, { from, q, reply }) => {
 
-    // Hook register
+    // Register hook on first command use
     registerOfflineHook(conn);
 
     const arg = (q || '').trim().toLowerCase();
 
+    // ── ON ──
     if (arg === 'on') {
         global._alwaysOffline = true;
         await writeState(true);
-        await conn.sendPresenceUpdate('unavailable', from);
+        await conn.sendPresenceUpdate('unavailable');
         return reply(
             '👻 *Always Offline Mode — ON*\n\n'
-            + '✅ _MongoDB ෙල Save විය_\n'
-            + '✅ _Restart ෙකන් පස්සෙත් ON ෙවනවා_\n\n'
-            + '_Bot දැන් සෑම Chat ෙකදීම Offline/Invisible ෙලස පෙනෙනවා._'
+            + '✅ _Saved to MongoDB_\n'
+            + '✅ _Stays ON after restart_\n\n'
+            + '_Bot will now appear Offline/Invisible in all chats._\n\n'
+            + '> © Mr Savendra · 𝗦𝗛𝗔𝗩𝗜𝗬𝗔-𝗫𝗠𝗗 𝗩𝟮'
         );
     }
 
+    // ── OFF ──
     if (arg === 'off') {
         global._alwaysOffline = false;
         await writeState(false);
-        await conn.sendPresenceUpdate('available', from);
+        await conn.sendPresenceUpdate('available');
         return reply(
             '✅ *Always Offline Mode — OFF*\n\n'
-            + '✅ _MongoDB ෙල Save විය_\n\n'
-            + '_Bot දැන් සාමාන්‍ය Online status ෙලස පෙනෙනවා._'
+            + '✅ _Saved to MongoDB_\n'
+            + '✅ _Stays OFF after restart_\n\n'
+            + '_Bot will now appear with normal Online status._\n\n'
+            + '> © Mr Savendra · 𝗦𝗛𝗔𝗩𝗜𝗬𝗔-𝗫𝗠𝗗 𝗩𝟮'
         );
     }
 
-    // Status
+    // ── STATUS ──
     const status = global._alwaysOffline
-        ? '👻 *ON* — Offline/Invisible'
+        ? '👻 *ON* — Offline / Invisible'
         : '🟢 *OFF* — Normal Online';
 
     reply(
         '👻 *Always Offline Mode*\n\n'
-        + `📡 *Current:* ${status}\n\n`
+        + `📡 *Current Status:* ${status}\n\n`
+        + '━━━━━━━━━━━━━━━━━━━━━\n'
         + '*Usage:*\n'
-        + '`.alwaysoffline on` — Enable\n'
-        + '`.alwaysoffline off` — Disable\n\n'
+        + '`.alwaysoffline on` — Enable offline mode\n'
+        + '`.alwaysoffline off` — Disable offline mode\n'
+        + '`.alwaysoffline` — Check current status\n\n'
+        + '💡 _State saved to MongoDB — survives restarts_\n\n'
         + '> © Mr Savendra · 𝗦𝗛𝗔𝗩𝗜𝗬𝗔-𝗫𝗠𝗗 𝗩𝟮'
     );
 });
