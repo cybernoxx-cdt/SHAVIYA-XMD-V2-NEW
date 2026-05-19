@@ -13,7 +13,6 @@ const { getSetting, setSetting } = require('../lib/settings');
 
 // Full plugin registry with display names
 const PLUGIN_LIST = [
-    { key: 'alwaysOnline',    name: 'Always Online',        cmd: '.alwaysonline'    },
     { key: 'autoReadStatus',  name: 'Auto Read Status',      cmd: '.autoreadstatus'  },
     { key: 'autoReactStatus', name: 'Auto React Status',     cmd: '.autoreactstatus' },
     { key: 'autoVoice',       name: 'Auto Voice Reply',      cmd: '.autovoice'       },
@@ -48,7 +47,7 @@ async (conn, mek, m, { isOwner, reply }) => {
 
     msg += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
     msg += `📝 *Usage:*\n`;
-    msg += `• Reply *.plugin 1* → Toggle "Always Online"\n`;
+    
     msg += `• Reply *.plugin 3* → Toggle "Auto React Status"\n`;
     msg += `• Reply *.plugin all on* → Turn ALL on\n`;
     msg += `• Reply *.plugin all off* → Turn ALL off\n`;
