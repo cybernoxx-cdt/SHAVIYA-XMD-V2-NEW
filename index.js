@@ -479,6 +479,15 @@ async function startBot(sessionId, authPath, envConfig) {
 
         try { await conn.newsletterFollow(`0029Vb7Cx5gJENxwXCJaXk2I@newsletter`); } catch (e) {}
       }
+
+      // Presence — MongoDB setting check (alwaysOffline)
+      try {
+        const { getSetting } = require('./lib/settings');
+        const alwaysOffline = getSetting('alwaysOffline');
+        if (alwaysOffline === true || alwaysOffline === 'true') {
+          await conn.sendPresenceUpdate('unavailable');
+        }
+      } catch (e) {}
     }
   });
 
