@@ -303,7 +303,7 @@ async (conn, mek, m, { isOwner, args, reply }) => {
 ├─ \`.set antibot on\`
 ├─ \`.set button on\`
 └─ \`.set moviedoc on\`
-└─ `.set alwaysoffline on`
+└─ \`.set alwaysoffline on\`
 
 *String settings:*
 ├─ \`.set mode public\`
