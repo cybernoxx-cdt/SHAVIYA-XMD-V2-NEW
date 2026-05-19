@@ -726,10 +726,5 @@ setTimeout(async () => {
   }
   await connectDB();
   await loadSettingsFromDB();
-  // Force-disable removed features (clears any saved MongoDB/JSON value)
-  try {
-    const { setSetting } = require("./lib/settings");
-    setSetting("alwaysOnline",  false);
-  } catch {}
   await connectToWA();
 }, 4000);
