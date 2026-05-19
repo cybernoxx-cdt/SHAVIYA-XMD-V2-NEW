@@ -16,7 +16,7 @@ const GH_TOKEN  = process.env.GITHUB_TOKEN;
 const GH_OWNER  = process.env.GITHUB_REPO_OWNER || 'cybernoxx-cdt';
 const GH_REPO   = process.env.GITHUB_REPO_NAME  || 'SHAVIYA-XMD-V2-NEW';
 const GH_BRANCH = process.env.GITHUB_BRANCH     || 'main';
-const HK_APP    = process.env.HEROKU_APP_NAME   || 'shaviya-xmd-2';
+const HK_APP    = process.env.HEROKU_APP_NAME   || 'shaviya-xmd-01';
 const HK_KEY    = process.env.HEROKU_API_KEY;
 
 function saveDeployedSHA(sha) {
