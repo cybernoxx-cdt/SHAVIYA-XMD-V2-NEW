@@ -22,7 +22,7 @@ const FakeVCard = {
     key: { fromMe: false, participant: '0@s.whatsapp.net', remoteJid: 'status@broadcast' },
     message: {
         contactMessage: {
-            displayName: '© Mr Savendra · SHAVIYA-XMD V2',
+            displayName: '© Mr Savendra',
             vcard: 'BEGIN:VCARD\nVERSION:3.0\nFN:SHAVIYA-XMD V2\nORG:© Mr Savendra;\nTEL;type=CELL;type=VOICE;waid=94707085822:+94707085822\nEND:VCARD'
         }
     }
