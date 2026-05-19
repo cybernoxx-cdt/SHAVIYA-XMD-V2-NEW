@@ -8,6 +8,7 @@
 //  🔧 Fix: type:'append' messages ignored
 //  🔧 Fix: listener memory leak protection
 //  🔧 Fix: image fallback when no poster
+//  🔧 Fix: bot number reply now works (fromMe check removed)
 // ============================================================
 
 const { cmd } = require('../command');
@@ -37,17 +38,28 @@ function isReplyTo(incomingMsg, targetKeyId) {
     const msg = incomingMsg?.message;
     if (!msg) return false;
 
-    // extendedTextMessage — text reply
-    const ctx1 = msg.extendedTextMessage?.contextInfo;
-    if (ctx1?.stanzaId && ctx1.stanzaId === targetKeyId) return true;
+    // Helper: check any contextInfo object
+    const matchCtx = (ctx) => ctx?.stanzaId && ctx.stanzaId === targetKeyId;
 
-    // imageMessage, videoMessage, etc. reply
-    const ctx2 = msg.imageMessage?.contextInfo
-              || msg.videoMessage?.contextInfo
-              || msg.audioMessage?.contextInfo
-              || msg.documentMessage?.contextInfo
-              || msg.stickerMessage?.contextInfo;
-    if (ctx2?.stanzaId && ctx2.stanzaId === targetKeyId) return true;
+    // extendedTextMessage — text reply
+    if (matchCtx(msg.extendedTextMessage?.contextInfo)) return true;
+
+    // imageMessage, videoMessage, audioMessage, documentMessage, stickerMessage
+    if (matchCtx(msg.imageMessage?.contextInfo))    return true;
+    if (matchCtx(msg.videoMessage?.contextInfo))    return true;
+    if (matchCtx(msg.audioMessage?.contextInfo))    return true;
+    if (matchCtx(msg.documentMessage?.contextInfo)) return true;
+    if (matchCtx(msg.stickerMessage?.contextInfo))  return true;
+
+    // ✅ Fix: ephemeralMessage / viewOnceMessage wrapping (bot number reply edge case)
+    const inner = msg.ephemeralMessage?.message
+               || msg.viewOnceMessage?.message
+               || msg.viewOnceMessageV2?.message;
+    if (inner) {
+        for (const key of Object.keys(inner)) {
+            if (matchCtx(inner[key]?.contextInfo)) return true;
+        }
+    }
 
     return false;
 }
@@ -58,13 +70,28 @@ function isReplyTo(incomingMsg, targetKeyId) {
 function getReplyText(incomingMsg) {
     const msg = incomingMsg?.message;
     if (!msg) return '';
-    return (
+
+    // Direct text types
+    const direct = (
         msg.extendedTextMessage?.text ||
         msg.conversation ||
         msg.imageMessage?.caption ||
         msg.videoMessage?.caption ||
         ''
     ).trim();
+    if (direct) return direct;
+
+    // ✅ Fix: ephemeralMessage wrapping (bot number reply edge case)
+    const inner = msg.ephemeralMessage?.message;
+    if (inner) {
+        return (
+            inner.extendedTextMessage?.text ||
+            inner.conversation ||
+            ''
+        ).trim();
+    }
+
+    return '';
 }
 
 // ─────────────────────────────────────────────────────
@@ -136,7 +163,13 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
         }
 
         // ── Step 3: Movie selection listener ──
-        let movieListenerDone = false;
+        // ✅ Fix: "one-shot listener" bug fix
+        //    movieListenerDone flag use නොකරනවා — ඒ නිසා first valid reply ලැබුනාම
+        //    listener kill වෙලා ඊළඟ reply ට no response වෙනවා.
+        //    Fix: movieProcessing lock use කරනවා — process වෙද්දී duplicate block කරනවා,
+        //    complete/fail වූ ගමන් listener off කරනවා. Invalid reply ලැබුනොත් error දෙලා
+        //    listener live තියෙනවා — user නැවත reply කරන්න පුළුවන්.
+        let movieProcessing = false; // process වෙද්දී lock — duplicate fires block
 
         const movieListener = async (update) => {
             // type === 'append' (history sync) messages ignore
@@ -151,28 +184,27 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                 // same chat check
                 if (inMsg.key?.remoteJid !== from) continue;
 
-                // bot own messages skip
-                if (inMsg.key?.fromMe) continue;
-
                 // reply to listMsg check
                 if (!isReplyTo(inMsg, listMsgId)) continue;
 
-                // already handled?
-                if (movieListenerDone) return;
+                // process වෙද්දී duplicate fire ignore
+                if (movieProcessing) return;
 
-                const userReply    = getReplyText(inMsg);
+                const userReply     = getReplyText(inMsg);
                 const selectedIndex = parseInt(userReply) - 1;
 
                 if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= topResults.length) {
+                    // ✅ Invalid number — error දෙලා listener live තියෙනවා
+                    //    user නැවත වෙන number reply කරන්න පුළුවන්
                     await conn.sendMessage(from,
                         { text: '❌ *වැරදි අංකයක්! 1 සිට ' + topResults.length + ' දක්වා reply කරන්න.*' },
                         { quoted: inMsg }
                     );
-                    return; // listener live තියෙනවා — නැවත reply කරන්න පුළුවන්
+                    return;
                 }
 
-                // ── Movie selected ──
-                movieListenerDone = true;
+                // ── Valid number — lock + listener off ──
+                movieProcessing = true;
                 conn.ev.off('messages.upsert', movieListener);
 
                 const selectedMovie = topResults[selectedIndex];
@@ -256,7 +288,8 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                 if (!qualityMsgId) return;
 
                 // ── Step 7: Quality selection listener ──
-                let qualityListenerDone = false;
+                // ✅ Fix: same one-shot listener bug fix — processing lock use කරනවා
+                let qualityProcessing = false;
 
                 const qualityListener = async (update2) => {
                     if (update2.type === 'append') return;
@@ -267,14 +300,14 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                     for (const qMsg of msgs2) {
                         if (!qMsg?.message) continue;
                         if (qMsg.key?.remoteJid !== from) continue;
-                        if (qMsg.key?.fromMe) continue;
                         if (!isReplyTo(qMsg, qualityMsgId)) continue;
-                        if (qualityListenerDone) return;
+                        if (qualityProcessing) return;
 
-                        const qReply      = getReplyText(qMsg);
-                        const qIndex      = parseInt(qReply) - 1;
+                        const qReply  = getReplyText(qMsg);
+                        const qIndex  = parseInt(qReply) - 1;
 
                         if (isNaN(qIndex) || qIndex < 0 || qIndex >= qualityList.length) {
+                            // ✅ Invalid — error දෙලා listener live, user නැවත reply කරන්න පුළුවන්
                             await conn.sendMessage(from,
                                 { text: '❌ *වැරදි අංකයක්! 1 හෝ 2 reply කරන්න.*' },
                                 { quoted: qMsg }
@@ -282,7 +315,7 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                             return;
                         }
 
-                        qualityListenerDone = true;
+                        qualityProcessing = true;
                         conn.ev.off('messages.upsert', qualityListener);
 
                         const chosenQuality = qualityList[qIndex].quality;
@@ -350,7 +383,7 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
 
                 conn.ev.on('messages.upsert', qualityListener);
                 setTimeout(() => {
-                    if (!qualityListenerDone) {
+                    if (!qualityProcessing) {
                         conn.ev.off('messages.upsert', qualityListener);
                     }
                 }, 180000); // 3 min timeout
@@ -359,7 +392,7 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
 
         conn.ev.on('messages.upsert', movieListener);
         setTimeout(() => {
-            if (!movieListenerDone) {
+            if (!movieProcessing) {
                 conn.ev.off('messages.upsert', movieListener);
             }
         }, 180000); // 3 min timeout
