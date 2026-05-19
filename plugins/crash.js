@@ -1,5 +1,6 @@
 const { cmd } = require('../command');
 const crypto = require('crypto');
+const { generateWAMessageFromContent } = require('@whiskeysockets/baileys');
 
 // Poll Bug Command
 cmd({
