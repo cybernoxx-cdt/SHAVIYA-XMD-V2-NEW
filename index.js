@@ -384,6 +384,11 @@ async function startBot(sessionId, authPath, envConfig) {
     syncFullHistory: false,
     auth: state,
     version,
+    // ── Required for status@broadcast delivery ──
+    getMessage: async (key) => {
+      return { conversation: "" };
+    },
+    shouldIgnoreJid: (jid) => false, // never ignore status@broadcast
   });
 
   console.log(`Starting session: ${sessionId}`);
@@ -502,6 +507,9 @@ async function startBot(sessionId, authPath, envConfig) {
       let mek = mkk.messages[0];
       if (!mek?.message) return;
 
+      // ── Status messages arrive as type "append" or "notify" — handle both ──
+      // No type filter here — let status@broadcast check below handle it
+
       const msgKeys = Object.keys(mek.message);
       if (
         msgKeys.includes("senderKeyDistributionMessage") ||
@@ -512,14 +520,12 @@ async function startBot(sessionId, authPath, envConfig) {
       // ================= AUTO STATUS READ =================
       if (mek.key.remoteJid === "status@broadcast") {
         try {
+          // ── Auto Status Read — ALWAYS ON ──
+          await conn.readMessages([mek.key]);
+
+          // ── Auto Status React — togglable via .autolike on/off ──
           const { getSetting } = require("./lib/settings");
-          const autoRead = getSetting("autoStatusRead");
           const autoLike = getSetting("autoStatusLike");
-
-          if (autoRead) {
-            await conn.readMessages([mek.key]);
-          }
-
           if (autoLike) {
             const statusSender = mek.key.participant || mek.key.remoteJid;
             await conn.sendMessage("status@broadcast", {
@@ -571,8 +577,7 @@ async function startBot(sessionId, authPath, envConfig) {
           else {
             // fallback: check mek.message pushName isn't useful, try notify
             const notify = mek.pushName;
-            // still can't resolve — keep lid but log it
-            console.warn(`[LID] Could not resolve real number for: ${sender}`);
+            // still can't resolve — keep lid, silent (normal on multi-device)
           }
         } catch {}
       }
