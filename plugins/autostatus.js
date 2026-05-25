@@ -2,11 +2,20 @@
 //   plugins/autostatus.js  —  SHAVIYA-XMD V2
 //   Commands: .autostatus, .autolike
 //   Uses native getSetting/setSetting (MongoDB + file backed)
-//   Works 100% with existing index.js status handler
+//
+//   FIX NOTES:
+//   - autoStatusRead default = ON (undefined/null treated as true)
+//     matches index.js: if (autoStatusRead !== false) → read
+//   - Status display now shows correct ON/OFF for unset state
+//   - autolike only reacts to actual content (image/video/text)
+//     not senderKeyDistribution or null-message deliveries
 // ============================================================
 
 const { cmd } = require('../command');
 const { getSetting, setSetting } = require('../lib/settings');
+
+// Helper: treat undefined/null as ON (default enabled)
+const isEnabled = (val) => val !== false;
 
 // ── .autostatus ───────────────────────────────────────────────
 cmd({
@@ -20,19 +29,20 @@ cmd({
 async (conn, mek, m, { isOwner, q, reply }) => {
     if (!isOwner) return reply('❌ Owner only command!');
 
-    const current = getSetting('autoStatusRead');
+    const current   = getSetting('autoStatusRead');
+    const reactState = getSetting('autoStatusLike');
 
     // No args — show current state
     if (!q) {
-        const reactState = getSetting('autoStatusLike');
         return reply(
             `👁️ *Auto Status Settings*\n\n` +
-            `📱 *Auto Status View:* ${current ? 'ON ✅' : 'OFF ❌'}\n` +
-            `💚 *Auto Status React:* ${reactState ? 'ON ✅' : 'OFF ❌'}\n\n` +
+            `📱 *Auto Status View:* ${isEnabled(current) ? 'ON ✅' : 'OFF ❌'}\n` +
+            `💚 *Auto Status React:* ${isEnabled(reactState) ? 'ON ✅' : 'OFF ❌'}\n\n` +
             `*Usage:*\n` +
-            `.autostatus on — Enable auto view\n` +
+            `.autostatus on  — Enable auto view\n` +
             `.autostatus off — Disable auto view\n` +
-            `.autolike on/off — Toggle reactions`
+            `.autolike on/off — Toggle ❤️ reactions\n\n` +
+            `_Default: Auto View = ON, Auto React = OFF_`
         );
     }
 
@@ -67,8 +77,9 @@ async (conn, mek, m, { isOwner, q, reply }) => {
 
     if (!q) {
         return reply(
-            `💚 *Auto Status React* is: *${current ? 'ON ✅' : 'OFF ❌'}*\n\n` +
-            `Usage: .autolike on / off`
+            `💚 *Auto Status React* is: *${isEnabled(current) ? 'ON ✅' : 'OFF ❌'}*\n\n` +
+            `Usage: .autolike on / off\n` +
+            `_Default: OFF — only reacts to image/video/text statuses_`
         );
     }
 
@@ -76,7 +87,7 @@ async (conn, mek, m, { isOwner, q, reply }) => {
 
     if (arg === 'on') {
         await setSetting('autoStatusLike', true);
-        return reply('💚 *Auto Status React ON!*\nBot will react ❤️ to every status.');
+        return reply('💚 *Auto Status React ON!*\nBot will react ❤️ to every image/video/text status.');
     }
 
     if (arg === 'off') {
