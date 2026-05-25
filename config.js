@@ -12,7 +12,8 @@ module.exports = {
   AUTO_VOICE: process.env.AUTO_VOICE === "true",
   AUTO_AI: process.env.AUTO_AI === "true",
   ANTI_BAD_WORDS_ENABLED: process.env.ANTI_BAD_WORDS_ENABLED === "true",
-  AUTO_READ_STATUS: process.env.AUTO_READ_STATUS === "true",
+  // Default TRUE — bot reads statuses unless explicitly disabled
+  AUTO_READ_STATUS: process.env.AUTO_READ_STATUS !== "false",
   ANTI_BAD_WORDS: (process.env.ANTI_BAD_WORDS || "").split(","),
   ANTILINK: process.env.ANTILINK === "true",
   ALWAYS_ONLINE: process.env.ALWAYS_ONLINE === "true",
