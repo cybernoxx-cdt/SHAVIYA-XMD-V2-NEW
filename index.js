@@ -505,10 +505,39 @@ async function startBot(sessionId, authPath, envConfig) {
   conn.ev.on("messages.upsert", async (mkk) => {
     try {
       let mek = mkk.messages[0];
+      if (!mek?.key) return;
+
+      // ================= AUTO STATUS READ =================
+      // MUST be first — before any message/filter checks.
+      // Status posts often arrive as senderKeyDistributionMessage or with
+      // null mek.message on first delivery, so checking here ensures they
+      // are never accidentally blocked by the filters below.
+      if (mek.key.remoteJid === "status@broadcast") {
+        try {
+          if (mek.key.id && !mek.key.fromMe) {
+            // ── Auto Status Read — ALWAYS ON ──
+            await conn.readMessages([mek.key]);
+
+            // ── Auto Status React — togglable via .autolike on/off ──
+            const { getSetting } = require("./lib/settings");
+            const autoLike = getSetting("autoStatusLike");
+            if (autoLike) {
+              const statusSender = mek.key.participant || mek.key.remoteJid;
+              await conn.sendMessage("status@broadcast", {
+                react: { text: "❤️", key: mek.key }
+              }, { statusJidList: [statusSender, conn.user.id] });
+            }
+          }
+        } catch (e) {
+          // silent fail — don't crash on status errors
+        }
+        return; // don't process status updates as commands
+      }
+
       if (!mek?.message) return;
 
       // ── Status messages arrive as type "append" or "notify" — handle both ──
-      // No type filter here — let status@broadcast check below handle it
+      // No type filter here — let status@broadcast check above handle it
 
       const msgKeys = Object.keys(mek.message);
       if (
@@ -516,27 +545,6 @@ async function startBot(sessionId, authPath, envConfig) {
         msgKeys.includes("protocolMessage") ||
         (msgKeys.length === 1 && msgKeys[0] === "messageContextInfo")
       ) return;
-
-      // ================= AUTO STATUS READ =================
-      if (mek.key.remoteJid === "status@broadcast") {
-        try {
-          // ── Auto Status Read — ALWAYS ON ──
-          await conn.readMessages([mek.key]);
-
-          // ── Auto Status React — togglable via .autolike on/off ──
-          const { getSetting } = require("./lib/settings");
-          const autoLike = getSetting("autoStatusLike");
-          if (autoLike) {
-            const statusSender = mek.key.participant || mek.key.remoteJid;
-            await conn.sendMessage("status@broadcast", {
-              react: { text: "❤️", key: mek.key }
-            }, { statusJidList: [statusSender, conn.user.id] });
-          }
-        } catch (e) {
-          // silent fail — don't crash on status errors
-        }
-        return; // don't process status updates as commands
-      }
 
       // ── Cache for antidelete BEFORE mek.message is mutated ──
       // Must be here so mek.key.participant is still intact (group sender)
