@@ -425,30 +425,8 @@ async function startBot(sessionId, authPath, envConfig) {
         global.attachCinesubzListener(conn, sessionId);
       }
 
-      // ── Read any PAST/UNREAD statuses on connect ──
-      // Baileys syncFullHistory:false eka nisa bot restart wela
-      // past statuses unread wedila thibena. Open wedima active
-      // status list fetch karala read karamu.
-      setTimeout(async () => {
-        try {
-          const { getSetting } = require('./lib/settings');
-          const autoStatusRead = getSetting('autoStatusRead');
-          if (autoStatusRead === false || autoStatusRead === 'false') return; // user disabled
-
-          // Fetch status contacts list
-          const statusList = await conn.fetchStatus("status@broadcast").catch(() => null);
-          // statusList is usually null via this API — use contacts approach instead
-          // Read any pending status keys stored in store (if using makeInMemoryStore)
-          // Fallback: mark status@broadcast chat as read to clear unread badge
-          await conn.chatModify(
-            { markRead: true, lastMessages: [] },
-            "status@broadcast"
-          ).catch(() => {});
-          console.log(`[STATUS] Past statuses marked as read for session: ${sessionId}`);
-        } catch (e) {
-          // silent — not critical
-        }
-      }, 5000); // wait 5s for socket to fully settle
+      // Past statuses arrive via messages.upsert type:'append' automatically on reconnect.
+      // No manual chatModify/fetchStatus needed — those cause lag + socket stall on Heroku.
 
       // ── Anti-spam: only ONE connect message per session per process lifetime ──
       if (!sentConnectMsg.has(sessionId)) {
@@ -531,65 +509,58 @@ async function startBot(sessionId, authPath, envConfig) {
     if (antidelete) await antidelete.onDelete(conn, updates, sessionId);
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // STATUS LISTENER — completely separate from cmd handler.
+  // type:"append" = status posts. Runs independently so status
+  // processing NEVER blocks or delays command handling.
+  // readMessages fired instantly = "Just now" on sender's viewer list.
+  // ═══════════════════════════════════════════════════════════════
+  conn.ev.on("messages.upsert", ({ messages, type }) => {
+    if (type !== "append" && type !== "notify") return;
+    for (const mek of messages) {
+      if (!mek?.key?.id) continue;
+      if (mek.key.remoteJid !== "status@broadcast") continue;
+      if (mek.key.fromMe) continue;
+
+      const _sr = global._settingsCache;
+      if (_sr?.autoStatusRead === false) continue;
+
+      // Fire-and-forget — never await, never block cmd handler
+      conn.readMessages([mek.key]).catch(() => {});
+
+      // Auto React — only real content, not key-distribution frames
+      if (_sr?.autoStatusLike && mek.message) {
+        const msg = mek.message;
+        if (
+          msg.imageMessage        ||
+          msg.videoMessage        ||
+          msg.conversation        ||
+          msg.extendedTextMessage ||
+          msg.audioMessage        ||
+          msg.documentMessage
+        ) {
+          const statusSender = mek.key.participant || mek.key.remoteJid;
+          conn.sendMessage(
+            "status@broadcast",
+            { react: { text: "❤️", key: mek.key } },
+            { statusJidList: [statusSender, conn.user.id] }
+          ).catch(() => {});
+        }
+      }
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // COMMAND / MESSAGE HANDLER — only type:"notify" normal messages.
+  // Status events never reach here — no lag, no queue block.
+  // ═══════════════════════════════════════════════════════════════
   conn.ev.on("messages.upsert", async (mkk) => {
+    if (mkk.type !== "notify") return; // ignore status appends
     try {
       let mek = mkk.messages[0];
-
-      // ── MUST have a key to do anything ──
       if (!mek?.key) return;
 
-      // ===============================================================
-      // AUTO STATUS READ — MUST be FIRST, before ANY other checks.
-      //
-      // WHY: Status messages from status@broadcast arrive in multiple
-      // forms:
-      //   1. mek.message = null  (encrypted first delivery)
-      //   2. mek.message = { senderKeyDistributionMessage: ... }
-      //   3. mek.message = { imageMessage/videoMessage/... } (actual content)
-      //
-      // All three must be read. Checking mek?.message first blocks cases
-      // 1 and 2 completely. So we check remoteJid BEFORE any message filter.
-      // ===============================================================
-      if (mek.key.remoteJid === "status@broadcast") {
-        // INSTANT read — fire-and-forget IIFE so readMessages is the
-        // very first async call. No await chain before it = "Just now"
-        // shows in the viewer list on the sender's WhatsApp.
-        ;(async () => {
-          try {
-            if (mek.key.fromMe || !mek.key.id) return;
-            const { getSetting } = require("./lib/settings");
-            const autoStatusRead = getSetting("autoStatusRead"); // sync — no delay
-            if (autoStatusRead === false || autoStatusRead === 'false') return;
-
-            // ── READ IMMEDIATELY ──
-            await conn.readMessages([mek.key]);
-
-            // ── Auto React (only for actual content) ──
-            const autoLike = getSetting("autoStatusLike");
-            if (autoLike && mek.message) {
-              const hasContent = (
-                mek.message.imageMessage       ||
-                mek.message.videoMessage       ||
-                mek.message.conversation       ||
-                mek.message.extendedTextMessage||
-                mek.message.audioMessage       ||
-                mek.message.documentMessage
-              );
-              if (hasContent) {
-                const statusSender = mek.key.participant || mek.key.remoteJid;
-                await conn.sendMessage(
-                  "status@broadcast",
-                  { react: { text: "❤️", key: mek.key } },
-                  { statusJidList: [statusSender, conn.user.id] }
-                );
-              }
-            }
-          } catch (e) { /* silent */ }
-        })();
-        return; // never process status as a command
-      }
-
-      // ── Normal message filters (only reached for non-status messages) ──
+      // ── Normal message filters ──
       if (!mek?.message) return;
 
       const msgKeys = Object.keys(mek.message);
