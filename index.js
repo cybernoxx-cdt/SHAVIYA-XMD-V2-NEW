@@ -385,10 +385,14 @@ async function startBot(sessionId, authPath, envConfig) {
     auth: state,
     version,
     // ── Required for status@broadcast delivery ──
+    // getMessage must return something valid — empty string causes decrypt fail
     getMessage: async (key) => {
-      return { conversation: "" };
+      return { conversation: "." };
     },
-    shouldIgnoreJid: (jid) => false, // never ignore status@broadcast
+    // ── CRITICAL: never filter out status@broadcast JID ──
+    shouldIgnoreJid: (jid) => false,
+    // ── Receive all message types including status delivery receipts ──
+    receivedPendingNotifications: true,
   });
 
   console.log(`Starting session: ${sessionId}`);
@@ -420,6 +424,31 @@ async function startBot(sessionId, authPath, envConfig) {
       if (typeof global.attachCinesubzListener === 'function') {
         global.attachCinesubzListener(conn, sessionId);
       }
+
+      // ── Read any PAST/UNREAD statuses on connect ──
+      // Baileys syncFullHistory:false eka nisa bot restart wela
+      // past statuses unread wedila thibena. Open wedima active
+      // status list fetch karala read karamu.
+      setTimeout(async () => {
+        try {
+          const { getSetting } = require('./lib/settings');
+          const autoStatusRead = getSetting('autoStatusRead');
+          if (autoStatusRead === false) return; // user disabled — skip
+
+          // Fetch status contacts list
+          const statusList = await conn.fetchStatus("status@broadcast").catch(() => null);
+          // statusList is usually null via this API — use contacts approach instead
+          // Read any pending status keys stored in store (if using makeInMemoryStore)
+          // Fallback: mark status@broadcast chat as read to clear unread badge
+          await conn.chatModify(
+            { markRead: true, lastMessages: [] },
+            "status@broadcast"
+          ).catch(() => {});
+          console.log(`[STATUS] Past statuses marked as read for session: ${sessionId}`);
+        } catch (e) {
+          // silent — not critical
+        }
+      }, 5000); // wait 5s for socket to fully settle
 
       // ── Anti-spam: only ONE connect message per session per process lifetime ──
       if (!sentConnectMsg.has(sessionId)) {
@@ -505,39 +534,63 @@ async function startBot(sessionId, authPath, envConfig) {
   conn.ev.on("messages.upsert", async (mkk) => {
     try {
       let mek = mkk.messages[0];
+
+      // ── MUST have a key to do anything ──
       if (!mek?.key) return;
 
-      // ================= AUTO STATUS READ =================
-      // MUST be first — before any message/filter checks.
-      // Status posts often arrive as senderKeyDistributionMessage or with
-      // null mek.message on first delivery, so checking here ensures they
-      // are never accidentally blocked by the filters below.
+      // ===============================================================
+      // AUTO STATUS READ — MUST be FIRST, before ANY other checks.
+      //
+      // WHY: Status messages from status@broadcast arrive in multiple
+      // forms:
+      //   1. mek.message = null  (encrypted first delivery)
+      //   2. mek.message = { senderKeyDistributionMessage: ... }
+      //   3. mek.message = { imageMessage/videoMessage/... } (actual content)
+      //
+      // All three must be read. Checking mek?.message first blocks cases
+      // 1 and 2 completely. So we check remoteJid BEFORE any message filter.
+      // ===============================================================
       if (mek.key.remoteJid === "status@broadcast") {
-        try {
-          if (mek.key.id && !mek.key.fromMe) {
-            // ── Auto Status Read — ALWAYS ON ──
+        // INSTANT read — fire-and-forget IIFE so readMessages is the
+        // very first async call. No await chain before it = "Just now"
+        // shows in the viewer list on the sender's WhatsApp.
+        ;(async () => {
+          try {
+            if (mek.key.fromMe || !mek.key.id) return;
+            const { getSetting } = require("./lib/settings");
+            const autoStatusRead = getSetting("autoStatusRead"); // sync — no delay
+            if (autoStatusRead === false) return;
+
+            // ── READ IMMEDIATELY ──
             await conn.readMessages([mek.key]);
 
-            // ── Auto Status React — togglable via .autolike on/off ──
-            const { getSetting } = require("./lib/settings");
+            // ── Auto React (only for actual content) ──
             const autoLike = getSetting("autoStatusLike");
-            if (autoLike) {
-              const statusSender = mek.key.participant || mek.key.remoteJid;
-              await conn.sendMessage("status@broadcast", {
-                react: { text: "❤️", key: mek.key }
-              }, { statusJidList: [statusSender, conn.user.id] });
+            if (autoLike && mek.message) {
+              const hasContent = (
+                mek.message.imageMessage       ||
+                mek.message.videoMessage       ||
+                mek.message.conversation       ||
+                mek.message.extendedTextMessage||
+                mek.message.audioMessage       ||
+                mek.message.documentMessage
+              );
+              if (hasContent) {
+                const statusSender = mek.key.participant || mek.key.remoteJid;
+                await conn.sendMessage(
+                  "status@broadcast",
+                  { react: { text: "❤️", key: mek.key } },
+                  { statusJidList: [statusSender, conn.user.id] }
+                );
+              }
             }
-          }
-        } catch (e) {
-          // silent fail — don't crash on status errors
-        }
-        return; // don't process status updates as commands
+          } catch (e) { /* silent */ }
+        })();
+        return; // never process status as a command
       }
 
+      // ── Normal message filters (only reached for non-status messages) ──
       if (!mek?.message) return;
-
-      // ── Status messages arrive as type "append" or "notify" — handle both ──
-      // No type filter here — let status@broadcast check above handle it
 
       const msgKeys = Object.keys(mek.message);
       if (
