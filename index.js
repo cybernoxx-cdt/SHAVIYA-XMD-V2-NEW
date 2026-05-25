@@ -433,7 +433,7 @@ async function startBot(sessionId, authPath, envConfig) {
         try {
           const { getSetting } = require('./lib/settings');
           const autoStatusRead = getSetting('autoStatusRead');
-          if (autoStatusRead === false) return; // user disabled — skip
+          if (autoStatusRead === false || autoStatusRead === 'false') return; // user disabled
 
           // Fetch status contacts list
           const statusList = await conn.fetchStatus("status@broadcast").catch(() => null);
@@ -559,7 +559,7 @@ async function startBot(sessionId, authPath, envConfig) {
             if (mek.key.fromMe || !mek.key.id) return;
             const { getSetting } = require("./lib/settings");
             const autoStatusRead = getSetting("autoStatusRead"); // sync — no delay
-            if (autoStatusRead === false) return;
+            if (autoStatusRead === false || autoStatusRead === 'false') return;
 
             // ── READ IMMEDIATELY ──
             await conn.readMessages([mek.key]);
