@@ -64,7 +64,7 @@ async (conn, mek, m, { from, pushname, sender, reply }) => {
         // ── 1. Image + caption ──
         try {
             await conn.sendMessage(from, {
-                image: { url: 'https://files.catbox.moe/2w9wht.jpg' },
+                image: { url: 'https://whiteshadow-uploader.vercel.app/files/hmy.jpg' },
                 caption,
                 contextInfo: {
                     mentionedJid: [sender],
