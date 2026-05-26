@@ -56,14 +56,14 @@ async (conn, mek, m, { from, reply }) => {
 *│ 📟 Version: ${config.BOT_VERSION || '2.0.0'}*
 *│ 🧬 Uptime: ${uptime}*
 *│ 📈 RAM Usage: ${ram}MB / ${ramMax}MB*
-*│ 🕯️ Platform: heroku*
+*│ 🕯️ Platform: *Heroku*
 *│ ⚙️ Hostname: ${host}*
 *╰──────────────●●►*
 > © ᴘᴏᴡᴇʀᴇᴅ ʙʏ Sʜᴀᴠɪʏᴀ Xᴍᴅ`;
 
         try {
             await conn.sendMessage(from, {
-                image: { url: 'https://files.catbox.moe/eqmiio.jpg' },
+                image: { url: 'https://whiteshadow-uploader.vercel.app/files/aqey.jpg' },
                 caption,
                 contextInfo: {
                     mentionedJid: [`${ownerNumber}@s.whatsapp.net`],
