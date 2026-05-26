@@ -39,27 +39,23 @@ async (conn, mek, m, { from, pushname, sender, reply }) => {
         const ramMax = (os.totalmem() / 1024 / 1024).toFixed(0);
 
         const caption =
-`👋 *𝐇𝐞𝐥𝐥𝐨 ${pushname}* — 𝐈 𝐚𝐦 𝐚𝐥𝐢𝐯𝐞 !!
+`🌝 *𝗦𝗛𝗔𝗩𝗜𝗬𝗔-𝗫𝗠𝗗 𝗩𝟮 — 𝗔𝗟𝗜𝗩𝗘* ✅
 
-✦ ─────────────────── ✦
-  🔮 *𝗦𝗛𝗔𝗩𝗜𝗬𝗔-𝗫𝗠𝗗 𝗩𝟮* — 𝗔𝗟𝗜𝗩𝗘 ✅
-✦ ─────────────────── ✦
-
-⊹ 📅 *Date*       ➤  ${date}
-⊹ 🕐 *Time*       ➤  ${time}
-⊹ 🤖 *Bot*        ➤  SHAVIYA-XMD V2
-⊹ 👤 *Owner*      ➤  Savendra Dampriya
-⊹ 👋 *User*       ➤  ${pushname}
-⊹ ⏱️ *Uptime*     ➤  ${runtime(process.uptime())}
-⊹ 💾 *RAM*        ➤  ${ram}MB / ${ramMax}MB
-⊹ 🔑 *Prefix*     ➤  [ ${config.PREFIX || '.'} ]
-⊹ 🌐 *Mode*       ➤  ${(config.MODE || 'public').toUpperCase()}
-⊹ 🌀 *Version*    ➤  ${config.BOT_VERSION || 'V2'}
-
-✦ ─────────────────── ✦
-> ☘️ *Menu* → .menu  |  ⚡ *Speed* → .ping
-✦ ─────────────────── ✦
-> © Mr Savendra · 𝗦𝗛𝗔𝗩𝗜𝗬𝗔-𝗫𝗠𝗗 𝗩𝟮 💎`;
+━━━━━━━━━━━━━━━━━━
+👋  *𝐇𝐞𝐥𝐥𝐨*      ➤  ${pushname}
+📅  *𝐃𝐚𝐭𝐞*       ➤  ${date}
+🕐  *𝐓𝐢𝐦𝐞*       ➤  ${time}
+━━━━━━━━━━━━━━━━━━
+🤖  *𝐁𝐨𝐭*        ➤  SHAVIYA-XMD V2
+👤  *𝐎𝐰𝐧𝐞𝐫*      ➤  Savendra Dampriya
+⏱️  *𝐔𝐩𝐭𝐢𝐦𝐞*     ➤  ${runtime(process.uptime())}
+💾  *𝐑𝐀𝐌*        ➤  ${ram}MB / ${ramMax}MB
+🔑  *𝐏𝐫𝐞𝐟𝐢𝐱*     ➤  [ ${config.PREFIX || '.'} ]
+🌐  *𝐌𝐨𝐝𝐞*       ➤  ${(config.MODE || 'public').toUpperCase()}
+🌀  *𝐕𝐞𝐫𝐬𝐢𝐨𝐧*    ➤  ${config.BOT_VERSION || 'V2'}
+━━━━━━━━━━━━━━━━━━
+☘️  *Menu* → .menu  |  ⚡ *Speed* → .ping
+> 💎 © ᴘᴏᴡᴇʀᴇᴅ ʙʏ *𝗦𝗛𝗔𝗩𝗜𝗬𝗔-𝗫𝗠𝗗 𝗩𝟮*`;
 
         // ── 1. Image + caption ──
         try {
@@ -99,9 +95,25 @@ async (conn, mek, m, { from, pushname, sender, reply }) => {
         try {
             await conn.sendPresenceUpdate('recording', from);
             console.log('[ALIVE] Sending voice note...');
+            const https = require('https');
+            const audioBuffer = await new Promise((resolve, reject) => {
+                const fetchUrl = (url, redirects = 5) => {
+                    if (redirects === 0) return reject(new Error('Too many redirects'));
+                    https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
+                        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                            return fetchUrl(res.headers.location, redirects - 1);
+                        }
+                        const chunks = [];
+                        res.on('data', chunk => chunks.push(chunk));
+                        res.on('end', () => resolve(Buffer.concat(chunks)));
+                        res.on('error', reject);
+                    }).on('error', reject);
+                };
+                fetchUrl(VOICE_NOTE_URL);
+            });
             await conn.sendMessage(from, {
-                audio:    { url: VOICE_NOTE_URL },
-                mimetype: 'audio/ogg; codecs=opus',  // ✅ FIXED: audio/mpeg වෙනුවට ogg opus
+                audio:    audioBuffer,
+                mimetype: 'audio/ogg; codecs=opus',
                 ptt:      true
             }, { quoted: FakeVCard });
             console.log('[ALIVE] Voice note sent ✅');
