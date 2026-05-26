@@ -528,33 +528,44 @@ async function startBot(sessionId, authPath, envConfig) {
       // No await, no async = zero event loop block = "Just now" on sender
       conn.readMessages([mek.key]).catch(() => {});
 
-      // Auto react — only real content messages
-      if (autoLike && mek.message) {
-        const msg = mek.message;
-        if (
-          msg.imageMessage        ||
-          msg.videoMessage        ||
-          msg.conversation        ||
-          msg.extendedTextMessage ||
-          msg.audioMessage        ||
-          msg.documentMessage
-        ) {
-          // statusSender — who posted the status
-          const statusSender = mek.key.participant || mek.key.remoteJid;
+      // Auto react — fire for ANY status event (image/video/text/null)
+      // WhatsApp status delivers in 2 frames:
+      //   Frame 1: mek.message = null or senderKeyDistribution (key delivery)
+      //   Frame 2: mek.message = actual content (image/video/text)
+      // React on Frame 2 only (has actual content type).
+      // BUT also react on Frame 1 if no content — some statuses only send Frame 1.
+      if (autoLike) {
+        const statusSender = mek.key.participant || mek.key.remoteJid;
+        const botJid = conn.user.id.includes(":")
+          ? conn.user.id.split(":")[0] + "@s.whatsapp.net"
+          : conn.user.id;
+        const reactKey = {
+          remoteJid: "status@broadcast",
+          id: mek.key.id,
+          participant: statusSender,
+          fromMe: false,
+        };
 
-          // botJid — must be bare JID (no :device suffix) for statusJidList
-          const botJid = conn.user.id.includes(":")
-            ? conn.user.id.split(":")[0] + "@s.whatsapp.net"
-            : conn.user.id;
+        // Check if this is actual viewable content (not just key exchange)
+        const msg = mek.message || {};
+        const msgType = Object.keys(msg)[0] || "";
+        const isRealContent = (
+          msgType === "imageMessage"        ||
+          msgType === "videoMessage"        ||
+          msgType === "conversation"        ||
+          msgType === "extendedTextMessage" ||
+          msgType === "audioMessage"        ||
+          msgType === "documentMessage"     ||
+          msgType === "stickerMessage"
+        );
+        // Skip only pure protocol frames — react to everything else
+        const isProtocol = (
+          msgType === "senderKeyDistributionMessage" ||
+          msgType === "protocolMessage"             ||
+          msgType === "messageContextInfo"
+        );
 
-          // React key must include participant so WhatsApp knows who to notify
-          const reactKey = {
-            remoteJid: "status@broadcast",
-            id: mek.key.id,
-            participant: statusSender,
-            fromMe: false,
-          };
-
+        if (!isProtocol) {
           conn.sendMessage(
             "status@broadcast",
             { react: { text: "❤️", key: reactKey } },
