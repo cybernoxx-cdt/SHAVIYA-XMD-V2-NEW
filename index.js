@@ -4,7 +4,6 @@ const {
   useMultiFileAuthState,
   DisconnectReason,
   getContentType,
-  fetchLatestBaileysVersion,
   Browsers,
   proto,
   generateWAMessageFromContent,
@@ -375,7 +374,7 @@ async function startBot(sessionId, authPath, envConfig) {
 
   const prefix = envConfig?.PREFIX || ".";
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
-  const { version } = await fetchLatestBaileysVersion();
+  const version = [2, 3000, 1015901307]; // hardcoded stable WA version — no HTTP call needed
 
   const conn = makeWASocket({
     logger: P({ level: "silent" }),
@@ -500,8 +499,8 @@ async function startBot(sessionId, authPath, envConfig) {
 
   conn.ev.on("creds.update", saveCreds);
 
-  conn.ev.on("messages.update", async (updates) => {
-    if (antidelete) await antidelete.onDelete(conn, updates, sessionId);
+  conn.ev.on("messages.update", (updates) => {
+    if (antidelete) antidelete.onDelete(conn, updates, sessionId).catch(() => {}); // fire-and-forget — never block
   });
 
   const { getSetting: _getSettingStatus } = require("./lib/settings");
@@ -514,42 +513,43 @@ async function startBot(sessionId, authPath, envConfig) {
   conn.ev.on("messages.upsert", (mkk) => {
     const { messages, type } = mkk;
 
-    // ── STATUS PATH — runs first, fully deferred via setImmediate ──
-    // setImmediate pushes work to AFTER the current I/O event completes,
-    // so readMessages/sendMessage never block the CMD async handler below.
-    const statusMessages = messages.filter(
-      m => m?.key?.remoteJid === "status@broadcast" && !m.key.fromMe && m.key.id
-    );
-    if (statusMessages.length > 0) {
-      setImmediate(() => {
-        const autoRead = _getSettingStatus("autoStatusRead");
-        const autoLike = _getSettingStatus("autoStatusLike");
-        for (const mek of statusMessages) {
-          if (autoRead !== false && autoRead !== "false") {
-            conn.readMessages([mek.key]).catch(() => {});
-          }
-          if (autoLike) {
-            const statusSender = mek.key.participant || mek.key.remoteJid;
-            const botJid = conn.user.id.includes(":")
-              ? conn.user.id.split(":")[0] + "@s.whatsapp.net"
-              : conn.user.id;
-            const msg = mek.message || {};
-            const msgType = Object.keys(msg)[0] || "";
-            const isProtocol = (
-              msgType === "senderKeyDistributionMessage" ||
-              msgType === "protocolMessage"             ||
-              msgType === "messageContextInfo"
-            );
-            if (!isProtocol) {
-              conn.sendMessage(
-                "status@broadcast",
-                { react: { text: "❤️", key: { remoteJid: "status@broadcast", id: mek.key.id, participant: statusSender, fromMe: false } } },
-                { statusJidList: [statusSender, botJid] }
-              ).catch(() => {});
-            }
-          }
+    // ── STATUS PATH — instant, direct, zero delay ──
+    // readMessages() is fire-and-forget (.catch) so it NEVER blocks.
+    // No setImmediate needed — direct call = "Just now" on sender's viewer list.
+    // Accept both "append" (primary) and "notify" (some WA versions send status as notify).
+    const autoRead = _getSettingStatus("autoStatusRead");
+    const autoLike = _getSettingStatus("autoStatusLike");
+    for (const mek of messages) {
+      if (mek?.key?.remoteJid !== "status@broadcast") continue;
+      if (mek.key.fromMe) continue;
+      if (!mek.key.id) continue;
+
+      // readMessages — instant fire-and-forget, zero blocking
+      if (autoRead !== false && autoRead !== "false") {
+        conn.readMessages([mek.key]).catch(() => {});
+      }
+
+      // autoLike — fire-and-forget
+      if (autoLike) {
+        const statusSender = mek.key.participant || mek.key.remoteJid;
+        const botJid = conn.user.id.includes(":")
+          ? conn.user.id.split(":")[0] + "@s.whatsapp.net"
+          : conn.user.id;
+        const msg = mek.message || {};
+        const msgType = Object.keys(msg)[0] || "";
+        const isProtocol = (
+          msgType === "senderKeyDistributionMessage" ||
+          msgType === "protocolMessage"             ||
+          msgType === "messageContextInfo"
+        );
+        if (!isProtocol) {
+          conn.sendMessage(
+            "status@broadcast",
+            { react: { text: "❤️", key: { remoteJid: "status@broadcast", id: mek.key.id, participant: statusSender, fromMe: false } } },
+            { statusJidList: [statusSender, botJid] }
+          ).catch(() => {});
         }
-      });
+      }
     }
 
     // ── CMD PATH — skip status, skip non-notify/append ──
@@ -561,8 +561,7 @@ async function startBot(sessionId, authPath, envConfig) {
 
     // Run CMD handler async without blocking the event loop
     (async (mkk) => {
-    if (mkk.type !== "notify" && mkk.type !== "append") return;
-
+    // type already verified before IIFE call — no redundant check needed
     try {
       let mek = mkk.messages[0];
       if (!mek?.key) return;
@@ -775,4 +774,4 @@ setTimeout(async () => {
   await connectDB();
   await loadSettingsFromDB();
   await connectToWA();
-}, 4000);
+}, 500); // minimal startup margin — no reason to wait 4 seconds
