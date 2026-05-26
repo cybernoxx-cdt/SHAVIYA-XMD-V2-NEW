@@ -4,6 +4,7 @@ const {
   useMultiFileAuthState,
   DisconnectReason,
   getContentType,
+  fetchLatestBaileysVersion,
   Browsers,
   proto,
   generateWAMessageFromContent,
@@ -69,6 +70,7 @@ const botName = "SHAVIYA-XMD V2";
 let activeSessions = new Set();
 const reconnectingSessions = new Set();
 const sentConnectMsg = new Set();
+let _cachedWAVersion = null; // fetched once at startup, reused on reconnects
 
 // ================= Bot Context (Fake ID) =================
 const chama = {
@@ -374,7 +376,12 @@ async function startBot(sessionId, authPath, envConfig) {
 
   const prefix = envConfig?.PREFIX || ".";
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
-  const version = [2, 3000, 1015901307]; // hardcoded stable WA version — no HTTP call needed
+  // Use cached version — fetch once at startup, skip network on reconnects
+  if (!_cachedWAVersion) {
+    try { const r = await fetchLatestBaileysVersion(); _cachedWAVersion = r.version; }
+    catch (_) { _cachedWAVersion = [2, 3000, 1015901307]; }
+  }
+  const version = _cachedWAVersion;
 
   const conn = makeWASocket({
     logger: P({ level: "silent" }),
