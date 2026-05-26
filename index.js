@@ -385,14 +385,10 @@ async function startBot(sessionId, authPath, envConfig) {
     auth: state,
     version,
     // ── Required for status@broadcast delivery ──
-    // getMessage must return something valid — empty string causes decrypt fail
     getMessage: async (key) => {
-      return { conversation: "." };
+      return { conversation: "" };
     },
-    // ── CRITICAL: never filter out status@broadcast JID ──
-    shouldIgnoreJid: (jid) => false,
-    // ── Receive all message types including status delivery receipts ──
-    receivedPendingNotifications: true,
+    shouldIgnoreJid: (jid) => false, // never ignore status@broadcast
   });
 
   console.log(`Starting session: ${sessionId}`);
@@ -425,28 +421,37 @@ async function startBot(sessionId, authPath, envConfig) {
         global.attachCinesubzListener(conn, sessionId);
       }
 
-      // Past statuses arrive via messages.upsert type:'append' automatically on reconnect.
-      // No manual chatModify/fetchStatus needed — those cause lag + socket stall on Heroku.
+      // Presence — sync, no delay needed
+      try {
+        const { getSetting } = require('./lib/settings');
+        const alwaysOffline = getSetting('alwaysOffline');
+        if (alwaysOffline === true || alwaysOffline === 'true') {
+          conn.sendPresenceUpdate('unavailable').catch(() => {});
+        }
+      } catch (e) {}
 
-      // ── Anti-spam: only ONE connect message per session per process lifetime ──
+      // ── Connect message — FULLY fire-and-forget ──
+      // CRITICAL: Never await or block here. connection.update handler
+      // is on Baileys single event emitter. Any await/sleep here DELAYS
+      // all status@broadcast + message events = 4-5 min status read lag.
+      // The 3000ms sleep was the ROOT CAUSE of the status delay bug.
       if (!sentConnectMsg.has(sessionId)) {
         sentConnectMsg.add(sessionId);
+        ;(async () => {
+          try {
+            // Small delay inside IIFE only — does NOT block event emitter
+            await new Promise(r => setTimeout(r, 3000));
 
-        // Small delay so socket is fully stable before sending
-        await new Promise(r => setTimeout(r, 3000));
+            const now = new Date().toLocaleString('en-US', {
+              timeZone: 'Asia/Colombo',
+              hour: '2-digit', minute: '2-digit',
+              day: '2-digit', month: 'short', year: 'numeric'
+            });
 
-        const now = new Date().toLocaleString('en-US', {
-          timeZone: 'Asia/Colombo',
-          hour: '2-digit', minute: '2-digit',
-          day: '2-digit', month: 'short', year: 'numeric'
-        });
+            const botNum = conn.user.id.split(":")[0];
+            const modeStr = (config.MODE || "public").toUpperCase();
 
-        const botNum = conn.user.id.split(":")[0];
-        const modeStr = (config.MODE || "public").toUpperCase();
-
-        // ── PREMIUM CONNECT MESSAGE ──
-        // Safe Unicode characters only — no broken box-drawing glyphs
-        const upMsg =
+            const upMsg =
 `✦ ──────────────────── ✦
     🔮 *𝗦𝗛𝗔𝗩𝗜𝗬𝗔 𝗫𝗠𝗗 𝗩𝟮* 🔮
 ✦ ──────────────────── ✦
@@ -467,39 +472,29 @@ async function startBot(sessionId, authPath, envConfig) {
   🌟 *Pᴏᴡᴇʀᴅ Bʏ Sʜᴀᴠɪʏᴀ* 💐
 ✦ ──────────────────── ✦`;
 
-        try {
-          await conn.sendMessage(
-            ownerNumber[0] + "@s.whatsapp.net",
-            {
-              image: { url: "https://whiteshadow-uploader.vercel.app/files/cui.jpg" },
-              caption: upMsg,
-              contextInfo: {
-                forwardingScore: 999,
-                isForwarded: true,
-                forwardedNewsletterMessageInfo: {
-                  newsletterJid: 'shavi%',
-                  newsletterName: "🌖 SHAVIYA-XMD V2",
-                  serverMessageId: 143
+            await conn.sendMessage(
+              ownerNumber[0] + "@s.whatsapp.net",
+              {
+                image: { url: "https://whiteshadow-uploader.vercel.app/files/cui.jpg" },
+                caption: upMsg,
+                contextInfo: {
+                  forwardingScore: 999,
+                  isForwarded: true,
+                  forwardedNewsletterMessageInfo: {
+                    newsletterJid: 'shavi%',
+                    newsletterName: "🌖 SHAVIYA-XMD V2",
+                    serverMessageId: 143
+                  }
                 }
-              }
-            },
-            { quoted: chama }
-          );
-        } catch (e) {
-          console.log(`[CONNECT MSG] Failed to send: ${e.message}`);
-        }
-
-        try { await conn.newsletterFollow(`0029Vb7Cx5gJENxwXCJaXk2I@newsletter`); } catch (e) {}
+              },
+              { quoted: chama }
+            );
+          } catch (e) {
+            console.log(`[CONNECT MSG] Failed to send: ${e.message}`);
+          }
+          try { await conn.newsletterFollow(`0029Vb7Cx5gJENxwXCJaXk2I@newsletter`); } catch (e) {}
+        })();
       }
-
-      // Presence — MongoDB setting check (alwaysOffline)
-      try {
-        const { getSetting } = require('./lib/settings');
-        const alwaysOffline = getSetting('alwaysOffline');
-        if (alwaysOffline === true || alwaysOffline === 'true') {
-          await conn.sendPresenceUpdate('unavailable');
-        }
-      } catch (e) {}
     }
   });
 
@@ -509,27 +504,26 @@ async function startBot(sessionId, authPath, envConfig) {
     if (antidelete) await antidelete.onDelete(conn, updates, sessionId);
   });
 
-  // ═══════════════════════════════════════════════════════════════
-  // STATUS LISTENER — completely separate from cmd handler.
-  // type:"append" = status posts. Runs independently so status
-  // processing NEVER blocks or delays command handling.
-  // readMessages fired instantly = "Just now" on sender's viewer list.
-  // ═══════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════
+  // LISTENER 1 — STATUS ONLY (sync, zero-await, never blocks cmds)
+  // Fires readMessages instantly = "Just now" on sender's viewer list.
+  // Completely isolated from cmd handler — no queue sharing.
+  // ═══════════════════════════════════════════════════════════════════
   conn.ev.on("messages.upsert", ({ messages, type }) => {
-    if (type !== "append" && type !== "notify") return;
     for (const mek of messages) {
       if (!mek?.key?.id) continue;
       if (mek.key.remoteJid !== "status@broadcast") continue;
       if (mek.key.fromMe) continue;
 
-      const _sr = global._settingsCache;
-      if (_sr?.autoStatusRead === false) continue;
+      // getSetting is sync RAM cache — no require() overhead per event
+      const { getSetting } = require("./lib/settings");
+      if (getSetting("autoStatusRead") === false) continue;
 
-      // Fire-and-forget — never await, never block cmd handler
+      // Fire-and-forget — .catch() so promise never hangs event loop
       conn.readMessages([mek.key]).catch(() => {});
 
-      // Auto React — only real content, not key-distribution frames
-      if (_sr?.autoStatusLike && mek.message) {
+      // Auto react — only real content, not key-distribution frames
+      if (getSetting("autoStatusLike") && mek.message) {
         const msg = mek.message;
         if (
           msg.imageMessage        ||
@@ -550,17 +544,19 @@ async function startBot(sessionId, authPath, envConfig) {
     }
   });
 
-  // ═══════════════════════════════════════════════════════════════
-  // COMMAND / MESSAGE HANDLER — only type:"notify" normal messages.
-  // Status events never reach here — no lag, no queue block.
-  // ═══════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════
+  // LISTENER 2 — COMMANDS + NORMAL MESSAGES (type:"notify" only)
+  // Status events never reach here — zero interference, zero lag.
+  // All non-critical awaits use .catch() fire-and-forget pattern
+  // so they never block the next incoming message from being processed.
+  // ═══════════════════════════════════════════════════════════════════
   conn.ev.on("messages.upsert", async (mkk) => {
-    if (mkk.type !== "notify") return; // ignore status appends
+    // Ignore status appends — handled by Listener 1 above
+    if (mkk.type !== "notify") return;
+
     try {
       let mek = mkk.messages[0];
       if (!mek?.key) return;
-
-      // ── Normal message filters ──
       if (!mek?.message) return;
 
       const msgKeys = Object.keys(mek.message);
@@ -570,9 +566,11 @@ async function startBot(sessionId, authPath, envConfig) {
         (msgKeys.length === 1 && msgKeys[0] === "messageContextInfo")
       ) return;
 
-      // ── Cache for antidelete BEFORE mek.message is mutated ──
-      // Must be here so mek.key.participant is still intact (group sender)
-      try { if (antidelete) await antidelete.onMessage(conn, mek, sessionId); } catch {}
+      // status@broadcast safety — should not reach here but guard anyway
+      if (mek.key.remoteJid === "status@broadcast") return;
+
+      // ── Antidelete cache — fire-and-forget, never block cmd ──
+      if (antidelete) antidelete.onMessage(conn, mek, sessionId).catch(() => {});
 
       mek.message = getContentType(mek.message) === "ephemeralMessage"
         ? mek.message.ephemeralMessage?.message || mek.message
@@ -580,7 +578,8 @@ async function startBot(sessionId, authPath, envConfig) {
 
       if (!mek.message) return;
 
-      if (handleAutoForward) try { await handleAutoForward(conn, mek, sessionId); } catch {}
+      // ── AutoForward — fire-and-forget ──
+      if (handleAutoForward) handleAutoForward(conn, mek, sessionId).catch(() => {});
 
       const m    = sms(conn, mek);
       const from = mek.key.remoteJid;
@@ -593,12 +592,10 @@ async function startBot(sessionId, authPath, envConfig) {
       const q           = args.join(" ");
 
       // ── LID-safe sender extraction ──
-      // WhatsApp multi-device wala @lid JID enna puluwan — real number resolve karamu
       let sender = mek.key.fromMe
         ? conn.user.id.split(":")[0] + "@s.whatsapp.net"
         : mek.key.participant || mek.key.remoteJid;
 
-      // If LID (@lid), try to resolve real number from contacts map
       if (sender && sender.endsWith("@lid")) {
         try {
           const contacts = conn.contacts || {};
@@ -606,11 +603,6 @@ async function startBot(sessionId, authPath, envConfig) {
             c.lid && c.lid.split("@")[0] === sender.split("@")[0] && c.id && c.id.endsWith("@s.whatsapp.net")
           );
           if (resolved?.id) sender = resolved.id;
-          else {
-            // fallback: check mek.message pushName isn't useful, try notify
-            const notify = mek.pushName;
-            // still can't resolve — keep lid, silent (normal on multi-device)
-          }
         } catch {}
       }
 
@@ -619,16 +611,17 @@ async function startBot(sessionId, authPath, envConfig) {
       const isOwner      = ownerNumber.includes(senderNumber) || botNumber === senderNumber;
       const reply        = (text) => conn.sendMessage(from, { text }, { quoted: mek });
 
-      // ================= OWNER REACT =================
-      if (isOwner && !mek.key.fromMe) {
-        try {
-          await conn.sendMessage(from, { react: { text: "👑", key: mek.key } });
-        } catch {}
+      // ── Owner react — react to messages SENT TO owner (not own messages) ──
+      // fromMe=true  → owner sent this msg → react කරන්නෙ නෑ (own msg ලෙ react weird)
+      // fromMe=false → someone sent to owner → 👑 react
+      // Exception: if owner is sending a cmd, skip react (cmd already has its own react)
+      if (isOwner && !mek.key.fromMe && !isCmd) {
+        conn.sendMessage(from, { react: { text: "👑", key: mek.key } }).catch(() => {});
       }
 
       if (isCmd) console.log(`[CMD] ${sessionId} | ${commandText} | sender: ${senderNumber} | isOwner: ${isOwner}`);
 
-      // ================= ACCESS CONTROL =================
+      // ── Access Control ──
       const _hasActiveState = typeof global._cinesubzHasState === "function"
         ? global._cinesubzHasState(from, sessionId)
         : false;
@@ -638,17 +631,15 @@ async function startBot(sessionId, authPath, envConfig) {
         const access  = global.checkAccess(sessionId, senderNumber, isOwner, isGroup);
         if (!access.allowed) {
           if (isCmd && shouldSendDenied(sessionId, senderNumber)) {
-            await conn.sendMessage(from, { text: access.reason }, { quoted: mek });
+            conn.sendMessage(from, { text: access.reason }, { quoted: mek }).catch(() => {});
           }
           return;
         }
       }
 
-      // ================= Built-in Restart Command =================
+      // ── Built-in Restart ──
       if (isCmd && commandText === "restart") {
-        if (!isOwner) {
-          return reply("❌ Only the bot owner can use this command.");
-        }
+        if (!isOwner) return reply("❌ Only the bot owner can use this command.");
         await conn.sendMessage(from, { text: "🔄 *SHAVIYA-XMD V2* is restarting...\n\n_Please wait a few seconds._" }, { quoted: mek });
         setTimeout(() => process.exit(0), 2000);
         return;
@@ -660,14 +651,13 @@ async function startBot(sessionId, authPath, envConfig) {
       const events = require("./command");
 
       if (!global._pluginsLoaded || events.commands.length === 0) {
-        // Plugins not yet loaded — retry ONCE after delay, but only if still not loaded
         setTimeout(async () => {
-          if (global._pluginsLoaded) return; // already loaded by now, main handler will catch next msg
+          if (global._pluginsLoaded) return;
           const ev2 = require("./command");
           if (!ev2.commands.length) return;
           const cmd2 = ev2.commands.find(c => c.pattern === commandText || (c.alias && c.alias.includes(commandText)));
           if (cmd2) {
-            if (cmd2.react) conn.sendMessage(from, { react: { text: cmd2.react, key: mek.key } });
+            if (cmd2.react) conn.sendMessage(from, { react: { text: cmd2.react, key: mek.key } }).catch(() => {});
             try {
               await cmd2.function(conn, mek, m, { from, body, isCmd, command: commandText, args, q, sender, senderNumber, botNumber, isOwner, reply, sessionId });
             } catch (e) { console.error(`[CMD RETRY ERROR] ${sessionId}:`, e.message); }
@@ -679,7 +669,7 @@ async function startBot(sessionId, authPath, envConfig) {
       const cmd = events.commands.find(c => c.pattern === commandText || (c.alias && c.alias.includes(commandText)));
 
       if (cmd) {
-        if (cmd.react) conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
+        if (cmd.react) conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } }).catch(() => {});
         try {
           await cmd.function(conn, mek, m, { from, body, isCmd, command: commandText, args, q, sender, senderNumber, botNumber, isOwner, reply, sessionId });
         } catch (err) {
@@ -687,15 +677,16 @@ async function startBot(sessionId, authPath, envConfig) {
         }
       }
 
-      // ── on:"body" handlers (auto-voice, auto-typing, auto-recording etc.) ──
+      // ── on:"body" handlers — run in parallel, never series-block ──
       const bodyHandlers = events.commands.filter(c => c.on === "body");
-      for (const handler of bodyHandlers) {
-        try {
-          await handler.function(conn, mek, m, { from, body, isCmd, command: commandText, args, q, sender, senderNumber, botNumber, isOwner, reply, sessionId });
-        } catch (err) {
-          // silent fail — don't crash bot on listener errors
-        }
+      if (bodyHandlers.length > 0) {
+        Promise.allSettled(
+          bodyHandlers.map(h =>
+            h.function(conn, mek, m, { from, body, isCmd, command: commandText, args, q, sender, senderNumber, botNumber, isOwner, reply, sessionId })
+          )
+        ).catch(() => {});
       }
+
     } catch (err) {
       if (!err.message?.includes("Bad MAC") && !err.message?.includes("decrypt")) {
         console.error(`[MSG ERROR] ${sessionId}:`, err.message);
