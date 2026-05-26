@@ -504,88 +504,63 @@ async function startBot(sessionId, authPath, envConfig) {
     if (antidelete) await antidelete.onDelete(conn, updates, sessionId);
   });
 
+  const { getSetting: _getSettingStatus } = require("./lib/settings");
+
   // ═══════════════════════════════════════════════════════════════════
-  // LISTENER 1 — STATUS ONLY (sync, zero-await, never blocks cmds)
-  // Fires readMessages instantly = "Just now" on sender's viewer list.
-  // Completely isolated from cmd handler — no queue sharing.
+  // SINGLE MERGED LISTENER — zero double-dispatch overhead
+  // Status path:  sync, setImmediate-deferred, never blocks CMD queue
+  // CMD path:     async, only runs for type:"notify"/"append" non-status
   // ═══════════════════════════════════════════════════════════════════
-  conn.ev.on("messages.upsert", ({ messages, type }) => {
-    // Status posts come as type:"append". Also handle "notify" as safety net.
-    // require() pulled outside loop — one call per event batch, not per message.
-    const { getSetting } = require("./lib/settings");
-    const autoRead = getSetting("autoStatusRead");
-    const autoLike = getSetting("autoStatusLike");
+  conn.ev.on("messages.upsert", (mkk) => {
+    const { messages, type } = mkk;
 
-    for (const mek of messages) {
-      if (!mek?.key?.id) continue;
-      if (mek.key.remoteJid !== "status@broadcast") continue;
-      if (mek.key.fromMe) continue;
-
-      // Default ON — only skip if explicitly set false
-      if (autoRead === false || autoRead === "false") continue;
-
-      // Instant fire-and-forget — readMessages called immediately
-      // No await, no async = zero event loop block = "Just now" on sender
-      conn.readMessages([mek.key]).catch(() => {});
-
-      // Auto react — fire for ANY status event (image/video/text/null)
-      // WhatsApp status delivers in 2 frames:
-      //   Frame 1: mek.message = null or senderKeyDistribution (key delivery)
-      //   Frame 2: mek.message = actual content (image/video/text)
-      // React on Frame 2 only (has actual content type).
-      // BUT also react on Frame 1 if no content — some statuses only send Frame 1.
-      if (autoLike) {
-        const statusSender = mek.key.participant || mek.key.remoteJid;
-        const botJid = conn.user.id.includes(":")
-          ? conn.user.id.split(":")[0] + "@s.whatsapp.net"
-          : conn.user.id;
-        const reactKey = {
-          remoteJid: "status@broadcast",
-          id: mek.key.id,
-          participant: statusSender,
-          fromMe: false,
-        };
-
-        // Check if this is actual viewable content (not just key exchange)
-        const msg = mek.message || {};
-        const msgType = Object.keys(msg)[0] || "";
-        const isRealContent = (
-          msgType === "imageMessage"        ||
-          msgType === "videoMessage"        ||
-          msgType === "conversation"        ||
-          msgType === "extendedTextMessage" ||
-          msgType === "audioMessage"        ||
-          msgType === "documentMessage"     ||
-          msgType === "stickerMessage"
-        );
-        // Skip only pure protocol frames — react to everything else
-        const isProtocol = (
-          msgType === "senderKeyDistributionMessage" ||
-          msgType === "protocolMessage"             ||
-          msgType === "messageContextInfo"
-        );
-
-        if (!isProtocol) {
-          conn.sendMessage(
-            "status@broadcast",
-            { react: { text: "❤️", key: reactKey } },
-            { statusJidList: [statusSender, botJid] }
-          ).catch(() => {});
+    // ── STATUS PATH — runs first, fully deferred via setImmediate ──
+    // setImmediate pushes work to AFTER the current I/O event completes,
+    // so readMessages/sendMessage never block the CMD async handler below.
+    const statusMessages = messages.filter(
+      m => m?.key?.remoteJid === "status@broadcast" && !m.key.fromMe && m.key.id
+    );
+    if (statusMessages.length > 0) {
+      setImmediate(() => {
+        const autoRead = _getSettingStatus("autoStatusRead");
+        const autoLike = _getSettingStatus("autoStatusLike");
+        for (const mek of statusMessages) {
+          if (autoRead !== false && autoRead !== "false") {
+            conn.readMessages([mek.key]).catch(() => {});
+          }
+          if (autoLike) {
+            const statusSender = mek.key.participant || mek.key.remoteJid;
+            const botJid = conn.user.id.includes(":")
+              ? conn.user.id.split(":")[0] + "@s.whatsapp.net"
+              : conn.user.id;
+            const msg = mek.message || {};
+            const msgType = Object.keys(msg)[0] || "";
+            const isProtocol = (
+              msgType === "senderKeyDistributionMessage" ||
+              msgType === "protocolMessage"             ||
+              msgType === "messageContextInfo"
+            );
+            if (!isProtocol) {
+              conn.sendMessage(
+                "status@broadcast",
+                { react: { text: "❤️", key: { remoteJid: "status@broadcast", id: mek.key.id, participant: statusSender, fromMe: false } } },
+                { statusJidList: [statusSender, botJid] }
+              ).catch(() => {});
+            }
+          }
         }
-      }
+      });
     }
-  });
 
-  // ═══════════════════════════════════════════════════════════════════
-  // LISTENER 2 — COMMANDS + NORMAL MESSAGES (type:"notify" only)
-  // Status events never reach here — zero interference, zero lag.
-  // All non-critical awaits use .catch() fire-and-forget pattern
-  // so they never block the next incoming message from being processed.
-  // ═══════════════════════════════════════════════════════════════════
-  conn.ev.on("messages.upsert", async (mkk) => {
-    // Skip status — handled by Listener 1
-    // Accept both "notify" (normal msg) and "append" (own sent msg)
-    // Reject anything else (e.g. historical sync)
+    // ── CMD PATH — skip status, skip non-notify/append ──
+    if (type !== "notify" && type !== "append") return;
+    const nonStatusMessages = messages.filter(
+      m => m?.key?.remoteJid !== "status@broadcast"
+    );
+    if (nonStatusMessages.length === 0) return;
+
+    // Run CMD handler async without blocking the event loop
+    (async (mkk) => {
     if (mkk.type !== "notify" && mkk.type !== "append") return;
 
     try {
@@ -696,7 +671,7 @@ async function startBot(sessionId, authPath, envConfig) {
               await cmd2.function(conn, mek, m, { from, body, isCmd, command: commandText, args, q, sender, senderNumber, botNumber, isOwner, reply, sessionId });
             } catch (e) { console.error(`[CMD RETRY ERROR] ${sessionId}:`, e.message); }
           }
-        }, 10000);
+        }, 3500);
         return;
       }
 
@@ -726,7 +701,9 @@ async function startBot(sessionId, authPath, envConfig) {
         console.error(`[MSG ERROR] ${sessionId}:`, err.message);
       }
     }
-  });
+  // Close CMD async IIFE — fire-and-forget, never blocks event loop
+  })({ messages: nonStatusMessages, type }).catch(() => {});
+  }); // end merged messages.upsert listener
 }
 
 // ================= Express Server =================
@@ -777,7 +754,7 @@ async function connectToWA() {
     }
     await Promise.all(sessions.map(s => startBot(s.sessionId, s.authPath, envConfig)));
     console.log(`✅ Started ${sessions.length} session(s).`);
-    setTimeout(() => loadPlugins(), 8000);
+    setTimeout(() => loadPlugins(), 3000);
   } catch (err) {
     console.error("Startup Error:", err);
   }
