@@ -510,20 +510,26 @@ async function startBot(sessionId, authPath, envConfig) {
   // Completely isolated from cmd handler — no queue sharing.
   // ═══════════════════════════════════════════════════════════════════
   conn.ev.on("messages.upsert", ({ messages, type }) => {
+    // Status posts come as type:"append". Also handle "notify" as safety net.
+    // require() pulled outside loop — one call per event batch, not per message.
+    const { getSetting } = require("./lib/settings");
+    const autoRead = getSetting("autoStatusRead");
+    const autoLike = getSetting("autoStatusLike");
+
     for (const mek of messages) {
       if (!mek?.key?.id) continue;
       if (mek.key.remoteJid !== "status@broadcast") continue;
       if (mek.key.fromMe) continue;
 
-      // getSetting is sync RAM cache — no require() overhead per event
-      const { getSetting } = require("./lib/settings");
-      if (getSetting("autoStatusRead") === false) continue;
+      // Default ON — only skip if explicitly set false
+      if (autoRead === false || autoRead === "false") continue;
 
-      // Fire-and-forget — .catch() so promise never hangs event loop
+      // Instant fire-and-forget — readMessages called immediately
+      // No await, no async = zero event loop block = "Just now" on sender
       conn.readMessages([mek.key]).catch(() => {});
 
-      // Auto react — only real content, not key-distribution frames
-      if (getSetting("autoStatusLike") && mek.message) {
+      // Auto react — only real content messages
+      if (autoLike && mek.message) {
         const msg = mek.message;
         if (
           msg.imageMessage        ||
@@ -533,11 +539,26 @@ async function startBot(sessionId, authPath, envConfig) {
           msg.audioMessage        ||
           msg.documentMessage
         ) {
+          // statusSender — who posted the status
           const statusSender = mek.key.participant || mek.key.remoteJid;
+
+          // botJid — must be bare JID (no :device suffix) for statusJidList
+          const botJid = conn.user.id.includes(":")
+            ? conn.user.id.split(":")[0] + "@s.whatsapp.net"
+            : conn.user.id;
+
+          // React key must include participant so WhatsApp knows who to notify
+          const reactKey = {
+            remoteJid: "status@broadcast",
+            id: mek.key.id,
+            participant: statusSender,
+            fromMe: false,
+          };
+
           conn.sendMessage(
             "status@broadcast",
-            { react: { text: "❤️", key: mek.key } },
-            { statusJidList: [statusSender, conn.user.id] }
+            { react: { text: "❤️", key: reactKey } },
+            { statusJidList: [statusSender, botJid] }
           ).catch(() => {});
         }
       }
@@ -551,8 +572,10 @@ async function startBot(sessionId, authPath, envConfig) {
   // so they never block the next incoming message from being processed.
   // ═══════════════════════════════════════════════════════════════════
   conn.ev.on("messages.upsert", async (mkk) => {
-    // Ignore status appends — handled by Listener 1 above
-    if (mkk.type !== "notify") return;
+    // Skip status — handled by Listener 1
+    // Accept both "notify" (normal msg) and "append" (own sent msg)
+    // Reject anything else (e.g. historical sync)
+    if (mkk.type !== "notify" && mkk.type !== "append") return;
 
     try {
       let mek = mkk.messages[0];
@@ -765,3 +788,33 @@ setTimeout(async () => {
   await loadSettingsFromDB();
   await connectToWA();
 }, 4000);
+const { DeletedText,
+    DeletedMedia,
+    AntiDelete, } = require('./antidel');
+//const { AntiViewOnce } = require('./antivv');
+const {
+  DATABASE
+} = require('./database');
+const { getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson } = require('./functions');
+const {sms, downloadMediaMessage} = require('./msg');
+//const {shannzCdn} = require('./shannzCdn');
+
+module.exports = {
+    DeletedText,
+    DeletedMedia,
+    AntiDelete,
+    //AntiViewOnce,
+    getBuffer,
+    getGroupAdmins,
+    getRandom,
+    h2k,
+    isUrl,
+    Json,
+    runtime,
+    sleep,
+    fetchJson,
+    DATABASE,
+    sms,
+    downloadMediaMessage,
+   // shannzCdn,
+};
