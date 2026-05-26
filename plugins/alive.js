@@ -9,7 +9,7 @@ const { runtime } = require('../lib/functions');
 const os = require('os');
 
 const VIDEO_NOTE_URL = 'https://github.com/cybernoxx-cdt/SHAVIYA-FILE-S/raw/refs/heads/main/InShot_20260503_121322042.mp4';
-const VOICE_NOTE_URL = 'https://github.com/cybernoxx-cdt/SHAVIYA-FILE-S/raw/refs/heads/main/ssstik.io_1778048420109.opus';
+const VOICE_NOTE_URL = 'https://github.com/cybernoxx-cdt/SHAVIYA-FILE-S/raw/refs/heads/main/Moonlight%20%23jerseyclub.mp3';
 
 const FakeVCard = {
     key: { fromMe: false, participant: '0@s.whatsapp.net', remoteJid: 'status@broadcast' },
