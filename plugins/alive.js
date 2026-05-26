@@ -39,23 +39,25 @@ async (conn, mek, m, { from, pushname, sender, reply }) => {
         const ramMax = (os.totalmem() / 1024 / 1024).toFixed(0);
 
         const caption =
-`🌝 *𝗦𝗛𝗔𝗩𝗜𝗬𝗔-𝗫𝗠𝗗 𝗩𝟮 — 𝗔𝗟𝗜𝗩𝗘* ✅
+`*╭─「 🌝 SHAVIYA-XMD V2 — ALIVE STATUS 」─╮*
 
-━━━━━━━━━━━━━━━━━━
-👋  *𝐇𝐞𝐥𝐥𝐨*      ➤  ${pushname}
-📅  *𝐃𝐚𝐭𝐞*       ➤  ${date}
-🕐  *𝐓𝐢𝐦𝐞*       ➤  ${time}
-━━━━━━━━━━━━━━━━━━
-🤖  *𝐁𝐨𝐭*        ➤  SHAVIYA-XMD V2
-👤  *𝐎𝐰𝐧𝐞𝐫*      ➤  Savendra Dampriya
-⏱️  *𝐔𝐩𝐭𝐢𝐦𝐞*     ➤  ${runtime(process.uptime())}
-💾  *𝐑𝐀𝐌*        ➤  ${ram}MB / ${ramMax}MB
-🔑  *𝐏𝐫𝐞𝐟𝐢𝐱*     ➤  [ ${config.PREFIX || '.'} ]
-🌐  *𝐌𝐨𝐝𝐞*       ➤  ${(config.MODE || 'public').toUpperCase()}
-🌀  *𝐕𝐞𝐫𝐬𝐢𝐨𝐧*    ➤  ${config.BOT_VERSION || 'V2'}
-━━━━━━━━━━━━━━━━━━
-☘️  *Menu* → .menu  |  ⚡ *Speed* → .ping
-> 💎 © ᴘᴏᴡᴇʀᴇᴅ ʙʏ *𝗦𝗛𝗔𝗩𝗜𝗬𝗔-𝗫𝗠𝗗 𝗩𝟮*`;
+*│ 👋 HELLO   :* ${pushname}
+*│ 📅 DATE    :* ${date}
+*│ 🕐 TIME    :* ${time}
+*│ ─────────────────────────*
+*│ 🤖 BOT     :* SHAVIYA-XMD V2
+*│ 👤 OWNER   :* Savendra Dampriya
+*│ ⏱️ UPTIME  :* ${runtime(process.uptime())}
+*│ 💾 RAM     :* ${ram}MB / ${ramMax}MB
+*│ 🔑 PREFIX  :* [ ${config.PREFIX || '.'} ]
+*│ 🌐 MODE    :* ${(config.MODE || 'public').toUpperCase()}
+*│ 🌀 VERSION :* ${config.BOT_VERSION || 'V2'}
+*│ ─────────────────────────*
+*│ ☘️ MENU    :* .menu
+*│ ⚡ SPEED   :* .ping*
+*╰────────────────────────╯*
+
+> 💎 ᴘᴏᴡᴇʀᴇᴅ ʙʏ *SHAVIYA-XMD V2*`;
 
         // ── 1. Image + caption ──
         try {
