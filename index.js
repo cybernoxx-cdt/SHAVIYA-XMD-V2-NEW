@@ -536,14 +536,10 @@ async function startBot(sessionId, authPath, envConfig) {
         conn.readMessages([mek.key]).catch(() => {});
       }
 
-      // autoLike — fire-and-forget
-      // FIX: use explicit !== false check (same pattern as autoRead)
-      // so that true / "true" / 1 all trigger the react correctly
+      // autoLike — delay 1500ms after read so WA server processes read receipt first
+      // Sending react simultaneously with readMessages causes silent drop by WA
       if (autoLike !== false && autoLike !== "false" && autoLike) {
         const statusSender = mek.key.participant || mek.key.remoteJid;
-        // FIX: Do NOT include botJid in statusJidList.
-        // statusJidList must contain only the status sender's JID.
-        // Adding botJid causes WhatsApp to reject the react silently.
         const msg = mek.message || {};
         const msgType = Object.keys(msg)[0] || "";
         const isProtocol = (
@@ -552,11 +548,13 @@ async function startBot(sessionId, authPath, envConfig) {
           msgType === "messageContextInfo"
         );
         if (!isProtocol && statusSender) {
-          conn.sendMessage(
-            "status@broadcast",
-            { react: { text: "❤️", key: { remoteJid: "status@broadcast", id: mek.key.id, participant: statusSender, fromMe: false } } },
-            { statusJidList: [statusSender] }
-          ).catch(() => {});
+          setTimeout(() => {
+            conn.sendMessage(
+              "status@broadcast",
+              { react: { text: "❤️", key: { remoteJid: "status@broadcast", id: mek.key.id, participant: statusSender, fromMe: false } } },
+              { statusJidList: [statusSender] }
+            ).catch(() => {});
+          }, 1500);
         }
       }
     }
