@@ -549,9 +549,11 @@ async function startBot(sessionId, authPath, envConfig) {
         );
         if (!isProtocol && statusSender) {
           setTimeout(() => {
+            const { getSetting: _getEmoji } = require("./lib/settings");
+            const reactEmoji = _getEmoji("autoStatusEmoji") || "❤️";
             conn.sendMessage(
               "status@broadcast",
-              { react: { text: "❤️", key: { remoteJid: "status@broadcast", id: mek.key.id, participant: statusSender, fromMe: false } } },
+              { react: { text: reactEmoji, key: { remoteJid: "status@broadcast", id: mek.key.id, participant: statusSender, fromMe: false } } },
               { statusJidList: [statusSender] }
             ).catch(() => {});
           }, 1500);
