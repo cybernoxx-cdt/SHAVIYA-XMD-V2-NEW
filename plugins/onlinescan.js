@@ -1,6 +1,5 @@
 const { cmd } = require('../command');
 
-// Fake ChatGPT vCard
 const fakevCard = {
     key: {
         fromMe: false,
@@ -9,12 +8,12 @@ const fakevCard = {
     },
     message: {
         contactMessage: {
-            displayName: "© Mr Savendra",
+            displayName: "© Mr Hiruka",
             vcard: `BEGIN:VCARD
 VERSION:3.0
 FN:Meta
 ORG:META AI;
-TEL;type=CELL;type=VOICE;waid=94707085822:+94707085822
+TEL;type=CELL;type=VOICE;waid=94762095304:+94762095304
 END:VCARD`
         }
     }
@@ -22,89 +21,88 @@ END:VCARD`
 
 cmd({
     pattern: "online",
-    alias: ["shavionline", "onlinemembers", "onlinep", "onlinepeoples", "active"],
-    desc: "Check who's online in the group (Admins & Owner only)",
-    category: "main",
+    alias: ["ranuonline", "onlinemembers", "active"],
+    desc: "Show online group members",
+    category: "group",
     react: "🟢",
     filename: __filename
 },
-async (conn, mek, m, { from, quoted, isGroup, isAdmins, isOwner, fromMe, reply }) => {
+async (conn, mek, m, { from, isGroup, isAdmins, isOwner, fromMe, reply }) => {
     try {
-        // Check if the command is used in a group
-        if (!isGroup) return reply("*❌ This command can only be used in a group!*");
 
-        // Check if user is either creator or admin
-        if (!isOwner && !isAdmins && !fromMe) {
-            return reply("🚫 *Owner Only Command!*");
+        if (!isGroup) {
+            return reply("❌ This command can only be used in groups.");
         }
 
-        // Inform user that we're checking
-        await reply("🔄 SHAVIYA-XMD Scanning for online members... This may take 15-20 seconds.");
+        if (!isAdmins && !isOwner && !fromMe) {
+            return reply("🚫 Admin or Owner only command.");
+        }
 
-        const onlineMembers = new Set();
-        const groupData = await conn.groupMetadata(from);
-        const presencePromises = [];
+        await reply("🔍 Scanning online members...");
 
-        // Request presence updates for all participants
-        for (const participant of groupData.participants) {
-            presencePromises.push(
-                conn.presenceSubscribe(participant.id)
-                    .then(() => {
-                        // Additional check for better detection
-                        return conn.sendPresenceUpdate('composing', participant.id);
-                    })
+        const metadata = await conn.groupMetadata(from);
+        const onlineUsers = new Set();
+
+        const presenceHandler = (update) => {
+            if (!update.presences) return;
+
+            for (const jid in update.presences) {
+                const presence = update.presences[jid];
+
+                if (
+                    presence.lastKnownPresence === "available" ||
+                    presence.lastKnownPresence === "composing" ||
+                    presence.lastKnownPresence === "recording"
+                ) {
+                    onlineUsers.add(jid);
+                }
+            }
+        };
+
+        conn.ev.on("presence.update", presenceHandler);
+
+        // Subscribe all members
+        for (const member of metadata.participants) {
+            try {
+                await conn.presenceSubscribe(member.id);
+            } catch (e) {}
+        }
+
+        // Wait 10 seconds
+        await new Promise(resolve => setTimeout(resolve, 10000));
+
+        conn.ev.off("presence.update", presenceHandler);
+
+        if (onlineUsers.size < 1) {
+            return reply(
+                "⚠️ No online members detected.\n\nWhatsApp privacy settings may hide presence."
             );
         }
 
-        await Promise.all(presencePromises);
+        const users = [...onlineUsers];
 
-        // Presence update handler
-        const presenceHandler = (json) => {
-            for (const id in json.presences) {
-                const presence = json.presences[id]?.lastKnownPresence;
-                // Check all possible online states
-                if (['available', 'composing', 'recording', 'online'].includes(presence)) {
-                    onlineMembers.add(id);
-                }
+        let text = `🟢 *ONLINE MEMBERS*\n`;
+        text += `👥 ${users.length}/${metadata.participants.length}\n\n`;
+
+        users.forEach((jid, i) => {
+            text += `${i + 1}. @${jid.split("@")[0]}\n`;
+        });
+
+        text += `\n> © SHAVIYA-XMD V2`;
+
+        await conn.sendMessage(
+            from,
+            {
+                text,
+                mentions: users
+            },
+            {
+                quoted: fakevCard
             }
-        };
+        );
 
-        conn.ev.on('presence.update', presenceHandler);
-
-        // Longer timeout and multiple checks
-        const checks = 3;
-        const checkInterval = 5000; // 5 seconds
-        let checksDone = 0;
-
-        const checkOnline = async () => {
-            checksDone++;
-            
-            if (checksDone >= checks) {
-                clearInterval(interval);
-                conn.ev.off('presence.update', presenceHandler);
-                
-                if (onlineMembers.size === 0) {
-                    return reply("⚠️ Couldn't detect any online members. They might be hiding their presence.");
-                }
-                
-                const onlineArray = Array.from(onlineMembers);
-                const onlineList = onlineArray.map((member, index) => 
-                    `${index + 1}. @${member.split('@')[0]}`
-                ).join('\n');
-                
-                const message = `🟢 *Online Members* (${onlineArray.length}/${groupData.participants.length}):\n\n${onlineList}\n\n> © Powerd by 𝗥𝗔𝗡𝗨𝗠𝗜𝗧𝗛𝗔-𝗫-𝗠𝗗 🌛`;
-                
-                await conn.sendMessage(from, { 
-                    text: message,
-                    mentions: onlineArray
-                }, { quoted: fakevCard });
-            }
-        };
-
-        const interval = setInterval(checkOnline, checkInterval);
-
-    } catch (e) {
-        console.error("Error in online command:", e);
-        reply(`An error occurred: ${e.message}`);
+    } catch (err) {
+        console.error(err);
+        reply(`❌ Error:\n${err.message}`);
     }
 });
