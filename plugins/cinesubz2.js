@@ -5,6 +5,8 @@
 //  🔧 Fix: 1 2 3 / 1,2,3 / 1-3 / single — all formats work
 //  🔧 Fix: Bot number (BH numbers) reply works
 //  🔧 Fix: Each movie sent separately
+//  🔧 Fix: Quality session persistent — separate replies work
+//         (e.g. "1" reply then "2" reply — both download)
 // ============================================================
 
 const { cmd } = require('../command');
@@ -158,7 +160,8 @@ async function sendQualityPrompt(conn, jid, movie, inMsg, pushname) {
     qualityText += `⭐ *IMDB:* ${movie.imdb || 'N/A'}\n\n`;
     qualityText += `👇 *Quality Reply කරන්න*\n\n`;
     qualityList.forEach((q, i) => { qualityText += `*${i + 1}.* ${q.label}\n`; });
-    qualityText += `\n> © Mr Savendra · 𝗦𝗛𝗔𝗩𝗜𝗬𝗔-𝗫𝗠𝗗 𝗩𝟮`;
+    qualityText += `\n_ඕනෙ quality එකක් reply කරන්න. 10 min valid._`;
+    qualityText += `\n\n> © Mr Savendra · 𝗦𝗛𝗔𝗩𝗜𝗬𝗔-𝗫𝗠𝗗 𝗩𝟮`;
 
     const posterUrl = movie.img || movie.poster || movie.thumbnail;
     let qualityMsg;
@@ -173,7 +176,7 @@ async function sendQualityPrompt(conn, jid, movie, inMsg, pushname) {
     const qMsgId = qualityMsg?.key?.id;
     if (!qMsgId) return;
 
-    // Register quality session
+    // ✅ Register quality session — NOT deleted on first reply, timer resets each time
     const qTimer = setTimeout(() => sessions.delete(qMsgId), 10 * 60 * 1000);
     sessions.set(qMsgId, {
         type: 'quality_select',
@@ -226,10 +229,10 @@ function attachGlobal(conn) {
                             { text: `❌ *වැරදි! 1 සිට ${list.length} දක්වා reply කරන්න.*\n_උදා: 1 · 1 3 · 1,2,3 · 1-3_` },
                             { quoted: inMsg }
                         );
-                        continue; // listener live
+                        continue; // session live
                     }
 
-                    // Valid — remove session
+                    // Valid — remove movie session (one-shot)
                     clearTimeout(session.timer);
                     sessions.delete(stanzaId);
 
@@ -242,6 +245,9 @@ function attachGlobal(conn) {
                 }
 
                 // ── Quality selection ──
+                // ✅ FIX: Session is NOT deleted after first reply.
+                //    Timer resets on each valid reply — session stays alive 10min.
+                //    User can reply "1" then "2" separately and both will download.
                 else if (session.type === 'quality_select') {
                     const { movie, baseLink, qualityList } = session.data;
                     const indices = parseNumbers(txt, qualityList.length);
@@ -251,11 +257,12 @@ function attachGlobal(conn) {
                             { text: '❌ *වැරදි! 1 හෝ 2 reply කරන්න.*\n_480p=1 · 720p=2 · දෙකම=1 2_' },
                             { quoted: inMsg }
                         );
-                        continue;
+                        continue; // session live
                     }
 
+                    // ✅ Reset timer (keep session alive for further replies)
                     clearTimeout(session.timer);
-                    sessions.delete(stanzaId);
+                    session.timer = setTimeout(() => sessions.delete(stanzaId), 10 * 60 * 1000);
 
                     const shortTitle = (movie.title || 'Movie')
                         .substring(0, 30)
@@ -363,15 +370,16 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
         const listMsgId = listMsg?.key?.id;
         if (!listMsgId) return reply('❌ *Internal error. නැවත උත්සාහ කරන්න.*');
 
-        // Clean old sessions for this chat
+        // ✅ Clean only movie_select sessions for this chat
+        //    quality_select sessions NOT cleaned — they stay alive until timeout
         for (const [id, ses] of sessions.entries()) {
-            if (ses.from === from) {
+            if (ses.from === from && ses.type === 'movie_select') {
                 clearTimeout(ses.timer);
                 sessions.delete(id);
             }
         }
 
-        // Register session (10 min)
+        // Register movie session (10 min)
         const timer = setTimeout(() => sessions.delete(listMsgId), 10 * 60 * 1000);
         sessions.set(listMsgId, {
             type: 'movie_select',
