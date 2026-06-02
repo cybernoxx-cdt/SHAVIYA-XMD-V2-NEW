@@ -18,13 +18,9 @@ async (conn, mek, m, {
       return /https?:\/\/(www\.)?[\w\-@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([\w\-@:%_\+.~#?&//=]*)/.test(url);
     };
 
-    // Group check
     if (!from.endsWith('@g.us')) return reply("❌ This command can only be used in groups.");
-
-    // Owner check - ඔයාගේ bot base isOwner use කරනවා
     if (!isOwner) return reply("❌ This command is only for the bot owner.");
 
-    // Participants - bot base එකෙන් pass නොවෙන නිසා manually fetch කරනවා
     const groupMeta = await conn.groupMetadata(from);
     const participants = groupMeta.participants;
     const mentionAll = { mentions: participants.map(u => u.id) };
@@ -33,14 +29,17 @@ async (conn, mek, m, {
       return reply("❌ Please provide a message or reply to a message to tag all members.");
     }
 
+    // ====== REPLY MODE: quoted message ekak reply karanakota ======
     if (m.quoted) {
-      const type = m.quoted.mtype || '';
-      
-      if (type === 'extendedTextMessage') {
+      // m.quoted.fakeObj use karanawa - eka thama correct quoted key eka carry karanawa
+      const quotedMsg = m.quoted.fakeObj;
+      const type = m.quoted.type || '';
+
+      if (type === 'extendedTextMessage' || type === 'conversation') {
         return await conn.sendMessage(from, {
-          text: m.quoted.text || 'No message content found.',
+          text: m.quoted.msg?.text || m.quoted.msg || 'No message content found.',
           ...mentionAll
-        }, { quoted: mek });
+        }, { quoted: quotedMsg });
       }
 
       if (['imageMessage', 'videoMessage', 'audioMessage', 'stickerMessage', 'documentMessage'].includes(type)) {
@@ -51,13 +50,13 @@ async (conn, mek, m, {
           let content;
           switch (type) {
             case "imageMessage":
-              content = { image: buffer, caption: m.quoted.text || "📷 Image", ...mentionAll };
+              content = { image: buffer, caption: m.quoted.msg?.caption || "", ...mentionAll };
               break;
             case "videoMessage":
               content = { 
                 video: buffer, 
-                caption: m.quoted.text || "🎥 Video", 
-                gifPlayback: m.quoted.message?.videoMessage?.gifPlayback || false, 
+                caption: m.quoted.msg?.caption || "", 
+                gifPlayback: m.quoted.msg?.gifPlayback || false, 
                 ...mentionAll 
               };
               break;
@@ -65,7 +64,7 @@ async (conn, mek, m, {
               content = { 
                 audio: buffer, 
                 mimetype: "audio/mp4", 
-                ptt: m.quoted.message?.audioMessage?.ptt || false, 
+                ptt: m.quoted.msg?.ptt || false, 
                 ...mentionAll 
               };
               break;
@@ -75,41 +74,35 @@ async (conn, mek, m, {
             case "documentMessage":
               content = {
                 document: buffer,
-                mimetype: m.quoted.message?.documentMessage?.mimetype || "application/octet-stream",
-                fileName: m.quoted.message?.documentMessage?.fileName || "file",
-                caption: m.quoted.text || "",
+                mimetype: m.quoted.msg?.mimetype || "application/octet-stream",
+                fileName: m.quoted.msg?.fileName || "file",
+                caption: m.quoted.msg?.caption || "",
                 ...mentionAll
               };
               break;
           }
 
           if (content) {
-            return await conn.sendMessage(from, content, { quoted: mek });
+            return await conn.sendMessage(from, content, { quoted: quotedMsg });
           }
         } catch (e) {
           console.error("Media download/send error:", e);
-          return reply("❌ Failed to process the media. Sending as text instead.");
+          return reply("❌ Failed to process the media.");
         }
       }
 
       return await conn.sendMessage(from, {
-        text: m.quoted.text || "📨 Message",
+        text: "📨 Message",
         ...mentionAll
-      }, { quoted: mek });
+      }, { quoted: quotedMsg });
     }
 
+    // ====== NORMAL MODE: .htag Hello - nikaa message widihata ======
     if (q) {
-      if (isUrl(q)) {
-        return await conn.sendMessage(from, {
-          text: q,
-          ...mentionAll
-        }, { quoted: mek });
-      }
-
       await conn.sendMessage(from, {
         text: q,
         ...mentionAll
-      }, { quoted: mek });
+      }); // quoted naha - nikaa message
     }
 
   } catch (e) {
