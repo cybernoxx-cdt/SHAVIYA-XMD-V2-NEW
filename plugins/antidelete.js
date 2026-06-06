@@ -128,8 +128,15 @@ async function onMessage(conn, mek, sessionId) {
         const chat    = mek.key.remoteJid;
         const isGroup = chat?.endsWith('@g.us');
 
-        // ── IMPROVED: use resolveSender() which tries all fields ──
-        const senderJid    = resolveSender(mek, conn);
+        // ── IMPROVED: use pre-resolved sender from index.js if available ──
+        // index.js injects _resolvedSender after full LID resolution,
+        // so @lid JIDs are already converted to real @s.whatsapp.net JIDs.
+        let senderJid;
+        if (mek._resolvedSender) {
+            senderJid = mek._resolvedSender;
+        } else {
+            senderJid = resolveSender(mek, conn);
+        }
         const senderNumber = extractNumber(senderJid);
         const pushName     = mek.pushName || (mek.key.fromMe ? 'Me' : senderNumber) || 'Unknown';
 
