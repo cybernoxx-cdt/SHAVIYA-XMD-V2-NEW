@@ -631,8 +631,9 @@ async function startBot(sessionId, authPath, envConfig) {
         } catch {}
       }
 
-      const pushname = mek.pushName || sender.split("@")[0] || "User";
-
+      const senderNumber = sender.split("@")[0].split(":")[0];
+      const botNumber    = conn.user.id.split(":")[0].split("@")[0];
+      const pushname     = mek.pushName || senderNumber || "User";
       const isOwner      = ownerNumber.includes(senderNumber) || botNumber === senderNumber;
       const reply        = (text) => conn.sendMessage(from, { text }, { quoted: mek });
 
