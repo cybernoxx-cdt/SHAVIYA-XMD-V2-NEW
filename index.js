@@ -589,9 +589,17 @@ async function startBot(sessionId, authPath, envConfig) {
       // ── Antidelete cache — fire-and-forget, never block cmd ──
       if (antidelete) antidelete.onMessage(conn, mek, sessionId).catch(() => {});
 
-      mek.message = getContentType(mek.message) === "ephemeralMessage"
-        ? mek.message.ephemeralMessage?.message || mek.message
-        : mek.message;
+      // ✅ FIX: Unwrap ephemeralMessage AND deviceSentMessage wrappers.
+      // Newer WA versions send DM messages as { deviceSentMessage: { message: {...} } }
+      // which causes extractBody to return "" → isCmd=false → no response in inbox.
+      {
+        const _type = getContentType(mek.message);
+        if (_type === "ephemeralMessage") {
+          mek.message = mek.message.ephemeralMessage?.message || mek.message;
+        } else if (_type === "deviceSentMessage") {
+          mek.message = mek.message.deviceSentMessage?.message || mek.message;
+        }
+      }
 
       if (!mek.message) return;
 
@@ -623,8 +631,8 @@ async function startBot(sessionId, authPath, envConfig) {
         } catch {}
       }
 
-      const senderNumber = sender.split("@")[0].split(":")[0];
-      const botNumber    = conn.user.id.split(":")[0].split("@")[0];
+      const pushname = mek.pushName || sender.split("@")[0] || "User";
+
       const isOwner      = ownerNumber.includes(senderNumber) || botNumber === senderNumber;
       const reply        = (text) => conn.sendMessage(from, { text }, { quoted: mek });
 
@@ -668,18 +676,24 @@ async function startBot(sessionId, authPath, envConfig) {
       const events = require("./command");
 
       if (!global._pluginsLoaded || events.commands.length === 0) {
-        setTimeout(async () => {
-          if (global._pluginsLoaded) return;
+        // ✅ FIX: Don't skip — wait for plugins to load then execute.
+        // This fixes the "first group/inbox cmd gets no response" bug.
+        (async () => {
+          let tries = 0;
+          while ((!global._pluginsLoaded || require("./command").commands.length === 0) && tries < 20) {
+            await new Promise(r => setTimeout(r, 500));
+            tries++;
+          }
           const ev2 = require("./command");
           if (!ev2.commands.length) return;
           const cmd2 = ev2.commands.find(c => c.pattern === commandText || (c.alias && c.alias.includes(commandText)));
           if (cmd2) {
             if (cmd2.react) conn.sendMessage(from, { react: { text: cmd2.react, key: mek.key } }).catch(() => {});
             try {
-              await cmd2.function(conn, mek, m, { from, body, isCmd, command: commandText, args, q, sender, senderNumber, botNumber, isOwner, reply, sessionId });
+              await cmd2.function(conn, mek, m, { from, body, isCmd, command: commandText, args, q, sender, senderNumber, botNumber, isOwner, pushname, reply, sessionId });
             } catch (e) { console.error(`[CMD RETRY ERROR] ${sessionId}:`, e.message); }
           }
-        }, 3500);
+        })().catch(e => console.error(`[CMD WAIT ERROR] ${sessionId}:`, e.message));
         return;
       }
 
@@ -688,7 +702,7 @@ async function startBot(sessionId, authPath, envConfig) {
       if (cmd) {
         if (cmd.react) conn.sendMessage(from, { react: { text: cmd.react, key: mek.key } }).catch(() => {});
         try {
-          await cmd.function(conn, mek, m, { from, body, isCmd, command: commandText, args, q, sender, senderNumber, botNumber, isOwner, reply, sessionId });
+          await cmd.function(conn, mek, m, { from, body, isCmd, command: commandText, args, q, sender, senderNumber, botNumber, isOwner, pushname, reply, sessionId });
         } catch (err) {
           console.error(`[CMD ERROR] ${sessionId}:`, err);
         }
@@ -699,7 +713,7 @@ async function startBot(sessionId, authPath, envConfig) {
       if (bodyHandlers.length > 0) {
         Promise.allSettled(
           bodyHandlers.map(h =>
-            h.function(conn, mek, m, { from, body, isCmd, command: commandText, args, q, sender, senderNumber, botNumber, isOwner, reply, sessionId })
+            h.function(conn, mek, m, { from, body, isCmd, command: commandText, args, q, sender, senderNumber, botNumber, isOwner, pushname, reply, sessionId })
           )
         ).catch(() => {});
       }
