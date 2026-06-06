@@ -3,11 +3,14 @@
 //   ⚙️ Full Bot Settings — All-in-one
 //   ✅ .settings  → Interactive numbered menu (image)
 //   ✅ Reply number to toggle (X = ON, X.5 = OFF)
+//   ✅ Numbers: 1, 1.5, 2, 2.5 ... format supported
 //   ✅ .set <key> <on/off>  → Quick direct toggle
 //   ✅ .botinfo  → Full env vars + config display
 //   ✅ .resetbot confirm  → Reset all to defaults
+//   ✅ Anti-Call added (antiCall)
+//   ✅ Auto View-Once added (autoViewOnce)
 //   ✅ MongoDB + File save — survives restart
-//   © Mr Savendra · Crash Delta Team (CDT)
+//   © Mr Savendra · SHAVIYA-XMD V2
 // ============================================================
 
 'use strict';
@@ -30,20 +33,22 @@ const FakeVCard = {
 // id = number to type for ON  |  id.5 = OFF
 const SETTINGS_LIST = [
     // ── AUTOMATION ──
-    { id: 1,  label: 'Auto Voice Reply',   icon: '🔊', key: 'autoVoice',       group: 'auto' },
-    { id: 2,  label: 'Auto AI Reply',      icon: '🤖', key: 'autoAI',          group: 'auto' },
-    { id: 3,  label: 'Auto Read Status',   icon: '👁️', key: 'autoReadStatus',  group: 'auto' },
-    { id: 4,  label: 'Auto React Status',  icon: '❤️', key: 'autoReactStatus', group: 'auto' },
-    { id: 5,  label: 'Auto Read CMD',      icon: '📖', key: 'autoReadCmd',     group: 'auto' },
+    { id: 1,  label: 'Auto Voice Reply',    icon: '🔊', key: 'autoVoice',      group: 'auto' },
+    { id: 2,  label: 'Auto AI Reply',       icon: '🤖', key: 'autoAI',         group: 'auto' },
+    { id: 3,  label: 'Auto Read Status',    icon: '👁️', key: 'autoReadStatus', group: 'auto' },
+    { id: 4,  label: 'Auto React Status',   icon: '❤️', key: 'autoReactStatus',group: 'auto' },
+    { id: 5,  label: 'Auto Read CMD',       icon: '📖', key: 'autoReadCmd',    group: 'auto' },
+    { id: 6,  label: 'Auto View-Once',      icon: '🔓', key: 'autoViewOnce',   group: 'auto' },
     // ── SECURITY ──
-    { id: 6,  label: 'Anti Link',          icon: '🔗', key: 'antiLink',        group: 'sec'  },
-    { id: 7,  label: 'Anti Bad Words',     icon: '🚫', key: 'antiBadWords',    group: 'sec'  },
-    { id: 8,  label: 'Anti Delete',        icon: '🗑️', key: 'antidelete',      group: 'sec'  },
-    { id: 9,  label: 'Anti Bot',           icon: '🛡️', key: 'antiBot',         group: 'sec'  },
+    { id: 7,  label: 'Anti Link',           icon: '🔗', key: 'antiLink',       group: 'sec'  },
+    { id: 8,  label: 'Anti Bad Words',      icon: '🚫', key: 'antiBadWords',   group: 'sec'  },
+    { id: 9,  label: 'Anti Delete',         icon: '🗑️', key: 'antidelete',     group: 'sec'  },
+    { id: 10, label: 'Anti Bot',            icon: '🛡️', key: 'antiBot',        group: 'sec'  },
+    { id: 11, label: 'Anti Call',           icon: '📵', key: 'antiCall',       group: 'sec'  },
     // ── UI ──
-    { id: 10, label: 'Button Mode',        icon: '🔘', key: 'button',          group: 'ui'   },
-    { id: 11, label: 'Movie Doc Thumb',    icon: '🎬', key: 'moviedoc',        group: 'ui'   },
-    { id: 12, label: 'Always Offline',      icon: '👻', key: 'alwaysOffline',   group: 'ui'   },
+    { id: 12, label: 'Button Mode',         icon: '🔘', key: 'button',         group: 'ui'   },
+    { id: 13, label: 'Movie Doc Thumb',     icon: '🎬', key: 'moviedoc',       group: 'ui'   },
+    { id: 14, label: 'Always Offline',      icon: '👻', key: 'alwaysOffline',  group: 'ui'   },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -52,7 +57,6 @@ function isOn(key) {
     return v === true || v === 'true';
 }
 function tick(key) { return isOn(key) ? '✅' : '❌'; }
-function isEnabled(val) { return val === true || String(val).toLowerCase() === 'true'; }
 
 // ─── Build settings menu ─────────────────────────────────────
 function buildSettingsMenu() {
@@ -60,11 +64,11 @@ function buildSettingsMenu() {
 
     let autoRows = '', secRows = '', uiRows = '';
     SETTINGS_LIST.forEach(item => {
-        const on   = isOn(item.key);
-        const row  = `│  *${String(item.id).padStart(2, '0')}* ${item.icon} *${item.label}*\n│      ↳ ${on ? '✅ ON' : '❌ OFF'} │ ON: *${item.id}* │ OFF: *${item.id}.5*\n`;
-        if (item.group === 'auto') autoRows += row;
-        else if (item.group === 'sec') secRows += row;
-        else uiRows += row;
+        const on  = isOn(item.key);
+        const row = `│  *${String(item.id).padStart(2, '0')}* ${item.icon} *${item.label}*\n│      ↳ ${on ? '✅ ON' : '❌ OFF'} │ ON: *${item.id}* │ OFF: *${item.id}.5*\n`;
+        if      (item.group === 'auto') autoRows += row;
+        else if (item.group === 'sec')  secRows  += row;
+        else                            uiRows   += row;
     });
 
     return (
@@ -85,14 +89,16 @@ ${secRows}│
 ${uiRows}│
 ├─────────────────────────
 │  💡 *HOW TO TOGGLE:*
-│  ├─ Type number → Toggle ON
-│  └─ Type number.5 → Toggle OFF
+│  ├─ Reply with number → ON
+│  └─ Reply number.5   → OFF
+│  *(Example: 1 = ON | 1.5 = OFF)*
 │  *(Reply to THIS message)*
 │
 ├─ 🔧 *QUICK COMMANDS:*
 │  ├─ \`.set autovoice on\`
+│  ├─ \`.set anticall on\`
+│  ├─ \`.set autovv on\`
 │  ├─ \`.set mode public\`
-│  ├─ \`.set prefix .\`
 │  └─ \`.resetbot confirm\`
 │
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━⊷
@@ -114,22 +120,25 @@ function buildBotInfo() {
 │  ├─∘ *Owner:*   ${config.OWNER_NUMBER || 'Not set'}
 │  └─∘ *Mode:*    ${(s.mode || config.MODE || 'public').toUpperCase()}
 │
-├─❏ *⚙️ AUTOMATION* _(MongoDB live)_
+├─❏ *⚡ AUTOMATION* _(MongoDB live)_
 │  ├─∘ *Auto Voice:*        ${tick('autoVoice')}
 │  ├─∘ *Auto AI:*           ${tick('autoAI')}
 │  ├─∘ *Auto Read Status:*  ${tick('autoReadStatus')}
 │  ├─∘ *Auto React Status:* ${tick('autoReactStatus')}
-│  └─∘ *Auto Read CMD:*     ${tick('autoReadCmd')}
+│  ├─∘ *Auto Read CMD:*     ${tick('autoReadCmd')}
+│  └─∘ *Auto View-Once:*    ${tick('autoViewOnce')}
 │
 ├─❏ *🛡️ SECURITY* _(MongoDB live)_
 │  ├─∘ *Anti Link:*         ${tick('antiLink')}
 │  ├─∘ *Anti Bad Words:*    ${tick('antiBadWords')}
 │  ├─∘ *Anti Delete:*       ${tick('antidelete')}
-│  └─∘ *Anti Bot:*          ${tick('antiBot')}
+│  ├─∘ *Anti Bot:*          ${tick('antiBot')}
+│  └─∘ *Anti Call:*         ${tick('antiCall')}
 │
 ├─❏ *🎨 UI*
 │  ├─∘ *Button Mode:*       ${tick('button')}
 │  ├─∘ *Movie Doc Thumb:*   ${tick('moviedoc')}
+│  ├─∘ *Always Offline:*    ${tick('alwaysOffline')}
 │  └─∘ *Button Style:*      ${s.buttonStyle || 'default'}
 │
 ├─❏ *🔑 API KEYS* _(set/not set)_
@@ -192,7 +201,6 @@ async (conn, mek, m, { from, isOwner, reply }) => {
     const menuTxt = buildSettingsMenu();
     const sent    = await sendMenu(conn, from, mek, menuTxt);
 
-    // Track menu session for reply-by-number toggle
     const ownerNum = m.sender.split('@')[0].split(':')[0];
     global._settingsMenuIds.set(ownerNum, { menuId: sent.key.id, from });
 });
@@ -218,7 +226,8 @@ async (conn, mek, m, { from, isOwner, reply }) => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// Body listener — Reply-by-number toggle (X = ON, X.5 = OFF)
+// Body listener — Reply-by-number toggle
+// Supports: 1 = ON, 1.5 = OFF, 2 = ON, 2.5 = OFF, etc.
 // ─────────────────────────────────────────────────────────────
 cmd({ on: 'body' },
 async (conn, mek, m, { from, body, isOwner }) => {
@@ -238,11 +247,14 @@ async (conn, mek, m, { from, body, isOwner }) => {
         const text = (body || '').trim();
         if (!text) return;
 
-        // Parse: "3" = ON, "3.5" = OFF
+        // ── Parse format: "3" = ON, "3.5" = OFF ──────────
+        // Also handles multi-digit like "10", "10.5", "11.5"
         const isOff   = text.endsWith('.5');
         const numPart = isOff ? text.slice(0, -2) : text;
         const num     = parseFloat(numPart);
-        if (isNaN(num)) return;
+
+        // Must be a positive integer (no decimals in base number)
+        if (isNaN(num) || !Number.isInteger(num) || num <= 0) return;
 
         const setting = SETTINGS_LIST.find(s => s.id === num);
         if (!setting) {
@@ -291,18 +303,24 @@ async (conn, mek, m, { isOwner, args, reply }) => {
 
 *Usage:* \`.set <key> <on/off/value>\`
 
-*Bool settings:*
+*Automation:*
 ├─ \`.set autovoice on\`
 ├─ \`.set autoai on\`
-├─ \`.set autoreadstatus off\`
+├─ \`.set autoreadstatus on\`
 ├─ \`.set autoreactstatus on\`
 ├─ \`.set autoreadcmd on\`
+└─ \`.set autovv on\`
+
+*Security:*
 ├─ \`.set antilink on\`
 ├─ \`.set antibadwords on\`
 ├─ \`.set antidelete on\`
 ├─ \`.set antibot on\`
+└─ \`.set anticall on\`
+
+*UI:*
 ├─ \`.set button on\`
-└─ \`.set moviedoc on\`
+├─ \`.set moviedoc on\`
 └─ \`.set alwaysoffline on\`
 
 *String settings:*
@@ -323,10 +341,13 @@ _Use .settings for full interactive menu._`
         autoreadstatus:  'autoReadStatus',
         autoreactstatus: 'autoReactStatus',
         autoreadcmd:     'autoReadCmd',
+        autovv:          'autoViewOnce',
+        autoviewonce:    'autoViewOnce',
         antilink:        'antiLink',
         antibadwords:    'antiBadWords',
         antidelete:      'antidelete',
         antibot:         'antiBot',
+        anticall:        'antiCall',
         button:          'button',
         moviedoc:        'moviedoc',
         alwaysoffline:   'alwaysOffline',
