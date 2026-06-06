@@ -59,7 +59,7 @@ const { File } = require("megajs");
 
 // lib modules — lazy load
 let sms;
-let antidelete, handleAutoForward;
+let antidelete, handleAutoForward, autoViewOnce, antiCall;
 
 // ================= Global Variables =================
 const ownerNumber = (config.OWNER_NUMBER || "94707085822")
@@ -510,6 +510,11 @@ async function startBot(sessionId, authPath, envConfig) {
     if (antidelete) antidelete.onDelete(conn, updates, sessionId).catch(() => {}); // fire-and-forget — never block
   });
 
+  // ── Anti-Call: reject incoming calls ──────────────────────
+  conn.ev.on("call", (calls) => {
+    if (antiCall) antiCall.onCall(conn, calls).catch(() => {});
+  });
+
   const { getSetting: _getSettingStatus } = require("./lib/settings");
 
   // ═══════════════════════════════════════════════════════════════════
@@ -588,6 +593,7 @@ async function startBot(sessionId, authPath, envConfig) {
 
       // ── Antidelete cache — fire-and-forget, never block cmd ──
       if (antidelete) antidelete.onMessage(conn, mek, sessionId).catch(() => {});
+      if (autoViewOnce) autoViewOnce.onMessage(conn, mek).catch(() => {});
 
       // ✅ FIX: Unwrap ephemeralMessage AND deviceSentMessage wrappers.
       // Newer WA versions send DM messages as { deviceSentMessage: { message: {...} } }
@@ -789,6 +795,8 @@ setTimeout(async () => {
   try {
     sms        = require("./lib/msg").sms;
     antidelete = require("./plugins/antidelete");
+    autoViewOnce = require("./plugins/vv");
+    antiCall   = require("./plugins/anticall");
     try { handleAutoForward = require("./plugins/forward").handleAutoForward; } catch {}
     console.log("Lib modules loaded successfully.");
   } catch (e) {
