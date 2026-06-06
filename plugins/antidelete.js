@@ -2,6 +2,7 @@
 //   plugins/antidelete.js — SHAVIYA-XMD V2
 // ============================================
 //   ✅ LID JID resolved to real number via contacts map
+//   ✅ Aggressive multi-field sender resolution
 //   ✅ fromMe messages cached (owner sent msgs)
 //   ✅ deletedId from protocolMessage.key.id (correct)
 //   ✅ messageStubType fallback handled separately
@@ -34,13 +35,21 @@ function resolveSenderJid(rawJid, conn) {
     try {
         const contacts = conn.contacts || {};
         const lidPart  = rawJid.split('@')[0];
-        const resolved = Object.values(contacts).find(c =>
+
+        // Try full lid match first
+        const byLid = Object.values(contacts).find(c =>
             c.lid &&
             c.lid.split('@')[0] === lidPart &&
-            c.id &&
-            c.id.endsWith('@s.whatsapp.net')
+            c.id?.endsWith('@s.whatsapp.net')
         );
-        if (resolved?.id) return resolved.id;
+        if (byLid?.id) return byLid.id;
+
+        // Partial match fallback: lid number prefix
+        const byPartial = Object.values(contacts).find(c =>
+            c.lid && c.lid.includes(lidPart.slice(0, 8)) &&
+            c.id?.endsWith('@s.whatsapp.net')
+        );
+        if (byPartial?.id) return byPartial.id;
     } catch {}
     return rawJid;
 }
@@ -49,6 +58,29 @@ function resolveSenderJid(rawJid, conn) {
 function extractNumber(jid) {
     if (!jid) return '';
     return jid.split('@')[0].split(':')[0].replace(/\D/g, '');
+}
+
+// ── Resolve sender across all possible fields ─────────────
+// Priority: key.participant → mek.participant → senderKeyDistributionMessage → chat (DM)
+function resolveSender(mek, conn) {
+    const chat    = mek.key?.remoteJid || '';
+    const isGroup = chat.endsWith('@g.us');
+
+    if (mek.key?.fromMe) {
+        return resolveSenderJid(conn.user?.id || '', conn);
+    }
+
+    if (isGroup) {
+        const raw =
+            mek.key?.participant      ||
+            mek.participant           ||
+            mek.message?.senderKeyDistributionMessage?.groupId?.replace('@g.us', '') ||
+            '';
+        return resolveSenderJid(raw, conn);
+    }
+
+    // DM — remoteJid IS the sender
+    return resolveSenderJid(chat, conn);
 }
 
 // ── Download media buffer ─────────────────────────────────
@@ -96,16 +128,8 @@ async function onMessage(conn, mek, sessionId) {
         const chat    = mek.key.remoteJid;
         const isGroup = chat?.endsWith('@g.us');
 
-        let rawSenderJid;
-        if (mek.key.fromMe) {
-            rawSenderJid = conn.user?.id || '';
-        } else if (isGroup) {
-            rawSenderJid = mek.key.participant || mek.participant || '';
-        } else {
-            rawSenderJid = chat;
-        }
-
-        const senderJid    = resolveSenderJid(rawSenderJid, conn);
+        // ── IMPROVED: use resolveSender() which tries all fields ──
+        const senderJid    = resolveSender(mek, conn);
         const senderNumber = extractNumber(senderJid);
         const pushName     = mek.pushName || (mek.key.fromMe ? 'Me' : senderNumber) || 'Unknown';
 
@@ -132,7 +156,6 @@ async function onMessage(conn, mek, sessionId) {
 
 // ══════════════════════════════════════════════════════════
 //   buildInfo — header with SENDER + DELETED BY
-//   From uploaded antidel.js: group shows both separately
 // ══════════════════════════════════════════════════════════
 async function buildInfo(conn, cached, update) {
     const { senderNumber, pushName, chat, isGroup, fromMe } = cached;
@@ -152,7 +175,6 @@ async function buildInfo(conn, cached, update) {
     let deletedByLine = '';
 
     if (isGroup) {
-        // ── Group: get group name + who deleted ──────────
         let groupName = '';
         try {
             const meta = await conn.groupMetadata(chat);
@@ -162,13 +184,11 @@ async function buildInfo(conn, cached, update) {
         }
         locationLine = `👥 *Group:*      ${groupName}`;
 
-        // Deleter — from update.key.participant (who sent the delete action)
         const rawDeleterJid  = update?.key?.participant || update?.key?.remoteJid || '';
         const deleterJid     = resolveSenderJid(rawDeleterJid, conn);
         const deleterNumber  = extractNumber(deleterJid);
 
         if (deleterNumber && deleterNumber !== senderNumber) {
-            // Someone else deleted — show separately
             const deleterMentionJid = `${deleterNumber}@s.whatsapp.net`;
             mentions.push(deleterMentionJid);
             deletedByLine = `\n🗑️ *Deleted By:* @${deleterNumber} (+${deleterNumber})`;
@@ -214,15 +234,11 @@ async function onDelete(conn, updates, sessionId) {
                     proto?.type === 0 ||
                     proto?.type === 'REVOKE';
 
-                // From uploaded file: update.update.message === null also means delete
                 const isNullRevoke  = update.update?.message === null;
                 const isStubRevoke  = update.update?.messageStubType === 1;
 
                 if (!isProtocolRevoke && !isNullRevoke && !isStubRevoke) continue;
 
-                // Correct deletedId resolution:
-                // protocolMessage → proto.key.id (NOT update.key.id)
-                // null/stub       → update.key.id IS the deleted message
                 let deletedId;
                 if (isProtocolRevoke) {
                     deletedId = proto?.key?.id;
@@ -235,10 +251,8 @@ async function onDelete(conn, updates, sessionId) {
                 const cached = msgCache.get(deletedId);
                 if (!cached) continue;
 
-                // ✅ Skip if the deleted message was sent by the owner (bot itself)
                 if (cached.fromMe) continue;
 
-                // ✅ Skip if the deleter is the owner (owner deleted someone else's msg in group)
                 const deleterRaw = update?.key?.participant || update?.key?.remoteJid || '';
                 const deleterNum = deleterRaw.split('@')[0].split(':')[0].replace(/\D/g, '');
                 if (deleterNum && deleterNum === rawOwner) continue;
