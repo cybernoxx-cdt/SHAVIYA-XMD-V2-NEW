@@ -382,20 +382,20 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                 };
 
                 conn.ev.on('messages.upsert', qualityListener);
-                setTimeout(() => {
+                // Auto-cleanup: 3 min timeout — off listener if user never replies
+                const qualityTimer = setTimeout(() => {
                     if (!qualityProcessing) {
                         conn.ev.off('messages.upsert', qualityListener);
                     }
-                }, 180000); // 3 min timeout
+                }, 180000);
             }
         };
 
         conn.ev.on('messages.upsert', movieListener);
+        // Auto-cleanup: 3 min timeout — off listener if user never replies
         setTimeout(() => {
-            if (!movieProcessing) {
-                conn.ev.off('messages.upsert', movieListener);
-            }
-        }, 180000); // 3 min timeout
+            if (!movieProcessing) conn.ev.off('messages.upsert', movieListener);
+        }, 180000);
 
         await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
 
