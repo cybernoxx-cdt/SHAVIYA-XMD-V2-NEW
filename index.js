@@ -59,7 +59,7 @@ const { File } = require("megajs");
 
 // lib modules — lazy load
 let sms;
-let antidelete, handleAutoForward, autoViewOnce, antiCall;
+let antidelete, handleAutoForward, autoViewOnce, antiCall, groupEvents;
 
 // ================= Global Variables =================
 const ownerNumber = (config.OWNER_NUMBER || "94707085822")
@@ -515,6 +515,11 @@ async function startBot(sessionId, authPath, envConfig) {
     if (antiCall) antiCall.onCall(conn, calls).catch(() => {});
   });
 
+  // ── Group welcome/goodbye/admin events ────────────────────
+  conn.ev.on("group-participants.update", (update) => {
+    if (groupEvents) groupEvents(conn, update).catch(() => {});
+  });
+
   const { getSetting: _getSettingStatus } = require("./lib/settings");
 
   // ═══════════════════════════════════════════════════════════════════
@@ -592,7 +597,8 @@ async function startBot(sessionId, authPath, envConfig) {
       if (mek.key.remoteJid === "status@broadcast") return;
 
       // ── Antidelete cache — fire-and-forget, never block cmd ──
-      if (antidelete) antidelete.onMessage(conn, mek, sessionId).catch(() => {});
+      // NOTE: called BEFORE LID resolution — sender may be @lid here
+      // vv is safe (uses its own resolution)
       if (autoViewOnce) autoViewOnce.onMessage(conn, mek).catch(() => {});
 
       // ✅ FIX: Unwrap ephemeralMessage AND deviceSentMessage wrappers.
@@ -642,6 +648,20 @@ async function startBot(sessionId, authPath, envConfig) {
       const pushname     = mek.pushName || senderNumber || "User";
       const isOwner      = ownerNumber.includes(senderNumber) || botNumber === senderNumber;
       const reply        = (text) => conn.sendMessage(from, { text }, { quoted: mek });
+
+      // ── Antidelete cache — AFTER LID resolution so sender is correct ──
+      if (antidelete) {
+        // Inject the fully-resolved sender JID into mek so antidelete
+        // never sees a raw @lid. We use a shallow clone of key to avoid
+        // mutating the original Baileys object.
+        const mekForCache = Object.assign({}, mek, {
+          key: Object.assign({}, mek.key, {
+            participant: mek.key.remoteJid?.endsWith('@g.us') ? sender : mek.key.participant,
+          }),
+          _resolvedSender: sender,   // extra field antidelete can read directly
+        });
+        antidelete.onMessage(conn, mekForCache, sessionId).catch(() => {});
+      }
 
       // ── Owner react — react to messages SENT TO owner (not own messages) ──
       // fromMe=true  → owner sent this msg → react කරන්නෙ නෑ (own msg ලෙ react weird)
@@ -797,6 +817,7 @@ setTimeout(async () => {
     antidelete = require("./plugins/antidelete");
     autoViewOnce = require("./plugins/vv");
     antiCall   = require("./plugins/anticall");
+    groupEvents = require("./lib/groupevents");
     try { handleAutoForward = require("./plugins/forward").handleAutoForward; } catch {}
     console.log("Lib modules loaded successfully.");
   } catch (e) {
