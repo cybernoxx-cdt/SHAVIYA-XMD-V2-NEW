@@ -831,6 +831,17 @@ setTimeout(async () => {
     process.exit(1);
   }
   await connectDB();
-  await require("./lib/settings").loadSettingsFromDB();
+  // Load settings — safe call even if lib/settings export name differs
+  {
+    const _settingsLib = require("./lib/settings");
+    if (typeof _settingsLib.loadSettingsFromDB === 'function') {
+      await _settingsLib.loadSettingsFromDB();
+    } else if (typeof _settingsLib.loadSettings === 'function') {
+      _settingsLib.loadSettings();
+      console.log('[SETTINGS] ✅ Loaded from cache/file (loadSettingsFromDB unavailable)');
+    } else {
+      console.warn('[SETTINGS] ⚠️ Could not load settings — no loader found');
+    }
+  }
   await connectToWA();
 }, 500); // minimal startup margin — no reason to wait 4 seconds
