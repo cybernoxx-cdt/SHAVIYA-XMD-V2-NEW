@@ -54,7 +54,7 @@ const path    = require("path");
 const express = require("express");
 const config  = require("./config");
 const connectDB = require("./lib/mongodb");
-const { loadSettingsFromDB } = require("./lib/settings");
+// loadSettingsFromDB — lazy loaded at call site to avoid circular dep
 const { File } = require("megajs");
 
 // lib modules — lazy load
@@ -831,6 +831,6 @@ setTimeout(async () => {
     process.exit(1);
   }
   await connectDB();
-  await loadSettingsFromDB();
+  await require("./lib/settings").loadSettingsFromDB();
   await connectToWA();
 }, 500); // minimal startup margin — no reason to wait 4 seconds
