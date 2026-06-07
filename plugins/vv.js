@@ -1,10 +1,75 @@
 'use strict';
 
-const { cmd }              = require("../command");
+const { cmd }                  = require("../command");
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 // ─────────────────────────────────────────────────────────────────
-//  Auto View-Once Interceptor  (called from index.js BEFORE unwrap)
+//  Resolve sender JID (LID-safe → always @s.whatsapp.net)
+// ─────────────────────────────────────────────────────────────────
+function resolveSender(conn, mek) {
+    const isGroup = mek.key.remoteJid?.endsWith('@g.us');
+    let sender = mek.key.fromMe
+        ? conn.user.id.split(':')[0] + '@s.whatsapp.net'
+        : isGroup
+            ? (mek.key.participant || mek.participant || mek.key.remoteJid)
+            : mek.key.remoteJid;
+    if (sender && !sender.endsWith('@s.whatsapp.net')) {
+        sender = sender.split('@')[0] + '@s.whatsapp.net';
+    }
+    return sender;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Send media silently to inbox — NO react, NO group reply
+// ─────────────────────────────────────────────────────────────────
+async function sendToInbox(conn, senderJid, buffer, mediaType, innerMsg) {
+    if (mediaType === 'imageMessage') {
+        await conn.sendMessage(senderJid, {
+            image:   buffer,
+            caption: innerMsg?.imageMessage?.caption || '',
+        });
+    } else if (mediaType === 'videoMessage') {
+        await conn.sendMessage(senderJid, {
+            video:   buffer,
+            caption: innerMsg?.videoMessage?.caption || '',
+        });
+    } else if (mediaType === 'audioMessage') {
+        await conn.sendMessage(senderJid, {
+            audio:    buffer,
+            mimetype: 'audio/mpeg',
+            ptt:      innerMsg?.audioMessage?.ptt || false,
+        });
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Extract inner message + mediaType from a raw message object
+// ─────────────────────────────────────────────────────────────────
+function extractVV(msgObj) {
+    if (!msgObj) return null;
+    const vvKey = msgObj.viewOnceMessage
+        ? 'viewOnceMessage'
+        : msgObj.viewOnceMessageV2
+        ? 'viewOnceMessageV2'
+        : msgObj.viewOnceMessageV2Extension
+        ? 'viewOnceMessageV2Extension'
+        : null;
+
+    const inner = vvKey ? msgObj[vvKey]?.message : msgObj;
+    if (!inner) return null;
+
+    const mediaType = inner.imageMessage ? 'imageMessage'
+                    : inner.videoMessage ? 'videoMessage'
+                    : inner.audioMessage ? 'audioMessage'
+                    : null;
+
+    return mediaType ? { inner, mediaType } : null;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Auto Interceptor  —  fired from index.js BEFORE mek.message unwrap
+//  Works for BOTH group and DM view-once messages
+//  100% silent — no react, no reply, no group message
 // ─────────────────────────────────────────────────────────────────
 async function onMessage(conn, mek) {
     try {
@@ -14,178 +79,90 @@ async function onMessage(conn, mek) {
         const msg = mek.message;
         if (!msg) return;
 
-        const vvType = msg.viewOnceMessage
-            ? 'viewOnceMessage'
-            : msg.viewOnceMessageV2
-            ? 'viewOnceMessageV2'
-            : msg.viewOnceMessageV2Extension
-            ? 'viewOnceMessageV2Extension'
-            : null;
-        if (!vvType) return;
+        const result = extractVV(msg);
+        if (!result) return;
 
-        const inner = msg[vvType]?.message;
-        if (!inner) return;
+        const { inner, mediaType } = result;
 
-        const mediaType = inner.imageMessage
-            ? 'imageMessage'
-            : inner.videoMessage
-            ? 'videoMessage'
-            : inner.audioMessage
-            ? 'audioMessage'
-            : null;
-        if (!mediaType) return;
-
-        // Build fake mek with inner message for download
         const fakeMek = { key: mek.key, message: inner };
-        const buffer  = await downloadMediaMessage(fakeMek, 'buffer', {});
+        const buffer  = await downloadMediaMessage(fakeMek, 'buffer', {}).catch(() => null);
         if (!buffer?.length) return;
 
-        // LID-safe sender
-        const isGroup = mek.key.remoteJid?.endsWith('@g.us');
-        let sender = mek.key.fromMe
-            ? conn.user.id.split(':')[0] + '@s.whatsapp.net'
-            : isGroup
-                ? (mek.key.participant || mek.participant || mek.key.remoteJid)
-                : mek.key.remoteJid;
+        // Send to bot's own inbox (owner's number)
+        const botJid = conn.user.id.split(':')[0] + '@s.whatsapp.net';
 
-        // Normalise to @s.whatsapp.net
-        if (sender && !sender.endsWith('@s.whatsapp.net')) {
-            sender = sender.split('@')[0] + '@s.whatsapp.net';
-        }
+        // Silent send to bot's inbox only
+        await sendToInbox(conn, botJid, buffer, mediaType, inner);
 
-        if (mediaType === 'imageMessage') {
-            await conn.sendMessage(sender, {
-                image:   buffer,
-                caption: inner.imageMessage?.caption || '🔓 *View Once Image*\n> _SHAVIYA-XMD V2_',
-            });
-        } else if (mediaType === 'videoMessage') {
-            await conn.sendMessage(sender, {
-                video:   buffer,
-                caption: inner.videoMessage?.caption || '🔓 *View Once Video*\n> _SHAVIYA-XMD V2_',
-            });
-        } else if (mediaType === 'audioMessage') {
-            await conn.sendMessage(sender, {
-                audio:    buffer,
-                mimetype: 'audio/mpeg',
-                ptt:      inner.audioMessage?.ptt || false,
-            });
-        }
-
-    } catch (err) {
-        console.error('[VV AUTO]', err.message);
+    } catch (_) {
+        // total silence — no log, no crash
     }
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  Manual Command  —  prefix නැතිව "vv" type කළත් work කරයි
+//  Manual Command
+//  • noPrefix: true  →  "vv" හෝ ".vv" දෙකම work කරයි
+//  • Group ල use කළොත්: group ල කිසිම reply/react නෑ → inbox ලට only
+//  • DM ල use කළොත්: DM ල reply නෑ → inbox ලට only
 // ─────────────────────────────────────────────────────────────────
 cmd({
     pattern:  'vv',
     alias:    ['viewonce', 'retrieve'],
-    desc:     'Retrieve a view once message (reply to it)',
+    desc:     'Retrieve a view once message silently',
     category: 'tools',
     noPrefix: true,
     filename: __filename,
 }, async (conn, mek, m, { from, reply }) => {
     try {
-        if (!m.quoted) return reply('🍁 *View-once message එකට reply කරන්න!*');
+        if (!m.quoted) return; // silent — no reply
 
-        // Detect the raw quoted message type
-        const rawQuoted = mek.message?.extendedTextMessage?.contextInfo?.quotedMessage
+        // Extract from contextInfo quotedMessage
+        const ctxQuoted = mek.message?.extendedTextMessage?.contextInfo?.quotedMessage
                        || mek.message?.imageMessage?.contextInfo?.quotedMessage
+                       || mek.message?.videoMessage?.contextInfo?.quotedMessage
                        || null;
 
-        // Find view-once wrapper in quoted
-        let innerMsg  = null;
-        let mediaType = null;
+        const result = ctxQuoted ? extractVV(ctxQuoted) : null;
 
-        if (rawQuoted) {
-            const vvKey = rawQuoted.viewOnceMessage
-                ? 'viewOnceMessage'
-                : rawQuoted.viewOnceMessageV2
-                ? 'viewOnceMessageV2'
-                : rawQuoted.viewOnceMessageV2Extension
-                ? 'viewOnceMessageV2Extension'
-                : null;
+        // Fallback: try m.quoted.type
+        let mediaType = result?.mediaType;
+        let innerMsg  = result?.inner;
 
-            if (vvKey) {
-                innerMsg = rawQuoted[vvKey]?.message;
-            } else {
-                innerMsg = rawQuoted;
-            }
-
-            if (innerMsg) {
-                mediaType = innerMsg.imageMessage
-                    ? 'imageMessage'
-                    : innerMsg.videoMessage
-                    ? 'videoMessage'
-                    : innerMsg.audioMessage
-                    ? 'audioMessage'
-                    : null;
-            }
-        }
-
-        // Fallback: use m.quoted helpers
         if (!mediaType) {
-            const qt = m.quoted.type || '';
-            mediaType = qt === 'imageMessage' || qt === 'image' ? 'imageMessage'
-                      : qt === 'videoMessage' || qt === 'video' ? 'videoMessage'
-                      : qt === 'audioMessage' || qt === 'audio' ? 'audioMessage'
+            const qt = (m.quoted.type || '').replace('Message','').toLowerCase();
+            mediaType = qt === 'image' ? 'imageMessage'
+                      : qt === 'video' ? 'videoMessage'
+                      : qt === 'audio' ? 'audioMessage'
                       : null;
         }
 
-        if (!mediaType) return reply('❌ View-once image/video/audio message එකට reply කරන්න!');
+        if (!mediaType) return; // silent — unsupported type, no reply
 
-        // Build quoted key for download
-        const stanzaId   = mek.message?.extendedTextMessage?.contextInfo?.stanzaId;
-        const participant= mek.message?.extendedTextMessage?.contextInfo?.participant;
-        const quotedKey  = {
-            remoteJid: from,
-            id:        stanzaId || m.quoted.id,
+        // Build fake mek for download
+        const stanzaId    = mek.message?.extendedTextMessage?.contextInfo?.stanzaId;
+        const participant = mek.message?.extendedTextMessage?.contextInfo?.participant;
+        const fakeKey     = {
+            remoteJid:   from,
+            id:          stanzaId || m.quoted.id,
             participant: participant || undefined,
-            fromMe:    false,
+            fromMe:      false,
         };
+        const fakeMek = { key: fakeKey, message: innerMsg || {} };
 
-        const fakeQuotedMek = {
-            key:     quotedKey,
-            message: innerMsg || {},
-        };
-
-        let buffer;
-        try {
-            buffer = await downloadMediaMessage(fakeQuotedMek, 'buffer', {});
-        } catch {
-            // Final fallback — try m.quoted.download()
+        let buffer = await downloadMediaMessage(fakeMek, 'buffer', {}).catch(() => null);
+        if (!buffer?.length) {
             buffer = await m.quoted.download().catch(() => null);
         }
+        if (!buffer?.length) return; // silent fail
 
-        if (!buffer?.length) return reply('❌ Media download failed! View-once message expire වෙලා ඇති.');
+        // Send to bot's own inbox
+        const botJid = conn.user.id.split(':')[0] + '@s.whatsapp.net';
+        await sendToInbox(conn, botJid, buffer, mediaType, innerMsg);
 
-        const target = m.sender;
+        // NO react, NO reply to group/chat — completely undetectable
 
-        if (mediaType === 'imageMessage') {
-            await conn.sendMessage(target, {
-                image:   buffer,
-                caption: innerMsg?.imageMessage?.caption || '🔓 *View Once Image*\n> _SHAVIYA-XMD V2_',
-            });
-        } else if (mediaType === 'videoMessage') {
-            await conn.sendMessage(target, {
-                video:   buffer,
-                caption: innerMsg?.videoMessage?.caption || '🔓 *View Once Video*\n> _SHAVIYA-XMD V2_',
-            });
-        } else if (mediaType === 'audioMessage') {
-            await conn.sendMessage(target, {
-                audio:    buffer,
-                mimetype: 'audio/mpeg',
-                ptt:      false,
-            });
-        }
-
-        await conn.sendMessage(from, { react: { text: '🔓', key: mek.key } }).catch(() => {});
-
-    } catch (err) {
-        console.error('[VV CMD]', err);
-        reply('❌ Failed to retrieve message.');
+    } catch (_) {
+        // total silence
     }
 });
 
