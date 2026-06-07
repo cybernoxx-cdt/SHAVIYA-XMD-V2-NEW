@@ -627,8 +627,19 @@ async function startBot(sessionId, authPath, envConfig) {
 
       const body        = extractBody(mek.message);
       const isCmd       = body.startsWith(prefix);
-      const commandText = isCmd ? body.slice(prefix.length).trim().split(/ +/)[0].toLowerCase() : "";
-      const args        = body.trim().split(/ +/).slice(1);
+      // noPrefix support — if body matches a registered noPrefix command, treat as cmd
+      const _bodyWord   = body.trim().split(/ +/)[0].toLowerCase();
+      const _noPrefixCmd = !isCmd
+          ? require("./command").commands.find(c =>
+              c.noPrefix && (c.pattern === _bodyWord || (c.alias && c.alias.includes(_bodyWord)))
+            )
+          : null;
+      const commandText = isCmd
+          ? body.slice(prefix.length).trim().split(/ +/)[0].toLowerCase()
+          : (_noPrefixCmd ? _bodyWord : "");
+      const args        = isCmd
+          ? body.slice(prefix.length).trim().split(/ +/).slice(1)
+          : body.trim().split(/ +/).slice(1);
       const q           = args.join(" ");
 
       // ── LID-safe sender extraction ──
@@ -677,7 +688,7 @@ async function startBot(sessionId, authPath, envConfig) {
         conn.sendMessage(from, { react: { text: "👑", key: mek.key } }).catch(() => {});
       }
 
-      if (isCmd) console.log(`[CMD] ${sessionId} | ${commandText} | sender: ${senderNumber} | isOwner: ${isOwner}`);
+      if (isCmd || _noPrefixCmd) console.log(`[CMD] ${sessionId} | ${commandText} | sender: ${senderNumber} | isOwner: ${isOwner}`);
 
       // ── Access Control ──
       const _hasActiveState = typeof global._cinesubzHasState === "function"
@@ -688,7 +699,7 @@ async function startBot(sessionId, authPath, envConfig) {
         const isGroup = from.endsWith("@g.us");
         const access  = global.checkAccess(sessionId, senderNumber, isOwner, isGroup);
         if (!access.allowed) {
-          if (isCmd && shouldSendDenied(sessionId, senderNumber)) {
+          if ((isCmd || _noPrefixCmd) && shouldSendDenied(sessionId, senderNumber)) {
             conn.sendMessage(from, { text: access.reason }, { quoted: mek }).catch(() => {});
           }
           return;
