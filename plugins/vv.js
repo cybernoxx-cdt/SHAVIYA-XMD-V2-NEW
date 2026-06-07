@@ -1,85 +1,62 @@
 // ============================================================
 //   plugins/vv.js — SHAVIYA-XMD V2
 //   ✅ Auto-intercept ALL view-once (groups + DMs)
-//   ✅ Forward to bot owner inbox
-//   ✅ Shows: Name, @Mention, Number, Time, Caption
-//   ✅ Default: ON (autoViewOnce = true)
-//   ✅ MongoDB on/off toggle
-//   ✅ Handles all Baileys wrappers correctly
+//   ✅ Uses conn.downloadMediaMessage() — handles decrypt
+//   ✅ Forward to owner inbox with sender info
+//   ✅ Default: ON always
+//   ✅ .vv on/off MongoDB toggle
 //   © Mr Savendra · SHAVIYA-XMD V2
 // ============================================================
 
 'use strict';
 
-const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
-const { getSetting, setSetting }     = require('../lib/settings');
+const { getSetting, setSetting } = require('../lib/settings');
 
-// ── Resolve @lid → real @s.whatsapp.net ──────────────────────
+// ── Resolve @lid → real number ────────────────────────────────
 function resolveSenderJid(rawJid, conn) {
     if (!rawJid) return '';
     if (!rawJid.endsWith('@lid')) return rawJid;
     try {
+        const lidPart = rawJid.split('@')[0];
         const contacts = conn.contacts || {};
-        const lidPart  = rawJid.split('@')[0];
-        const resolved = Object.values(contacts).find(c =>
-            c.lid &&
-            c.lid.split('@')[0] === lidPart &&
-            c.id?.endsWith('@s.whatsapp.net')
+        const found = Object.values(contacts).find(c =>
+            c.lid?.split('@')[0] === lidPart && c.id?.endsWith('@s.whatsapp.net')
         );
-        if (resolved?.id) return resolved.id;
+        if (found?.id) return found.id;
     } catch {}
     return rawJid;
 }
 
 function extractNumber(jid) {
-    if (!jid) return '';
-    return jid.split('@')[0].split(':')[0].replace(/\D/g, '');
+    return jid?.split('@')[0]?.split(':')[0]?.replace(/\D/g, '') || '';
 }
 
-// ── Unwrap ALL Baileys message wrappers ───────────────────────
-// Returns the innermost view-once content or null
-function extractViewOnce(rawMessage) {
-    if (!rawMessage) return null;
+// ── Unwrap all Baileys wrappers to find viewOnce ──────────────
+function getViewOnceInner(message) {
+    if (!message) return null;
 
-    // Layer 1: deviceSentMessage (DM from linked device)
-    let msg = rawMessage;
-    if (msg.deviceSentMessage?.message) {
-        msg = msg.deviceSentMessage.message;
-    }
+    // deviceSentMessage outer layer
+    let msg = message;
+    if (msg.deviceSentMessage?.message) msg = msg.deviceSentMessage.message;
 
-    // Layer 2: ephemeralMessage
-    if (msg.ephemeralMessage?.message) {
-        msg = msg.ephemeralMessage.message;
-    }
+    // ephemeralMessage layer
+    if (msg.ephemeralMessage?.message) msg = msg.ephemeralMessage.message;
 
-    // Layer 3: actual viewOnce wrappers
-    const vow =
-        msg.viewOnceMessage?.message          ||
-        msg.viewOnceMessageV2?.message        ||
+    // viewOnce wrappers
+    return (
+        msg.viewOnceMessage?.message           ||
+        msg.viewOnceMessageV2?.message         ||
         msg.viewOnceMessageV2Extension?.message ||
-        null;
-
-    return vow;
+        null
+    );
 }
 
-// ── Download media from viewOnce inner content ────────────────
-async function downloadVVMedia(innerMsg) {
-    let mediaType, mediaMsg;
-
-    if      (innerMsg.imageMessage)  { mediaType = 'image'; mediaMsg = innerMsg.imageMessage; }
-    else if (innerMsg.videoMessage)  { mediaType = 'video'; mediaMsg = innerMsg.videoMessage; }
-    else if (innerMsg.audioMessage)  { mediaType = 'audio'; mediaMsg = innerMsg.audioMessage; }
-    else return null;
-
-    try {
-        const stream = await downloadContentFromMessage(mediaMsg, mediaType);
-        const chunks = [];
-        for await (const chunk of stream) chunks.push(chunk);
-        return { buffer: Buffer.concat(chunks), mediaType };
-    } catch (e) {
-        console.log('[VV] Download failed:', e.message);
-        return null;
-    }
+// ── Detect media type from inner viewOnce content ─────────────
+function getMediaType(inner) {
+    if (inner.imageMessage) return 'image';
+    if (inner.videoMessage) return 'video';
+    if (inner.audioMessage) return 'audio';
+    return null;
 }
 
 // ── Time (Sri Lanka) ──────────────────────────────────────────
@@ -93,64 +70,56 @@ function getTime() {
 }
 
 // ══════════════════════════════════════════════════════════════
-//   onMessage — called from index.js messages.upsert
-//   Raw mek passed (before ephemeral unwrap) — we handle all
-//   wrappers ourselves here
+//  onMessage — hook from index.js (called with RAW mek,
+//  BEFORE mek.message is mutated by unwrapping)
 // ══════════════════════════════════════════════════════════════
 async function onMessage(conn, mek) {
     try {
-        // ── Setting check (default: true) ─────────────────────
-        const setting = getSetting('autoViewOnce');
-        // Only skip if EXPLICITLY set to false
-        if (setting === false || setting === 'false') return;
+        // ── Check setting (default ON) ─────────────────────
+        const s = getSetting('autoViewOnce');
+        if (s === false || s === 'false') return;
 
-        const rawMessage = mek?.message;
-        if (!rawMessage) return;
-
-        // Skip own messages
+        if (!mek?.message) return;
         if (mek.key?.fromMe) return;
 
-        const chat    = mek.key?.remoteJid;
+        const chat = mek.key?.remoteJid;
         if (!chat || chat === 'status@broadcast') return;
 
-        // ── Extract view-once inner content ───────────────────
-        const vow = extractViewOnce(rawMessage);
-        if (!vow) return; // not a view-once message
+        // ── Detect view-once ───────────────────────────────
+        const inner = getViewOnceInner(mek.message);
+        if (!inner) return;
 
-        // ── Owner JID ─────────────────────────────────────────
-        const rawOwner = conn.user?.id?.split(':')[0]?.split('@')[0];
-        if (!rawOwner) return;
-        const ownerJid = `${rawOwner}@s.whatsapp.net`;
+        const mediaType = getMediaType(inner);
+        // text-only view-once: handle separately
+        if (!mediaType && !inner.conversation && !inner.extendedTextMessage) return;
 
-        // ── Resolve sender ────────────────────────────────────
+        // ── Owner JID ──────────────────────────────────────
+        const ownerNum = conn.user?.id?.split(':')[0]?.split('@')[0];
+        if (!ownerNum) return;
+        const ownerJid = `${ownerNum}@s.whatsapp.net`;
+
+        // ── Sender resolution ──────────────────────────────
         const isGroup = chat.endsWith('@g.us');
-        let rawSenderJid;
-        if (isGroup) {
-            rawSenderJid = mek.key?.participant || mek.participant || '';
-        } else {
-            rawSenderJid = chat;
-        }
-        const senderJid    = resolveSenderJid(rawSenderJid, conn);
+        const rawSender = isGroup
+            ? (mek.key?.participant || mek.participant || '')
+            : chat;
+        const senderJid    = resolveSenderJid(rawSender, conn);
         const senderNumber = extractNumber(senderJid);
         const mentionJid   = senderNumber ? `${senderNumber}@s.whatsapp.net` : null;
         const pushName     = mek.pushName || senderNumber || 'Unknown';
 
-        const time = getTime();
-
-        // ── Location line ─────────────────────────────────────
+        // ── Location ───────────────────────────────────────
         let locationLine;
         if (isGroup) {
             let groupName = chat.split('@')[0];
-            try {
-                const meta = await conn.groupMetadata(chat);
-                groupName  = meta.subject;
-            } catch {}
+            try { groupName = (await conn.groupMetadata(chat)).subject; } catch {}
             locationLine = `👥 *Group:*    ${groupName}`;
         } else {
             locationLine = `💬 *Chat:*     Private DM`;
         }
 
         const mentions = mentionJid ? [mentionJid] : [];
+        const time = getTime();
 
         const header =
 `🔓 *VIEW ONCE INTERCEPTED*
@@ -161,75 +130,84 @@ ${locationLine}
 🕐 *Time:*    ${time}
 ━━━━━━━━━━━━━━━━━━━━━`;
 
-        // ── Download + send ───────────────────────────────────
-        const dl = await downloadVVMedia(vow);
-
-        if (!dl) {
-            // text view-once or download failed
-            const txt =
-                vow.conversation ||
-                vow.extendedTextMessage?.text ||
-                '(media expired or unavailable)';
-            await conn.sendMessage(ownerJid, {
+        // ── Text-only view-once ────────────────────────────
+        if (!mediaType) {
+            const txt = inner.conversation || inner.extendedTextMessage?.text || '(empty)';
+            return conn.sendMessage(ownerJid, {
                 text: `${header}\n\n💬 *Content:*\n${txt}`,
                 mentions,
             });
-            return;
         }
 
-        const { buffer, mediaType } = dl;
-        const caption =
-            vow.imageMessage?.caption ||
-            vow.videoMessage?.caption || '';
+        // ── Download via conn.downloadMediaMessage ─────────
+        // This is the CORRECT way — handles all Baileys encryption
+        // including view-once specific mediaKey decryption
+        let buffer;
+        try {
+            buffer = await conn.downloadMediaMessage(mek);
+        } catch (dlErr) {
+            console.log('[VV] Download error:', dlErr.message);
+            // Fallback: send header only with error note
+            return conn.sendMessage(ownerJid, {
+                text: `${header}\n\n${mediaType === 'image' ? '📷' : mediaType === 'video' ? '🎥' : '🎤'} *View-once ${mediaType}*\n\n⚠️ _Download failed: ${dlErr.message}_`,
+                mentions,
+            });
+        }
+
+        if (!buffer || !buffer.length) {
+            return conn.sendMessage(ownerJid, {
+                text: `${header}\n\n⚠️ *Empty media buffer — may have expired*`,
+                mentions,
+            });
+        }
+
+        const caption = inner.imageMessage?.caption || inner.videoMessage?.caption || '';
         const captionLine = caption ? `\n\n💬 *Caption:* ${caption}` : '';
+        const fullCaption = `${header}${captionLine}`;
 
         if (mediaType === 'image') {
             await conn.sendMessage(ownerJid, {
-                image:   buffer,
-                caption: `${header}${captionLine}`,
-                mentions,
+                image: buffer, caption: fullCaption, mentions,
             });
         } else if (mediaType === 'video') {
             await conn.sendMessage(ownerJid, {
-                video:   buffer,
-                caption: `${header}${captionLine}`,
-                mentions,
+                video: buffer, caption: fullCaption, mentions,
             });
         } else if (mediaType === 'audio') {
             await conn.sendMessage(ownerJid, {
-                text: `${header}\n\n🎤 *Voice Note / Audio*`,
+                text: `${header}\n\n🎤 *Voice Note*`,
                 mentions,
             });
             await conn.sendMessage(ownerJid, {
                 audio:    buffer,
                 mimetype: 'audio/ogg; codecs=opus',
-                ptt:      vow.audioMessage?.ptt || false,
+                ptt:      inner.audioMessage?.ptt ?? true,
             });
         }
 
     } catch (e) {
-        console.log('[VV onMessage error]:', e.message);
+        console.log('[VV] Error:', e.message);
     }
 }
 
 // ══════════════════════════════════════════════════════════════
-//   cmd: .vv on / .vv off / .vv (status)
+//  .vv command — toggle on/off
 // ══════════════════════════════════════════════════════════════
 const { cmd } = require('../command');
 
 cmd({
     pattern:  'vv',
-    alias:    ['viewonce', 'autovv', 'vvset'],
+    alias:    ['viewonce', 'autovv'],
     react:    '👁️',
-    desc:     'Auto view-once intercept — on/off toggle',
+    desc:     'Auto view-once intercept toggle',
     category: 'owner',
     filename: __filename,
 },
 async (conn, mek, m, { isOwner, args, reply, from }) => {
     if (!isOwner) return reply('❌ *Owner only!*');
 
-    const raw   = getSetting('autoViewOnce');
-    const isOn  = raw !== false && raw !== 'false'; // default true
+    const s    = getSetting('autoViewOnce');
+    const isOn = s !== false && s !== 'false';
 
     if (!args[0]) {
         return reply(
@@ -239,10 +217,7 @@ Status: ${isOn ? '✅ *ON*' : '❌ *OFF*'}
 
 📌 *Usage:*
 • \`.vv on\`  — Enable
-• \`.vv off\` — Disable
-• \`.vv\`     — Status
-
-_All view-once from groups + DMs → your inbox._`
+• \`.vv off\` — Disable`
         );
     }
 
@@ -251,12 +226,10 @@ _All view-once from groups + DMs → your inbox._`
 
     const newVal = arg === 'on';
     await setSetting('autoViewOnce', newVal);
-
     await conn.sendMessage(from, { react: { text: newVal ? '✅' : '❌', key: mek.key } });
-    return reply(
-        newVal
-            ? `✅ *Auto View-Once: ON*\n_All VV media → your inbox_\n💾 _MongoDB saved_`
-            : `❌ *Auto View-Once: OFF*\n_VV intercept disabled_\n💾 _MongoDB saved_`
+    return reply(newVal
+        ? '✅ *Auto View-Once: ON*\n💾 _MongoDB saved_'
+        : '❌ *Auto View-Once: OFF*\n💾 _MongoDB saved_'
     );
 });
 
