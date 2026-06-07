@@ -596,10 +596,13 @@ async function startBot(sessionId, authPath, envConfig) {
       // status@broadcast safety — should not reach here but guard anyway
       if (mek.key.remoteJid === "status@broadcast") return;
 
-      // ── Antidelete cache — fire-and-forget, never block cmd ──
-      // NOTE: called BEFORE LID resolution — sender may be @lid here
-      // vv is safe (uses its own resolution)
-      if (autoViewOnce) autoViewOnce.onMessage(conn, mek).catch(() => {});
+      // ── View-once intercept — pass raw message BEFORE unwrap ──
+      // mek.message gets mutated below (ephemeral/deviceSent strip)
+      // vv.js needs the original with viewOnce wrappers intact
+      if (autoViewOnce) {
+        const _rawMsgSnapshot = Object.assign({}, mek, { message: mek.message });
+        autoViewOnce.onMessage(conn, _rawMsgSnapshot).catch(() => {});
+      }
 
       // ✅ FIX: Unwrap ephemeralMessage AND deviceSentMessage wrappers.
       // Newer WA versions send DM messages as { deviceSentMessage: { message: {...} } }
