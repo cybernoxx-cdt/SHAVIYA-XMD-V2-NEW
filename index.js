@@ -54,12 +54,12 @@ const path    = require("path");
 const express = require("express");
 const config  = require("./config");
 const connectDB = require("./lib/mongodb");
-// loadSettingsFromDB — lazy loaded at call site to avoid circular dep
+const { loadSettingsFromDB } = require("./lib/settings");
 const { File } = require("megajs");
 
 // lib modules — lazy load
 let sms;
-let antidelete, handleAutoForward, autoViewOnce, antiCall, groupEvents;
+let antidelete, handleAutoForward;
 
 // ================= Global Variables =================
 const ownerNumber = (config.OWNER_NUMBER || "94707085822")
@@ -510,16 +510,6 @@ async function startBot(sessionId, authPath, envConfig) {
     if (antidelete) antidelete.onDelete(conn, updates, sessionId).catch(() => {}); // fire-and-forget — never block
   });
 
-  // ── Anti-Call: reject incoming calls ──────────────────────
-  conn.ev.on("call", (calls) => {
-    if (antiCall) antiCall.onCall(conn, calls).catch(() => {});
-  });
-
-  // ── Group welcome/goodbye/admin events ────────────────────
-  conn.ev.on("group-participants.update", (update) => {
-    if (groupEvents) groupEvents(conn, update).catch(() => {});
-  });
-
   const { getSetting: _getSettingStatus } = require("./lib/settings");
 
   // ═══════════════════════════════════════════════════════════════════
@@ -596,13 +586,8 @@ async function startBot(sessionId, authPath, envConfig) {
       // status@broadcast safety — should not reach here but guard anyway
       if (mek.key.remoteJid === "status@broadcast") return;
 
-      // ── View-once intercept — pass raw message BEFORE unwrap ──
-      // mek.message gets mutated below (ephemeral/deviceSent strip)
-      // vv.js needs the original with viewOnce wrappers intact
-      // ── View-once intercept — BEFORE mek.message is mutated below ──
-      // vv.js uses conn.downloadMediaMessage(mek) which needs original raw mek
-      // with all Baileys wrappers intact (viewOnceMessage, ephemeralMessage etc.)
-      if (autoViewOnce) autoViewOnce.onMessage(conn, mek).catch(() => {});
+      // ── Antidelete cache — fire-and-forget, never block cmd ──
+      if (antidelete) antidelete.onMessage(conn, mek, sessionId).catch(() => {});
 
       // ✅ FIX: Unwrap ephemeralMessage AND deviceSentMessage wrappers.
       // Newer WA versions send DM messages as { deviceSentMessage: { message: {...} } }
@@ -627,28 +612,14 @@ async function startBot(sessionId, authPath, envConfig) {
 
       const body        = extractBody(mek.message);
       const isCmd       = body.startsWith(prefix);
-      // noPrefix support — if body matches a registered noPrefix command, treat as cmd
-      const _bodyWord   = body.trim().split(/ +/)[0].toLowerCase();
-      const _noPrefixCmd = !isCmd
-          ? require("./command").commands.find(c =>
-              c.noPrefix && (c.pattern === _bodyWord || (c.alias && c.alias.includes(_bodyWord)))
-            )
-          : null;
-      const commandText = isCmd
-          ? body.slice(prefix.length).trim().split(/ +/)[0].toLowerCase()
-          : (_noPrefixCmd ? _bodyWord : "");
-      const args        = isCmd
-          ? body.slice(prefix.length).trim().split(/ +/).slice(1)
-          : body.trim().split(/ +/).slice(1);
+      const commandText = isCmd ? body.slice(prefix.length).trim().split(/ +/)[0].toLowerCase() : "";
+      const args        = body.trim().split(/ +/).slice(1);
       const q           = args.join(" ");
 
       // ── LID-safe sender extraction ──
-      const _isGroupMsg = from?.endsWith('@g.us');
       let sender = mek.key.fromMe
         ? conn.user.id.split(":")[0] + "@s.whatsapp.net"
-        : (_isGroupMsg
-            ? (mek.key.participant || mek.participant || mek.key.remoteJid)
-            : mek.key.remoteJid);
+        : mek.key.participant || mek.key.remoteJid;
 
       if (sender && sender.endsWith("@lid")) {
         try {
@@ -666,20 +637,6 @@ async function startBot(sessionId, authPath, envConfig) {
       const isOwner      = ownerNumber.includes(senderNumber) || botNumber === senderNumber;
       const reply        = (text) => conn.sendMessage(from, { text }, { quoted: mek });
 
-      // ── Antidelete cache — AFTER LID resolution so sender is correct ──
-      if (antidelete) {
-        // Inject the fully-resolved sender JID into mek so antidelete
-        // never sees a raw @lid. We use a shallow clone of key to avoid
-        // mutating the original Baileys object.
-        const mekForCache = Object.assign({}, mek, {
-          key: Object.assign({}, mek.key, {
-            participant: mek.key.remoteJid?.endsWith('@g.us') ? sender : mek.key.participant,
-          }),
-          _resolvedSender: sender,   // extra field antidelete can read directly
-        });
-        antidelete.onMessage(conn, mekForCache, sessionId).catch(() => {});
-      }
-
       // ── Owner react — react to messages SENT TO owner (not own messages) ──
       // fromMe=true  → owner sent this msg → react කරන්නෙ නෑ (own msg ලෙ react weird)
       // fromMe=false → someone sent to owner → 👑 react
@@ -688,7 +645,7 @@ async function startBot(sessionId, authPath, envConfig) {
         conn.sendMessage(from, { react: { text: "👑", key: mek.key } }).catch(() => {});
       }
 
-      if (isCmd || _noPrefixCmd) console.log(`[CMD] ${sessionId} | ${commandText} | sender: ${senderNumber} | isOwner: ${isOwner}`);
+      if (isCmd) console.log(`[CMD] ${sessionId} | ${commandText} | sender: ${senderNumber} | isOwner: ${isOwner}`);
 
       // ── Access Control ──
       const _hasActiveState = typeof global._cinesubzHasState === "function"
@@ -699,7 +656,7 @@ async function startBot(sessionId, authPath, envConfig) {
         const isGroup = from.endsWith("@g.us");
         const access  = global.checkAccess(sessionId, senderNumber, isOwner, isGroup);
         if (!access.allowed) {
-          if ((isCmd || _noPrefixCmd) && shouldSendDenied(sessionId, senderNumber)) {
+          if (isCmd && shouldSendDenied(sessionId, senderNumber)) {
             conn.sendMessage(from, { text: access.reason }, { quoted: mek }).catch(() => {});
           }
           return;
@@ -832,9 +789,6 @@ setTimeout(async () => {
   try {
     sms        = require("./lib/msg").sms;
     antidelete = require("./plugins/antidelete");
-    autoViewOnce = require("./plugins/vv");
-    antiCall   = require("./plugins/anticall");
-    groupEvents = require("./lib/groupevents");
     try { handleAutoForward = require("./plugins/forward").handleAutoForward; } catch {}
     console.log("Lib modules loaded successfully.");
   } catch (e) {
@@ -842,17 +796,6 @@ setTimeout(async () => {
     process.exit(1);
   }
   await connectDB();
-  // Load settings — safe call even if lib/settings export name differs
-  {
-    const _settingsLib = require("./lib/settings");
-    if (typeof _settingsLib.loadSettingsFromDB === 'function') {
-      await _settingsLib.loadSettingsFromDB();
-    } else if (typeof _settingsLib.loadSettings === 'function') {
-      _settingsLib.loadSettings();
-      console.log('[SETTINGS] ✅ Loaded from cache/file (loadSettingsFromDB unavailable)');
-    } else {
-      console.warn('[SETTINGS] ⚠️ Could not load settings — no loader found');
-    }
-  }
+  await loadSettingsFromDB();
   await connectToWA();
 }, 500); // minimal startup margin — no reason to wait 4 seconds
