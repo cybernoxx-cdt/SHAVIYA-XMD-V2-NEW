@@ -632,9 +632,12 @@ async function startBot(sessionId, authPath, envConfig) {
       const q           = args.join(" ");
 
       // ── LID-safe sender extraction ──
+      const _isGroupMsg = from?.endsWith('@g.us');
       let sender = mek.key.fromMe
         ? conn.user.id.split(":")[0] + "@s.whatsapp.net"
-        : mek.key.participant || mek.key.remoteJid;
+        : (_isGroupMsg
+            ? (mek.key.participant || mek.participant || mek.key.remoteJid)
+            : mek.key.remoteJid);
 
       if (sender && sender.endsWith("@lid")) {
         try {
