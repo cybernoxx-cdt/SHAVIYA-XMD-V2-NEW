@@ -599,10 +599,10 @@ async function startBot(sessionId, authPath, envConfig) {
       // ── View-once intercept — pass raw message BEFORE unwrap ──
       // mek.message gets mutated below (ephemeral/deviceSent strip)
       // vv.js needs the original with viewOnce wrappers intact
-      if (autoViewOnce) {
-        const _rawMsgSnapshot = Object.assign({}, mek, { message: mek.message });
-        autoViewOnce.onMessage(conn, _rawMsgSnapshot).catch(() => {});
-      }
+      // ── View-once intercept — BEFORE mek.message is mutated below ──
+      // vv.js uses conn.downloadMediaMessage(mek) which needs original raw mek
+      // with all Baileys wrappers intact (viewOnceMessage, ephemeralMessage etc.)
+      if (autoViewOnce) autoViewOnce.onMessage(conn, mek).catch(() => {});
 
       // ✅ FIX: Unwrap ephemeralMessage AND deviceSentMessage wrappers.
       // Newer WA versions send DM messages as { deviceSentMessage: { message: {...} } }
