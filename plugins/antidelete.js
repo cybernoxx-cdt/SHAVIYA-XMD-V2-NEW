@@ -61,7 +61,6 @@ function extractNumber(jid) {
 }
 
 // ── Resolve sender across all possible fields ─────────────
-// Priority: key.participant → mek.participant → senderKeyDistributionMessage → chat (DM)
 function resolveSender(mek, conn) {
     const chat    = mek.key?.remoteJid || '';
     const isGroup = chat.endsWith('@g.us');
@@ -71,11 +70,12 @@ function resolveSender(mek, conn) {
     }
 
     if (isGroup) {
+        // Check all participant fields — never fall back to group JID
         const raw =
-            mek.key?.participant      ||
-            mek.participant           ||
-            mek.message?.senderKeyDistributionMessage?.groupId?.replace('@g.us', '') ||
+            mek.key?.participant ||
+            mek.participant      ||
             '';
+        if (!raw || raw === chat) return ''; // group JID is not a sender
         return resolveSenderJid(raw, conn);
     }
 
@@ -191,8 +191,11 @@ async function buildInfo(conn, cached, update) {
         }
         locationLine = `👥 *Group:*      ${groupName}`;
 
-        const rawDeleterJid  = update?.key?.participant || update?.key?.remoteJid || '';
-        const deleterJid     = resolveSenderJid(rawDeleterJid, conn);
+        const rawDeleterJid  = update?.key?.participant || '';
+        // Never treat group JID as deleter
+        const deleterJid     = (rawDeleterJid && !rawDeleterJid.endsWith('@g.us'))
+            ? resolveSenderJid(rawDeleterJid, conn)
+            : '';
         const deleterNumber  = extractNumber(deleterJid);
 
         if (deleterNumber && deleterNumber !== senderNumber) {
