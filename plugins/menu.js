@@ -227,7 +227,7 @@ function buildSubMenu(key, prefix) {
     let m = '';
     m += `╭── [ *${sec.icon} ${sec.label}* ] ──\n`;
     for (const c of sec.commands) {
-        m += `│ ${c.p}\n`;
+        m += `│ \`${c.p}\` — ${c.d}\n`;
     }
     m += `╰──────────────────\n\n`;
     m += `> ⚡ *Prefix:* [ ${prefix} ] · *${sec.commands.length} commands*\n`;
