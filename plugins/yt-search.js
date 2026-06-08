@@ -28,7 +28,7 @@ END:VCARD`
 };
 
 cmd({
-    pattern: "yts",
+    pattern: "yts2",
     alias: ["ytsearch"],
     use: '.yts ranumitha',
     react: "🔎",
