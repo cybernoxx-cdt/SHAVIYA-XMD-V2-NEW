@@ -19,7 +19,7 @@ const fakevCard = {
 
 cmd({
     pattern:  "yt2",
-    alias:    ["ytvideo2", "ytv", "yt-video"],
+    alias:    ["ytvideo2"],
     react:    "🎬",
     desc:     "Download YouTube videos in multiple qualities",
     category: "download",
