@@ -60,6 +60,7 @@ const { File } = require("megajs");
 // lib modules — lazy load
 let sms;
 let antidelete, handleAutoForward;
+const { initAntiCrash } = require('./lib/anticrash');
 
 // ================= Global Variables =================
 const ownerNumber = (config.OWNER_NUMBER || "94707085822")
@@ -401,6 +402,9 @@ async function startBot(sessionId, authPath, envConfig) {
 
   if (!global._activeConns) global._activeConns = new Map();
   global._activeConns.set(sessionId, conn);
+
+  // ── Anti-Crash Protection ──
+  initAntiCrash(conn, sessionId, ownerNumber);
 
   conn.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect } = update;
