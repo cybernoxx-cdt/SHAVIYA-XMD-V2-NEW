@@ -9,7 +9,7 @@ const BOT_NAME   = 'Sʜᴀᴠɪʏᴀ Xᴍᴅ';
 const VERSION    = 'V2';
 const OWNER_NAME = 'ꜱᴀᴠᴇɴᴅʀᴀ ᴅᴀᴍᴘʀɪʏᴀ';
 const OWNER_NUM  = '94707085822';
-const POSTER_URL = 'https://files.catbox.moe/f18ceb.jpg';
+const POSTER_URL = 'https://whiteshadow-uploder.zone.id/files/so2y.jpg';
 const PREFIX     = '.';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
