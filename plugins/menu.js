@@ -251,13 +251,10 @@ async (conn, mek, m, { from, sender, reply }) => {
         const name   = m.pushName || 'User';
         const prefix = '.';
 
-        await conn.sendMessage(from, {
+        // Fire react instantly — no await, no sleep
+        conn.sendMessage(from, {
             react: { text: rnd(REACTS), key: mek.key }
-        });
-
-        await conn.sendPresenceUpdate('composing', from);
-        await sleep(800);
-        await conn.sendPresenceUpdate('available', from);
+        }).catch(() => {});
 
         const mainText = buildMainMenu(name, prefix);
 
@@ -296,13 +293,9 @@ async (conn, mek, m, { from, sender, reply }) => {
                 const jid = rcv.key.remoteJid;
                 if (!txt || !numMap[txt]) return;
 
-                await conn.sendMessage(jid, {
+                conn.sendMessage(jid, {
                     react: { text: rnd(REACTS), key: rcv.key }
-                });
-
-                await conn.sendPresenceUpdate('composing', jid);
-                await sleep(600);
-                await conn.sendPresenceUpdate('available', jid);
+                }).catch(() => {});
 
                 const subText = buildSubMenu(numMap[txt], prefix);
                 if (!subText) return;
@@ -361,10 +354,7 @@ for (const s of shortcuts) {
     },
     async (conn, mek, m, { from, sender, reply }) => {
         try {
-            await conn.sendMessage(from, { react: { text: s.react, key: mek.key } });
-            await conn.sendPresenceUpdate('composing', from);
-            await sleep(500);
-            await conn.sendPresenceUpdate('available', from);
+            conn.sendMessage(from, { react: { text: s.react, key: mek.key } }).catch(() => {});
 
             const text = buildSubMenu(s.key, '.');
             try {
