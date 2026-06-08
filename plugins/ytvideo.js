@@ -44,8 +44,8 @@ function listenForReplies(conn, from, sender, targetId, callback) {
 
 cmd(
   {
-    pattern:  "video",
-    alias:    ["ytdown"],
+    pattern:  "yts",
+    alias:    ["ytsearch"],
     ownerOnly: true,
     react:    "🎬",
     desc:     "YouTube Video Downloader — fast menu, API called only on download",
