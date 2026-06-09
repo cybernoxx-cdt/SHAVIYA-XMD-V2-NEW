@@ -25,11 +25,11 @@ function listenForReply(conn, from, sender, targetId, timeoutMs, callback) {
   const handler = (update) => {
     const msg = update.messages?.[0];
     if (!msg?.message) return;
-    const text    = msg.message.conversation || msg.message?.extendedTextMessage?.text || "";
-    const context = msg.message?.extendedTextMessage?.contextInfo;
+    const text      = msg.message.conversation || msg.message?.extendedTextMessage?.text || "";
+    const context   = msg.message?.extendedTextMessage?.contextInfo;
     const msgSender = msg.key.participant || msg.key.remoteJid;
-    const isReply = context?.stanzaId === targetId;
-    const isUser  = msgSender.includes(sender.split("@")[0]) || msgSender.includes("@lid");
+    const isReply   = context?.stanzaId === targetId;
+    const isUser    = msgSender.includes(sender.split("@")[0]) || msgSender.includes("@lid");
     if (msg.key.remoteJid === from && isUser && isReply) {
       conn.ev.off("messages.upsert", handler);
       clearTimeout(timer);
@@ -45,6 +45,75 @@ async function fetchThumb(url) {
     const res = await axios.get(url, { responseType: "arraybuffer", timeout: 12000 });
     return await sharp(Buffer.from(res.data)).resize(300).jpeg({ quality: 70 }).toBuffer();
   } catch { return null; }
+}
+
+// ── Quality Menu ──────────────────────────────────────────
+// Shows after episode selection. User picks quality + type.
+async function showQualityMenu(conn, from, sender, epUrl, epTitle, posterUrl, quotedMek, sessionId) {
+  const menuText =
+    `▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓\n` +
+    `  ⚡ *Sʜᴀᴠɪʏᴀ Xᴍᴅ* · 🎭 *KDrama*\n` +
+    `▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓\n\n` +
+    `🎬 *${epTitle}*\n\n` +
+    `▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰\n` +
+    `📌 *Select Quality & Type*\n` +
+    `▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰\n\n` +
+    `🎞️ *Video File (Gallery)*\n` +
+    `  ┣ *1* › 1080p 🔥\n` +
+    `  ┣ *2* › 720p  💎\n` +
+    `  ┣ *3* › 480p  🖥️\n` +
+    `  ┗ *4* › 360p  📺\n\n` +
+    `📂 *Document File*\n` +
+    `  ┣ *5* › 1080p 🔥\n` +
+    `  ┣ *6* › 720p  💎\n` +
+    `  ┣ *7* › 480p  🖥️\n` +
+    `  ┗ *8* › 360p  📺\n\n` +
+    `> ${FOOTER}`;
+
+  const qualButtons = [
+    { id: "1", text: "1. 🎞️ Video 1080p 🔥" },
+    { id: "2", text: "2. 🎞️ Video 720p 💎"  },
+    { id: "3", text: "3. 🎞️ Video 480p 🖥️"  },
+    { id: "4", text: "4. 🎞️ Video 360p 📺"  },
+    { id: "5", text: "5. 📂 Doc 1080p 🔥"   },
+    { id: "6", text: "6. 📂 Doc 720p 💎"    },
+    { id: "7", text: "7. 📂 Doc 480p 🖥️"    },
+    { id: "8", text: "8. 📂 Doc 360p 📺"    },
+  ];
+
+  const thumb = posterUrl ? await fetchThumb(posterUrl) : null;
+
+  const sentQual = await global.sendInteractiveButtons(conn, from, {
+    header:     `🎭 ${epTitle.slice(0, 60)}`,
+    body:       menuText,
+    footer:     "⚡ Sʜᴀᴠɪʏᴀ Xᴍᴅ · Reply number to download",
+    buttons:    qualButtons,
+    image:      thumb,
+    _sessionId: sessionId,
+  }, quotedMek);
+
+  const QUAL_MAP = {
+    "1": { quality: "1080p", isDoc: false },
+    "2": { quality: "720p",  isDoc: false },
+    "3": { quality: "480p",  isDoc: false },
+    "4": { quality: "360p",  isDoc: false },
+    "5": { quality: "1080p", isDoc: true  },
+    "6": { quality: "720p",  isDoc: true  },
+    "7": { quality: "480p",  isDoc: true  },
+    "8": { quality: "360p",  isDoc: true  },
+  };
+
+  listenForReply(conn, from, sender, sentQual.key.id, 600_000, async ({ msg, text }) => {
+    const selected = QUAL_MAP[text];
+    if (!selected) return;
+
+    await react(conn, from, msg.key, "📥");
+    await conn.sendMessage(from, {
+      text: `⏳ *Fetching ${selected.quality} ${selected.isDoc ? "document" : "video"}...*`
+    }, { quoted: msg });
+
+    await downloadAndSend(conn, from, epUrl, epTitle, posterUrl, selected.quality, selected.isDoc, msg);
+  });
 }
 
 // ═══════════════════════════════════════════════════
@@ -97,9 +166,9 @@ cmd(
         `🔍 *Results for:* ${query}\n\n`;
 
       list.forEach((item, i) => {
-        const title  = item.title || item.name || "Unknown";
-        const year   = item.year  || item.release_year || "";
-        const ep     = item.episodes ? `📺 ${item.episodes} eps` : "";
+        const title = item.title || item.name || "Unknown";
+        const year  = item.year  || item.release_year || "";
+        const ep    = item.episodes ? `📺 ${item.episodes} eps` : "";
         listText += `*${i + 1}.* 🎬 *${title}*${year ? ` _(${year})_` : ""}${ep ? ` · ${ep}` : ""}\n\n`;
       });
       listText += `🔢 *Reply number to select*\n\n> ${FOOTER}`;
@@ -122,14 +191,11 @@ cmd(
         const idx = parseInt(text) - 1;
         if (isNaN(idx) || !list[idx]) return;
 
-        const drama = list[idx];
-        const title = drama.title || drama.name || "KDrama";
+        const drama    = list[idx];
+        const title    = drama.title || drama.name || "KDrama";
         const dramaUrl = drama.url || drama.link || drama.href || "";
 
         await react(bot, from, msg.key, "⏳");
-
-        // ── Check if drama has multiple seasons/episodes ──
-        // Show episode/season menu
         await showDramaMenu(bot, from, sender, drama, dramaUrl, title, msg, sessionId);
       });
 
@@ -141,11 +207,10 @@ cmd(
 );
 
 // ══════════════════════════════════════════════════════════
-//   showDramaMenu — Show drama info + episode options
+//   showDramaMenu — Drama info + episode selection
 // ══════════════════════════════════════════════════════════
 async function showDramaMenu(conn, from, sender, drama, dramaUrl, title, quotedMek, sessionId) {
   try {
-    // Try to get download info first
     let dlData;
     try {
       const res = await axios.get(KDRAMA_DL, {
@@ -158,8 +223,7 @@ async function showDramaMenu(conn, from, sender, drama, dramaUrl, title, quotedM
       return;
     }
 
-    // ── Detect if multi-episode / season ──
-    const episodes = dlData?.episodes || dlData?.episode_list || dlData?.eps || [];
+    const episodes  = dlData?.episodes || dlData?.episode_list || dlData?.eps || [];
     const isMultiEp = Array.isArray(episodes) && episodes.length > 0;
 
     const poster  = drama.image || drama.poster || drama.thumbnail || dlData?.image || "";
@@ -174,17 +238,17 @@ async function showDramaMenu(conn, from, sender, drama, dramaUrl, title, quotedM
       `  ⚡ *Sʜᴀᴠɪʏᴀ Xᴍᴅ* · 🎭 *KDrama*\n` +
       `▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓\n\n` +
       `🎬 *${title}*\n`;
-    if (year)   infoText += `📅 *Year:* ${year}\n`;
-    if (genre)  infoText += `🎭 *Genre:* ${genre}\n`;
-    if (status) infoText += `📺 *Status:* ${status}\n`;
+    if (year)      infoText += `📅 *Year:* ${year}\n`;
+    if (genre)     infoText += `🎭 *Genre:* ${genre}\n`;
+    if (status)    infoText += `📺 *Status:* ${status}\n`;
     if (isMultiEp) infoText += `📋 *Episodes:* ${totalEp}\n`;
-    if (desc)   infoText += `\n📝 ${desc.slice(0, 200)}${desc.length > 200 ? "..." : ""}\n`;
+    if (desc)      infoText += `\n📝 ${desc.slice(0, 200)}${desc.length > 200 ? "..." : ""}\n`;
     infoText += `\n▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰\n`;
 
     const thumb = poster ? await fetchThumb(poster) : null;
 
     if (isMultiEp) {
-      // ── Multi-episode drama — ask for episode number ──
+      // ── Multi-episode: ask episode number first ──
       infoText +=
         `📌 *Reply episode number (1 - ${episodes.length})*\n` +
         `_Or reply *0* to download ALL episodes_\n` +
@@ -192,9 +256,7 @@ async function showDramaMenu(conn, from, sender, drama, dramaUrl, title, quotedM
         `> ${FOOTER}`;
 
       const epButtons = [];
-      // Show first 5 episodes + "All" button
-      const previewEps = episodes.slice(0, 5);
-      previewEps.forEach((ep, i) => {
+      episodes.slice(0, 5).forEach((ep, i) => {
         const epTitle = ep.title || ep.name || `Episode ${i + 1}`;
         epButtons.push({ id: String(i + 1), text: `Ep ${i + 1}: ${epTitle.slice(0, 35)}` });
       });
@@ -209,35 +271,17 @@ async function showDramaMenu(conn, from, sender, drama, dramaUrl, title, quotedM
         _sessionId: sessionId,
       }, quotedMek);
 
-      // Wait for episode selection
       listenForReply(conn, from, sender, sentInfo.key.id, 600_000, async ({ msg, text }) => {
         const epNum = parseInt(text);
         if (isNaN(epNum)) return;
 
-        await react(conn, from, msg.key, "📥");
+        await react(conn, from, msg.key, "⏳");
 
         if (epNum === 0) {
-          // Download ALL episodes
-          await conn.sendMessage(from, {
-            text: `⏳ *Downloading all ${episodes.length} episodes...*\n_This may take a while!_`
-          }, { quoted: msg });
-
-          for (let i = 0; i < episodes.length; i++) {
-            const ep = episodes[i];
-            const epUrl = ep.url || ep.link || ep.href || "";
-            const epTitle = ep.title || ep.name || `Episode ${i + 1}`;
-            await conn.sendMessage(from, { text: `⬇️ *Fetching:* ${epTitle} (${i + 1}/${episodes.length})` });
-            await downloadAndSendEpisode(conn, from, epUrl, `${title} - ${epTitle}`, poster, msg);
-            // Small delay between episodes
-            await new Promise(r => setTimeout(r, 2000));
-          }
-
-          await conn.sendMessage(from, {
-            text: `✅ *All ${episodes.length} episodes sent!*\n\n> ${FOOTER}`
-          }, { quoted: msg });
-
+          // ── ALL episodes: ask quality once, apply to all ──
+          await showQualityMenuForAll(conn, from, sender, episodes, title, poster, msg, sessionId);
         } else {
-          // Single episode
+          // ── Single episode: show quality menu ──
           const ep = episodes[epNum - 1];
           if (!ep) {
             return conn.sendMessage(from, {
@@ -246,39 +290,20 @@ async function showDramaMenu(conn, from, sender, drama, dramaUrl, title, quotedM
           }
           const epUrl   = ep.url || ep.link || ep.href || "";
           const epTitle = ep.title || ep.name || `Episode ${epNum}`;
-
-          await conn.sendMessage(from, {
-            text: `⏳ *Downloading:* ${epTitle}...`
-          }, { quoted: msg });
-
-          await downloadAndSendEpisode(conn, from, epUrl, `${title} - ${epTitle}`, poster, msg);
+          await showQualityMenu(conn, from, sender, epUrl, `${title} - ${epTitle}`, poster, msg, sessionId);
         }
       });
 
     } else {
-      // ── Single episode / movie ──
+      // ── Single file: show quality menu directly ──
       const directUrl = dlData?.download_url || dlData?.url || dlData?.link || dramaUrl;
-
       infoText +=
-        `📌 *Reply 1 to Download*\n` +
+        `📌 *Select quality below to download*\n` +
         `▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰\n\n` +
         `> ${FOOTER}`;
 
-      const sentInfo = await global.sendInteractiveButtons(conn, from, {
-        header:     `🎭 ${title.slice(0, 60)}`,
-        body:       infoText,
-        footer:     "⚡ Sʜᴀᴠɪʏᴀ Xᴍᴅ · Reply 1 to Download",
-        buttons:    [{ id: "1", text: "⬇️ Download Now" }],
-        image:      thumb,
-        _sessionId: sessionId,
-      }, quotedMek);
-
-      listenForReply(conn, from, sender, sentInfo.key.id, 600_000, async ({ msg, text }) => {
-        if (text !== "1") return;
-        await react(conn, from, msg.key, "📥");
-        await conn.sendMessage(from, { text: `⏳ *Downloading* ${title}...` }, { quoted: msg });
-        await downloadAndSendEpisode(conn, from, directUrl, title, poster, msg);
-      });
+      // Jump straight to quality menu
+      await showQualityMenu(conn, from, sender, directUrl, title, poster, quotedMek, sessionId);
     }
 
   } catch (e) {
@@ -287,14 +312,94 @@ async function showDramaMenu(conn, from, sender, drama, dramaUrl, title, quotedM
   }
 }
 
+// ── Quality menu for ALL episodes ────────────────────────
+async function showQualityMenuForAll(conn, from, sender, episodes, title, posterUrl, quotedMek, sessionId) {
+  const menuText =
+    `▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓\n` +
+    `  ⚡ *Sʜᴀᴠɪʏᴀ Xᴍᴅ* · 🎭 *KDrama*\n` +
+    `▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓\n\n` +
+    `🎬 *${title}*\n` +
+    `📦 *All ${episodes.length} Episodes*\n\n` +
+    `▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰\n` +
+    `📌 *Select Quality & Type*\n` +
+    `▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰\n\n` +
+    `🎞️ *Video File (Gallery)*\n` +
+    `  ┣ *1* › 1080p 🔥\n` +
+    `  ┣ *2* › 720p  💎\n` +
+    `  ┣ *3* › 480p  🖥️\n` +
+    `  ┗ *4* › 360p  📺\n\n` +
+    `📂 *Document File*\n` +
+    `  ┣ *5* › 1080p 🔥\n` +
+    `  ┣ *6* › 720p  💎\n` +
+    `  ┣ *7* › 480p  🖥️\n` +
+    `  ┗ *8* › 360p  📺\n\n` +
+    `> ${FOOTER}`;
+
+  const qualButtons = [
+    { id: "1", text: "1. 🎞️ Video 1080p 🔥" },
+    { id: "2", text: "2. 🎞️ Video 720p 💎"  },
+    { id: "3", text: "3. 🎞️ Video 480p 🖥️"  },
+    { id: "4", text: "4. 🎞️ Video 360p 📺"  },
+    { id: "5", text: "5. 📂 Doc 1080p 🔥"   },
+    { id: "6", text: "6. 📂 Doc 720p 💎"    },
+    { id: "7", text: "7. 📂 Doc 480p 🖥️"    },
+    { id: "8", text: "8. 📂 Doc 360p 📺"    },
+  ];
+
+  const QUAL_MAP = {
+    "1": { quality: "1080p", isDoc: false },
+    "2": { quality: "720p",  isDoc: false },
+    "3": { quality: "480p",  isDoc: false },
+    "4": { quality: "360p",  isDoc: false },
+    "5": { quality: "1080p", isDoc: true  },
+    "6": { quality: "720p",  isDoc: true  },
+    "7": { quality: "480p",  isDoc: true  },
+    "8": { quality: "360p",  isDoc: true  },
+  };
+
+  const thumb = posterUrl ? await fetchThumb(posterUrl) : null;
+
+  const sentQual = await global.sendInteractiveButtons(conn, from, {
+    header:     `🎭 ${title.slice(0, 60)} — All Episodes`,
+    body:       menuText,
+    footer:     "⚡ Sʜᴀᴠɪʏᴀ Xᴍᴅ · Reply number",
+    buttons:    qualButtons,
+    image:      thumb,
+    _sessionId: sessionId,
+  }, quotedMek);
+
+  listenForReply(conn, from, sender, sentQual.key.id, 600_000, async ({ msg, text }) => {
+    const selected = QUAL_MAP[text];
+    if (!selected) return;
+
+    await react(conn, from, msg.key, "📥");
+    await conn.sendMessage(from, {
+      text: `⏳ *Downloading all ${episodes.length} episodes in ${selected.quality} ${selected.isDoc ? "(Document)" : "(Video)"}...*\n_This may take a while!_`
+    }, { quoted: msg });
+
+    for (let i = 0; i < episodes.length; i++) {
+      const ep      = episodes[i];
+      const epUrl   = ep.url || ep.link || ep.href || "";
+      const epTitle = ep.title || ep.name || `Episode ${i + 1}`;
+      await conn.sendMessage(from, { text: `⬇️ *Fetching:* ${epTitle} (${i + 1}/${episodes.length})` });
+      await downloadAndSend(conn, from, epUrl, `${title} - ${epTitle}`, posterUrl, selected.quality, selected.isDoc, msg);
+      await new Promise(r => setTimeout(r, 2000));
+    }
+
+    await conn.sendMessage(from, {
+      text: `✅ *All ${episodes.length} episodes sent in ${selected.quality}!*\n\n> ${FOOTER}`
+    }, { quoted: msg });
+  });
+}
+
 // ══════════════════════════════════════════════════════════
-//   downloadAndSendEpisode — fetch dl link & send as doc
+//   downloadAndSend — fetch dl link, stream & send
 // ══════════════════════════════════════════════════════════
-async function downloadAndSendEpisode(conn, from, epUrl, title, posterUrl, quotedMek) {
+async function downloadAndSend(conn, from, epUrl, title, posterUrl, quality, isDoc, quotedMek) {
   const filePath = path.join(TEMP_DIR, `kdrama_${Date.now()}.mp4`);
 
   try {
-    // Get direct download link from DL API
+    // Resolve download link via DL API
     let downloadUrl = epUrl;
     try {
       const dlRes = await axios.get(KDRAMA_DL, {
@@ -302,10 +407,16 @@ async function downloadAndSendEpisode(conn, from, epUrl, title, posterUrl, quote
         timeout: 25000,
       });
       const dlData = dlRes.data?.result || dlRes.data?.data || dlRes.data;
-      downloadUrl  = dlData?.download_url || dlData?.url || dlData?.link || epUrl;
-    } catch (e) {
-      // Use epUrl directly if DL API fails
-    }
+      // Pick quality-specific link if API provides them
+      const qualLinks = dlData?.qualities || dlData?.links || {};
+      downloadUrl =
+        qualLinks[quality] ||
+        qualLinks[quality.toLowerCase()] ||
+        dlData?.download_url ||
+        dlData?.url ||
+        dlData?.link ||
+        epUrl;
+    } catch {}
 
     if (!downloadUrl) {
       return conn.sendMessage(from, {
@@ -313,15 +424,12 @@ async function downloadAndSendEpisode(conn, from, epUrl, title, posterUrl, quote
       }, { quoted: quotedMek });
     }
 
-    // Fetch thumbnail
     let jpegThumb;
     if (posterUrl) jpegThumb = await fetchThumb(posterUrl);
 
-    // Stream download
-    const response = await axios({ method: "get", url: downloadUrl, responseType: "stream", timeout: 120000 });
+    const response = await axios({ method: "get", url: downloadUrl, responseType: "stream", timeout: 180000 });
     const writer   = fs.createWriteStream(filePath);
     response.data.pipe(writer);
-
     await new Promise((resolve, reject) => {
       writer.on("finish", resolve);
       writer.on("error", reject);
@@ -334,16 +442,27 @@ async function downloadAndSendEpisode(conn, from, epUrl, title, posterUrl, quote
       `  ⚡ *Sʜᴀᴠɪʏᴀ Xᴍᴅ* · ✅ *Done*\n` +
       `▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓\n\n` +
       `🎭 *${title}*\n` +
+      `💎 *Quality:* ${quality}\n` +
+      `📁 *Type:* ${isDoc ? "Document" : "Video"}\n` +
       `💾 *Size:* ${sizeMB} MB\n\n` +
       `> ${FOOTER}`;
 
-    await conn.sendMessage(from, {
-      document:      fs.readFileSync(filePath),
-      mimetype:      "video/mp4",
-      fileName:      `${safeName(title)}.mp4`,
-      jpegThumbnail: jpegThumb,
-      caption,
-    }, { quoted: quotedMek });
+    if (isDoc) {
+      await conn.sendMessage(from, {
+        document:      fs.readFileSync(filePath),
+        mimetype:      "video/mp4",
+        fileName:      `${safeName(title)}_${quality}.mp4`,
+        jpegThumbnail: jpegThumb,
+        caption,
+      }, { quoted: quotedMek });
+    } else {
+      await conn.sendMessage(from, {
+        video:         fs.readFileSync(filePath),
+        mimetype:      "video/mp4",
+        jpegThumbnail: jpegThumb,
+        caption,
+      }, { quoted: quotedMek });
+    }
 
     await react(conn, from, quotedMek.key, "✅");
 
