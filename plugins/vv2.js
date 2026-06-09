@@ -1,6 +1,8 @@
 // ============================================================
 //  vv2.js — SHAVIYA-XMD V2
-//  View-Once Message Retriever (Owner Only)
+//  View-Once Message Retriever
+//  FIXED: uses correct sender from destructured params
+//        + proper mtype detection for view-once messages
 //  © Mr Savendra
 // ============================================================
 
@@ -9,63 +11,91 @@ const { cmd } = require('../command');
 cmd({
     pattern:  'vv2',
     alias:    ['wah', 'ohh', 'oho', 'nice', 'ok'],
-    desc:     'Retrieve view-once message back to user (Owner Only)',
-    category: 'owner',
+    desc:     'Retrieve view-once message back to user',
+    category: 'tools',
     filename: __filename
 },
-async (conn, mek, m, { from, isCreator }) => {
+async (conn, mek, m, { from, sender, isOwner, reply }) => {
     try {
-        if (!isCreator) return; // Silent — no response for non-owner
+        // ✅ vv2 only for owner (silent for others)
+        if (!isOwner) return;
 
-        if (!m.quoted) {
+        if (!mek.quoted) {
             return await conn.sendMessage(from, {
                 text: '*🍁 Please reply to a view once message!*'
             }, { quoted: mek });
         }
 
-        const buffer = await m.quoted.download();
-        const mtype  = m.quoted.mtype;
+        // ✅ FIX: view-once messages have viewOnceMessage wrapper
+        // mtype could be 'imageMessage', 'videoMessage', or wrapped in viewOnce
+        const quotedMsg  = mek.quoted;
+        const mtype      = quotedMsg.mtype || quotedMsg.type || '';
 
-        let messageContent = {};
-
-        switch (mtype) {
-            case 'imageMessage':
-                messageContent = {
-                    image:    buffer,
-                    caption:  m.quoted.text || '',
-                    mimetype: m.quoted.mimetype || 'image/jpeg'
-                };
-                break;
-
-            case 'videoMessage':
-                messageContent = {
-                    video:    buffer,
-                    caption:  m.quoted.text || '',
-                    mimetype: m.quoted.mimetype || 'video/mp4'
-                };
-                break;
-
-            case 'audioMessage':
-                messageContent = {
-                    audio:    buffer,
-                    mimetype: 'audio/mp4',
-                    ptt:      m.quoted.ptt || false
-                };
-                break;
-
-            default:
-                return await conn.sendMessage(from, {
-                    text: '❌ *Only image, video, and audio messages are supported.*'
-                }, { quoted: mek });
+        // Detect actual media type (unwrap view-once if needed)
+        let mediaType = mtype;
+        if (mtype === 'viewOnceMessage' || mtype === 'viewOnceMessageV2') {
+            const inner = quotedMsg.message?.viewOnceMessage?.message ||
+                          quotedMsg.message?.viewOnceMessageV2?.message || {};
+            mediaType = Object.keys(inner)[0] || mtype;
         }
 
-        // Forward to sender's DM
-        await conn.sendMessage(mek.sender, messageContent, { quoted: mek });
+        if (!['imageMessage', 'videoMessage', 'audioMessage'].includes(mediaType)) {
+            return await conn.sendMessage(from, {
+                text: '❌ *Only image, video, and audio messages are supported.*'
+            }, { quoted: mek });
+        }
+
+        // ✅ FIX: download the view-once media
+        let buffer;
+        try {
+            buffer = await quotedMsg.download();
+        } catch (dlErr) {
+            return await conn.sendMessage(from, {
+                text: `❌ *Failed to download media:* ${dlErr.message}`
+            }, { quoted: mek });
+        }
+
+        if (!buffer || buffer.length === 0) {
+            return await conn.sendMessage(from, {
+                text: '❌ *Could not retrieve media. It may have expired.*'
+            }, { quoted: mek });
+        }
+
+        // ✅ FIX: send to sender's DM using correct sender from params
+        let messageContent = {};
+
+        if (mediaType === 'imageMessage') {
+            messageContent = {
+                image:    buffer,
+                caption:  quotedMsg.text || quotedMsg.caption || '🖼️ *View Once Image*',
+                mimetype: quotedMsg.mimetype || 'image/jpeg'
+            };
+        } else if (mediaType === 'videoMessage') {
+            messageContent = {
+                video:    buffer,
+                caption:  quotedMsg.text || quotedMsg.caption || '🎥 *View Once Video*',
+                mimetype: quotedMsg.mimetype || 'video/mp4'
+            };
+        } else if (mediaType === 'audioMessage') {
+            messageContent = {
+                audio:    buffer,
+                mimetype: 'audio/mp4',
+                ptt:      quotedMsg.ptt || false
+            };
+        }
+
+        // Send to owner DM
+        await conn.sendMessage(sender, messageContent, { quoted: mek });
+
+        // React success
+        try { await conn.sendMessage(from, { react: { text: '✅', key: mek.key } }); } catch {}
 
     } catch (error) {
         console.error('[VV2 ERROR]', error.message);
-        await conn.sendMessage(from, {
-            text: '❌ *Error fetching message:*\n' + error.message
-        }, { quoted: mek });
+        try {
+            await conn.sendMessage(from, {
+                text: `❌ *Error fetching message:* ${error.message}`
+            }, { quoted: mek });
+        } catch {}
     }
 });
