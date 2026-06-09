@@ -166,14 +166,14 @@ cmd({
     filename: __filename
 },
 async (conn, mek, m, { reply }) => {
-    if (!mek.quoted) return reply('*Reply to any Image or Video.*');
-    const mime = mek.quoted.mtype;
+    if (!m.quoted) return reply('*Reply to any Image or Video.*');
+    const mime = m.quoted.type;
     if (!['imageMessage', 'stickerMessage', 'videoMessage'].includes(mime)) {
         return reply('❌ Please reply to an image or video.');
     }
     try {
-        const media = await mek.quoted.download();
-        const pack  = Config.PACKNAME || 'SHAVIYA-XMD V2';
+        const media = await m.quoted.download();
+        const pack  = Config.PACKNAME || 'SHAVIYA XMD';
         await makeAndSendSticker(conn, mek, media, mime, pack, reply);
     } catch (err) {
         console.error('[sticker]', err.message);
@@ -192,14 +192,14 @@ cmd({
     filename: __filename
 },
 async (conn, mek, m, { q, reply }) => {
-    if (!mek.quoted) return reply('*Reply to any sticker.*');
+    if (!m.quoted) return reply('*Reply to any sticker.*');
     if (!q)          return reply('*Please provide a pack name: .take <packname>*');
-    const mime = mek.quoted.mtype;
+    const mime = m.quoted.type;
     if (!['imageMessage', 'stickerMessage', 'videoMessage'].includes(mime)) {
         return reply('❌ Please reply to an image or sticker.');
     }
     try {
-        const media = await mek.quoted.download();
+        const media = await m.quoted.download();
         await makeAndSendSticker(conn, mek, media, mime, q, reply);
     } catch (err) {
         console.error('[take]', err.message);
