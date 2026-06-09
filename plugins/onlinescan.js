@@ -1,108 +1,145 @@
+// ============================================================
+//  online.js — SHAVIYA-XMD V2
+//  Check who is online in the group
+//  Styled to match SHAVIYA-XMD menu.js style
+//  © Mr Savendra
+// ============================================================
+
 const { cmd } = require('../command');
 
-const fakevCard = {
-    key: {
-        fromMe: false,
-        participant: "0@s.whatsapp.net",
-        remoteJid: "status@broadcast"
-    },
+const OWNER_NUM = '94707085822';
+
+const FakeVCard = {
+    key: { fromMe: false, participant: '0@s.whatsapp.net', remoteJid: 'status@broadcast' },
     message: {
         contactMessage: {
-            displayName: "© Mr Hiruka",
-            vcard: `BEGIN:VCARD
-VERSION:3.0
-FN:Meta
-ORG:META AI;
-TEL;type=CELL;type=VOICE;waid=94762095304:+94762095304
-END:VCARD`
+            displayName: '© Mr Savendra',
+            vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:SHAVIYA-XMD\nORG:SHAVIYA BOT;\nTEL;type=CELL;type=VOICE;waid=${OWNER_NUM}:+${OWNER_NUM}\nEND:VCARD`
         }
     }
 };
 
+const CTX = {
+    forwardingScore: 999,
+    isForwarded: true,
+    forwardedNewsletterMessageInfo: {
+        newsletterJid: '@newsletter',
+        newsletterName: '© Mr Savendra',
+        serverMessageId: 143
+    }
+};
+
 cmd({
-    pattern: "online",
-    alias: ["ranuonline", "onlinemembers", "active"],
-    desc: "Show online group members",
-    category: "group",
-    react: "🟢",
+    pattern:  'online',
+    alias:    ['onlinemembers', 'onlinep', 'activemembers', 'active'],
+    desc:     'Check who is online in the group',
+    category: 'group',
+    react:    '🟢',
     filename: __filename
 },
-async (conn, mek, m, { from, isGroup, isAdmins, isOwner, fromMe, reply }) => {
+async (conn, mek, m, { from, sender, senderNumber, isOwner, reply }) => {
     try {
+        // ── Group check ──
+        const isGroup = from.endsWith('@g.us');
+        if (!isGroup) return reply('❌ *This command can only be used in a group!*');
 
-        if (!isGroup) {
-            return reply("❌ This command can only be used in groups.");
+        // ── Admin check ──
+        let isAdmins = false;
+        let groupData;
+        try {
+            groupData = await conn.groupMetadata(from);
+            const admins = groupData.participants
+                .filter(p => p.admin === 'admin' || p.admin === 'superadmin')
+                .map(p => p.id);
+            isAdmins = admins.some(id => id.includes(senderNumber));
+        } catch (e) {
+            return reply('❌ *Failed to fetch group info:* ' + e.message);
         }
 
-        if (!isAdmins && !isOwner && !fromMe) {
-            return reply("🚫 Admin or Owner only command.");
+        if (!isOwner && !isAdmins) {
+            return reply('🚫 *Admins & Owner only command!*');
         }
 
-        await reply("🔍 Scanning online members...");
+        // ── Scanning message ── (menu style)
+        const scanMsg =
+            `╭─── [ *🟢 ᴏɴʟɪɴᴇ sᴄᴀɴɴᴇʀ* ] ────\n` +
+            `│ 🔍 *sᴄᴀɴɴɪɴɢ ᴍᴇᴍʙᴇʀs...*\n` +
+            `│ ⏳ *ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ 18 sᴇᴄᴏɴᴅs*\n` +
+            `│ 👥 *ᴛᴏᴛᴀʟ:* ${groupData.participants.length} ᴍᴇᴍʙᴇʀs\n` +
+            `╰──────────────────\n\n` +
+            `> *© ᴘᴏᴡᴇʀᴇᴅ ʙʏ Sʜᴀᴠɪʏᴀ-Xᴍᴅ*`;
 
-        const metadata = await conn.groupMetadata(from);
-        const onlineUsers = new Set();
+        await conn.sendMessage(from, {
+            text: scanMsg,
+            contextInfo: CTX
+        }, { quoted: FakeVCard });
 
-        const presenceHandler = (update) => {
-            if (!update.presences) return;
+        // ── Subscribe to presence ──
+        const participants = groupData.participants.map(p => p.id);
+        const onlineMembers = new Set();
 
-            for (const jid in update.presences) {
-                const presence = update.presences[jid];
+        await Promise.allSettled(
+            participants.map(id => conn.presenceSubscribe(id))
+        );
 
-                if (
-                    presence.lastKnownPresence === "available" ||
-                    presence.lastKnownPresence === "composing" ||
-                    presence.lastKnownPresence === "recording"
-                ) {
-                    onlineUsers.add(jid);
+        // ── Presence listener ──
+        const presenceHandler = ({ id, presences }) => {
+            for (const jid in presences) {
+                const state = presences[jid]?.lastKnownPresence;
+                if (['available', 'composing', 'recording'].includes(state)) {
+                    onlineMembers.add(jid);
                 }
             }
         };
 
-        conn.ev.on("presence.update", presenceHandler);
+        conn.ev.on('presence.update', presenceHandler);
 
-        // Subscribe all members
-        for (const member of metadata.participants) {
-            try {
-                await conn.presenceSubscribe(member.id);
-            } catch (e) {}
+        // ── Wait 18s ──
+        await new Promise(r => setTimeout(r, 18000));
+        conn.ev.off('presence.update', presenceHandler);
+
+        // ── Build result ──
+        if (onlineMembers.size === 0) {
+            const noOneMsg =
+                `╭─── [ *🟢 ᴏɴʟɪɴᴇ sᴄᴀɴɴᴇʀ* ] ────\n` +
+                `│ ⚠️ *ɴᴏ ᴏɴʟɪɴᴇ ᴍᴇᴍʙᴇʀs ᴅᴇᴛᴇᴄᴛᴇᴅ*\n` +
+                `│ 💡 *ᴛʜᴇʏ ᴍᴀʏ ʜᴀᴠᴇ ʜɪᴅᴅᴇɴ ᴘʀᴇsᴇɴᴄᴇ*\n` +
+                `╰──────────────────\n\n` +
+                `> *© ᴘᴏᴡᴇʀᴇᴅ ʙʏ Sʜᴀᴠɪʏᴀ-Xᴍᴅ*`;
+
+            return conn.sendMessage(from, {
+                text: noOneMsg,
+                contextInfo: CTX
+            }, { quoted: FakeVCard });
         }
 
-        // Wait 10 seconds
-        await new Promise(resolve => setTimeout(resolve, 10000));
+        const onlineArray = Array.from(onlineMembers);
 
-        conn.ev.off("presence.update", presenceHandler);
-
-        if (onlineUsers.size < 1) {
-            return reply(
-                "⚠️ No online members detected.\n\nWhatsApp privacy settings may hide presence."
-            );
-        }
-
-        const users = [...onlineUsers];
-
-        let text = `🟢 *ONLINE MEMBERS*\n`;
-        text += `👥 ${users.length}/${metadata.participants.length}\n\n`;
-
-        users.forEach((jid, i) => {
-            text += `${i + 1}. @${jid.split("@")[0]}\n`;
+        // Build member list in menu style
+        let memberList = '';
+        onlineArray.forEach((id, i) => {
+            memberList += `│ *${i + 1}.* @${id.split('@')[0]}\n`;
         });
 
-        text += `\n> © SHAVIYA-XMD V2`;
+        const resultMsg =
+            `╭─── [ *🟢 ᴏɴʟɪɴᴇ ᴍᴇᴍʙᴇʀs* ] ────\n` +
+            `│ 👥 *ᴏɴʟɪɴᴇ:* ${onlineArray.length}/${groupData.participants.length}\n` +
+            `│ 🏷️ *ɢʀᴏᴜᴘ:* ${groupData.subject || 'Group'}\n` +
+            `╰──────────────────\n` +
+            `╭─── [ *👤 ᴍᴇᴍʙᴇʀ ʟɪsᴛ* ] ────\n` +
+            memberList +
+            `╰──────────────────\n\n` +
+            `> ⚡ *Prefix:* [ . ] · *${onlineArray.length} ᴏɴʟɪɴᴇ*\n` +
+            `> *© ᴘᴏᴡᴇʀᴇᴅ ʙʏ Sʜᴀᴠɪʏᴀ-Xᴍᴅ*`;
 
-        await conn.sendMessage(
-            from,
-            {
-                text,
-                mentions: users
-            },
-            {
-                quoted: fakevCard
-            }
-        );
+        await conn.sendMessage(from, {
+            text:     resultMsg,
+            mentions: onlineArray,
+            contextInfo: { ...CTX, mentionedJid: onlineArray }
+        }, { quoted: FakeVCard });
 
-    } catch (err) {
-        console.error(err);
-        reply(`❌ Error:\n${err.message}`);
+    } catch (e) {
+        console.error('[ONLINE ERROR]', e.message);
+        reply(`❌ *Error:* ${e.message}`);
     }
 });
