@@ -1,46 +1,70 @@
-const { cmd } = require("../command");
-const { fetchJson } = require("../lib/functions");
+// ============================================================
+//  ai.js — SHAVIYA-XMD V2
+//  DeepSeek AI Assistant — FIXED: timeout + response parsing
+//  © Mr Savendra
+// ============================================================
+
+const { cmd } = require('../command');
+const axios   = require('axios');
 
 cmd({
-    pattern: "ds",
-    react: "🧠",
-    desc: "DeepSeek AI Assistant",
-    category: "ai",
+    pattern:  'ds',
+    react:    '🧠',
+    desc:     'DeepSeek AI Assistant',
+    category: 'ai',
     filename: __filename
 },
 async (conn, mek, m, { q, reply }) => {
+    try {
+        if (!q) return reply(
+            `╔══════════════════════╗\n` +
+            `║  🧠 *DeepSeek AI*  🧠  ║\n` +
+            `╚══════════════════════╝\n\n` +
+            `*Usage:* .ds <your question>\n` +
+            `*Example:* .ds What is Node.js?\n\n` +
+            `> ⚡ Sʜᴀᴠɪʏᴀ Xᴍᴅ`
+        );
 
-try {
+        await conn.sendPresenceUpdate('composing', m.chat);
 
-if (!q) return reply("❌ Please ask something!\nExample: .ds What is Node.js?");
+        const api = `https://whiteshadow-x-api.vercel.app/api/ai/deepseekv4?q=${encodeURIComponent(q)}&apitoken=e76n2P`;
 
-await conn.sendPresenceUpdate("composing", m.chat); // typing effect
+        let res;
+        try {
+            const response = await axios.get(api, { timeout: 30000 });
+            res = response.data;
+        } catch (fetchErr) {
+            if (fetchErr.code === 'ECONNABORTED' || fetchErr.message.includes('timeout')) {
+                return reply('⏱️ *DeepSeek AI is taking too long to respond. Please try again!*');
+            }
+            return reply(`❌ *API connection failed:* ${fetchErr.message}`);
+        }
 
-let api = `https://whiteshadow-x-api.vercel.app/api/ai/deepseekv4?q=${encodeURIComponent(q)}&apitoken=e76n2P`;
+        if (!res) return reply('❌ *No response from AI. Please try again!*');
 
-let res = await fetchJson(api);
+        // Extract answer — handle all common response shapes
+        const answer =
+            res.result     ||
+            res.response   ||
+            res.answer     ||
+            res.message    ||
+            res.reply      ||
+            res.output     ||
+            res.text       ||
+            (typeof res === 'string' ? res : null) ||
+            JSON.stringify(res);
 
-console.log(res);
+        if (!answer || answer === '{}' || answer === 'null') {
+            return reply('❌ *AI returned an empty response. Try again!*');
+        }
 
-// Check if response is valid
-if (!res) {
-    return reply("❌ API not responding properly!");
-}
+        const modelInfo = res.model ? `📌 *Model:* ${res.model}\n\n` : '';
+        const footer    = '\n\n> ⚡ _Sʜᴀᴠɪʏᴀ Xᴍᴅ · DeepSeek AI_';
 
-// Extract response based on common possible structures
-let answer = res.result || res.response || res.message || res.reply || JSON.stringify(res);
+        return reply(modelInfo + answer + footer);
 
-// Optional: Add model info if available
-let modelInfo = res.model ? `📌 Model: ${res.model}\n\n` : "";
-let footer = "\n\n✨ _DeepSeek Assistant_";
-
-return reply(modelInfo + answer + footer);
-
-} catch (e) {
-
-console.log(e);
-reply("❌ Error occurred while fetching AI response!");
-
-}
-
+    } catch (e) {
+        console.error('[DS AI ERROR]', e.message);
+        reply(`❌ *Error:* ${e.message}`);
+    }
 });
