@@ -2,18 +2,18 @@
 //  tool-convert — SHAVIYA-XMD V2
 //  s2i  = sticker → image
 //  aya  = image/video → animated sticker
-//  FIXED: correct parameter names (conn, mek, m, { from, reply })
-//         + ffmpeg-based sticker-to-image fallback
+//  FIXED: m.quoted (not mek.quoted), m.quoted.type (not mtype)
+//         m.quoted.download() correct usage
 //  © Mr Savendra
 // ============================================================
 
 'use strict';
 
-const { cmd }   = require('../command');
-const fs        = require('fs');
-const path      = require('path');
-const os        = require('os');
-const fluent    = require('fluent-ffmpeg');
+const { cmd } = require('../command');
+const fs      = require('fs');
+const path    = require('path');
+const os      = require('os');
+const fluent  = require('fluent-ffmpeg');
 
 // ── Resolve ffmpeg ──────────────────────────────────────────
 let ffmpegPath = null;
@@ -36,7 +36,7 @@ if (!ffmpegPath) {
 }
 if (ffmpegPath) fluent.setFfmpegPath(ffmpegPath);
 
-// ── Helper: webp → png via ffmpeg ──────────────────────────
+// ── webp → png ──────────────────────────────────────────────
 function webpToPng(inputBuffer) {
     return new Promise((resolve, reject) => {
         const tmpIn  = path.join(os.tmpdir(), `s2i_in_${Date.now()}.webp`);
@@ -44,48 +44,6 @@ function webpToPng(inputBuffer) {
         fs.writeFileSync(tmpIn, inputBuffer);
         fluent(tmpIn)
             .frames(1)
-            .on('end', () => {
-                try {
-                    const buf = fs.readFileSync(tmpOut);
-                    fs.unlinkSync(tmpIn); fs.unlinkSync(tmpOut);
-                    resolve(buf);
-                } catch (e) { reject(e); }
-            })
-            .on('error', (e) => {
-                try { fs.unlinkSync(tmpIn); } catch {}
-                try { fs.unlinkSync(tmpOut); } catch {}
-                reject(e);
-            })
-            .save(tmpOut);
-    });
-}
-
-// ── Helper: image/video → animated webp sticker ─────────────
-function makeAnimatedSticker(inputBuffer, isVideo) {
-    return new Promise((resolve, reject) => {
-        const ext    = isVideo ? 'mp4' : 'jpg';
-        const tmpIn  = path.join(os.tmpdir(), `aya_in_${Date.now()}.${ext}`);
-        const tmpOut = path.join(os.tmpdir(), `aya_out_${Date.now()}.webp`);
-        fs.writeFileSync(tmpIn, inputBuffer);
-
-        const cmd = fluent(tmpIn);
-
-        if (isVideo) {
-            cmd.addOutputOptions([
-                '-vcodec', 'libwebp',
-                '-vf', "scale='min(512,iw)':'min(512,ih)':force_original_aspect_ratio=decrease,fps=15,pad=512:512:-1:-1:color=white@0.0,split[a][b];[a]palettegen=reserve_transparent=on:transparency_color=ffffff[p];[b][p]paletteuse",
-                '-loop', '0', '-preset', 'default', '-an', '-vsync', '0', '-t', '8'
-            ]);
-        } else {
-            // Image → animated (looped) webp
-            cmd.addOutputOptions([
-                '-vcodec', 'libwebp',
-                '-vf', "scale='min(512,iw)':'min(512,ih)':force_original_aspect_ratio=decrease,pad=512:512:-1:-1:color=white@0.0",
-                '-loop', '0', '-preset', 'default', '-an', '-frames:v', '1'
-            ]);
-        }
-
-        cmd.toFormat('webp')
             .on('end', () => {
                 try {
                     const buf = fs.readFileSync(tmpOut);
@@ -103,10 +61,49 @@ function makeAnimatedSticker(inputBuffer, isVideo) {
     });
 }
 
-// ══════════════════════════════════════════════════════════════
-//  .s2i / .convert — Sticker → Image
-//  FIXED: correct params (conn, mek, m, { from, reply })
-// ══════════════════════════════════════════════════════════════
+// ── image/video → animated webp ─────────────────────────────
+function makeAnimatedSticker(inputBuffer, isVideo) {
+    return new Promise((resolve, reject) => {
+        const ext    = isVideo ? 'mp4' : 'jpg';
+        const tmpIn  = path.join(os.tmpdir(), `aya_in_${Date.now()}.${ext}`);
+        const tmpOut = path.join(os.tmpdir(), `aya_out_${Date.now()}.webp`);
+        fs.writeFileSync(tmpIn, inputBuffer);
+        const c = fluent(tmpIn);
+        if (isVideo) {
+            c.addOutputOptions([
+                '-vcodec', 'libwebp',
+                '-vf', "scale='min(512,iw)':'min(512,ih)':force_original_aspect_ratio=decrease,fps=15,pad=512:512:-1:-1:color=white@0.0,split[a][b];[a]palettegen=reserve_transparent=on:transparency_color=ffffff[p];[b][p]paletteuse",
+                '-loop', '0', '-preset', 'default', '-an', '-vsync', '0', '-t', '8'
+            ]);
+        } else {
+            c.addOutputOptions([
+                '-vcodec', 'libwebp',
+                '-vf', "scale='min(512,iw)':'min(512,ih)':force_original_aspect_ratio=decrease,pad=512:512:-1:-1:color=white@0.0",
+                '-loop', '0', '-preset', 'default', '-an', '-frames:v', '1'
+            ]);
+        }
+        c.toFormat('webp')
+            .on('end', () => {
+                try {
+                    const buf = fs.readFileSync(tmpOut);
+                    try { fs.unlinkSync(tmpIn); } catch {}
+                    try { fs.unlinkSync(tmpOut); } catch {}
+                    resolve(buf);
+                } catch (e) { reject(e); }
+            })
+            .on('error', (e) => {
+                try { fs.unlinkSync(tmpIn); } catch {}
+                try { fs.unlinkSync(tmpOut); } catch {}
+                reject(e);
+            })
+            .save(tmpOut);
+    });
+}
+
+// ══════════════════════════════════════════════════════════
+//  .s2i — Sticker → Image
+//  FIXED: uses m.quoted + m.quoted.type + m.quoted.download()
+// ══════════════════════════════════════════════════════════
 cmd({
     pattern:  'convert',
     alias:    ['sticker2img', 'stoimg', 'stickertoimage', 's2i'],
@@ -116,15 +113,15 @@ cmd({
     filename: __filename
 },
 async (conn, mek, m, { from, reply }) => {
-    if (!mek.quoted) {
-        return reply(
-            `✨ *Sticker to Image*\n\n` +
-            `Reply to a sticker message\n` +
-            `*Example:* .s2i _(reply to sticker)_`
-        );
-    }
+    // ✅ FIX: use m.quoted (not mek.quoted)
+    if (!m.quoted) return reply(
+        `✨ *Sticker to Image*\n\n` +
+        `Reply to a sticker message\n` +
+        `*Example:* .s2i _(reply to sticker)_`
+    );
 
-    if (mek.quoted.mtype !== 'stickerMessage') {
+    // ✅ FIX: use m.quoted.type (not mtype)
+    if (m.quoted.type !== 'stickerMessage') {
         return reply('❌ *Please reply to a sticker message!*');
     }
 
@@ -133,9 +130,9 @@ async (conn, mek, m, { from, reply }) => {
     try {
         await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
-        const stickerBuffer = await mek.quoted.download();
+        // ✅ FIX: m.quoted.download() — correct call
+        const stickerBuffer = await m.quoted.download();
 
-        // Try sharp first (faster), fallback to ffmpeg
         let imageBuffer;
         try {
             const sharp = require('sharp');
@@ -145,8 +142,8 @@ async (conn, mek, m, { from, reply }) => {
         }
 
         await conn.sendMessage(from, {
-            image:   imageBuffer,
-            caption: '🖼️ *Sticker converted to image!*\n\n> ⚡ _Sʜᴀᴠɪʏᴀ Xᴍᴅ_',
+            image:    imageBuffer,
+            caption:  '🖼️ *Sticker converted!*\n\n> ⚡ _Sʜᴀᴠɪʏᴀ Xᴍᴅ_',
             mimetype: 'image/png'
         }, { quoted: mek });
 
@@ -158,10 +155,10 @@ async (conn, mek, m, { from, reply }) => {
     }
 });
 
-// ══════════════════════════════════════════════════════════════
-//  .aya — Image / Video → Animated Sticker
-//  FIXED: correct params + proper mtype check
-// ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
+//  .aya — Image/Video → Animated Sticker
+//  FIXED: uses m.quoted.type
+// ══════════════════════════════════════════════════════════
 cmd({
     pattern:  'aya',
     alias:    ['animsticker', 'gifsticker', 'ayas'],
@@ -171,44 +168,39 @@ cmd({
     filename: __filename
 },
 async (conn, mek, m, { from, reply }) => {
-    if (!mek.quoted) {
-        return reply(
-            `🎭 *Animated Sticker Maker*\n\n` +
-            `Reply to an *image* or *video* to convert it into an animated sticker\n` +
-            `*Example:* .aya _(reply to image/video)_`
-        );
-    }
+    if (!m.quoted) return reply(
+        `🎭 *Animated Sticker Maker*\n\n` +
+        `Reply to an *image* or *video*\n` +
+        `*Example:* .aya _(reply to image/video)_`
+    );
 
-    const mime = mek.quoted.mtype || '';
-    const isVideo = ['videoMessage', 'gifMessage'].includes(mime);
-    const isImage = mime === 'imageMessage';
+    // ✅ FIX: m.quoted.type
+    const type    = m.quoted.type || '';
+    const isVideo = ['videoMessage', 'gifMessage'].includes(type);
+    const isImage = type === 'imageMessage';
 
-    if (!isVideo && !isImage) {
-        return reply('❌ *Please reply to an image or video message!*');
-    }
-
+    if (!isVideo && !isImage) return reply('❌ *Please reply to an image or video!*');
     if (!ffmpegPath) return reply('❌ *ffmpeg not found on this server.*');
 
     try {
         await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
-        const buffer = await mek.quoted.download();
+        const buffer  = await m.quoted.download();
         const webpBuf = await makeAnimatedSticker(buffer, isVideo);
 
         await conn.sendMessage(from, { sticker: webpBuf }, { quoted: mek });
-
         await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
 
     } catch (err) {
         console.error('[AYA ERROR]', err.message);
-        reply(`❌ *Failed to create sticker:* ${err.message}`);
+        reply(`❌ *Failed:* ${err.message}`);
     }
 });
 
-// ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
 //  .tomp3 — Video/Audio → MP3
-//  FIXED: correct params
-// ══════════════════════════════════════════════════════════════
+//  FIXED: uses m.quoted
+// ══════════════════════════════════════════════════════════
 cmd({
     pattern:  'tomp3',
     desc:     'Convert media to audio',
@@ -217,39 +209,35 @@ cmd({
     filename: __filename
 },
 async (conn, mek, m, { from, reply }) => {
-    if (!mek.quoted) return reply('*🔊 Please reply to a video/audio message*');
+    if (!m.quoted) return reply('*🔊 Please reply to a video/audio message*');
 
-    if (!['videoMessage', 'audioMessage'].includes(mek.quoted.mtype)) {
+    const type = m.quoted.type || '';
+    if (!['videoMessage', 'audioMessage'].includes(type)) {
         return reply('❌ *Only video/audio messages can be converted*');
     }
-
     if (!ffmpegPath) return reply('❌ *ffmpeg not found on this server.*');
 
     try {
         await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
         const converter = require('../data/converter');
-        const buffer = await mek.quoted.download();
-        const ext    = mek.quoted.mtype === 'videoMessage' ? 'mp4' : 'm4a';
+        const buffer = await m.quoted.download();
+        const ext    = type === 'videoMessage' ? 'mp4' : 'm4a';
         const audio  = await converter.toAudio(buffer, ext);
 
-        await conn.sendMessage(from, {
-            audio:    audio,
-            mimetype: 'audio/mpeg'
-        }, { quoted: mek });
-
+        await conn.sendMessage(from, { audio, mimetype: 'audio/mpeg' }, { quoted: mek });
         await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
 
     } catch (e) {
         console.error('[TOMP3 ERROR]', e.message);
-        reply(`❌ *Failed to convert audio:* ${e.message}`);
+        reply(`❌ *Failed:* ${e.message}`);
     }
 });
 
-// ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
 //  .toptt — Video/Audio → Voice Note
-//  FIXED: correct params
-// ══════════════════════════════════════════════════════════════
+//  FIXED: uses m.quoted
+// ══════════════════════════════════════════════════════════
 cmd({
     pattern:  'toptt',
     desc:     'Convert media to voice message',
@@ -258,32 +246,29 @@ cmd({
     filename: __filename
 },
 async (conn, mek, m, { from, reply }) => {
-    if (!mek.quoted) return reply('*🗣️ Please reply to a video/audio message*');
+    if (!m.quoted) return reply('*🗣️ Please reply to a video/audio message*');
 
-    if (!['videoMessage', 'audioMessage'].includes(mek.quoted.mtype)) {
+    const type = m.quoted.type || '';
+    if (!['videoMessage', 'audioMessage'].includes(type)) {
         return reply('❌ *Only video/audio messages can be converted*');
     }
-
     if (!ffmpegPath) return reply('❌ *ffmpeg not found on this server.*');
 
     try {
         await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
         const converter = require('../data/converter');
-        const buffer = await mek.quoted.download();
-        const ext    = mek.quoted.mtype === 'videoMessage' ? 'mp4' : 'm4a';
+        const buffer = await m.quoted.download();
+        const ext    = type === 'videoMessage' ? 'mp4' : 'm4a';
         const ptt    = await converter.toPTT(buffer, ext);
 
         await conn.sendMessage(from, {
-            audio:    ptt,
-            mimetype: 'audio/ogg; codecs=opus',
-            ptt:      true
+            audio: ptt, mimetype: 'audio/ogg; codecs=opus', ptt: true
         }, { quoted: mek });
-
         await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
 
     } catch (e) {
         console.error('[TOPTT ERROR]', e.message);
-        reply(`❌ *Failed to create voice message:* ${e.message}`);
+        reply(`❌ *Failed:* ${e.message}`);
     }
 });
