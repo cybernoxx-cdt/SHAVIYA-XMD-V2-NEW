@@ -45,7 +45,7 @@ function listenForNumberReply(conn, from, sender, targetMsgId, timeoutMs, callba
 //  .anime command
 // ══════════════════════════════════════════════════════════════
 cmd({
-    pattern: "anime",
+    pattern: "anime2",
     alias: ["ani", "animesearch"],
     react: "🎌",
     category: "download",
