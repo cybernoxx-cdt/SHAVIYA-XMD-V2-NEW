@@ -25,7 +25,7 @@ async (conn, mek, m, { from, reply }) => {
         const ping = Date.now() - start;
 
         await conn.sendMessage(from, {
-            text: `🏓 *Pong!*\n⚡ Response: ${ping}ms\n\n${config.BOT_FOOTER |||}`,
+            text: `🏓 *Pong!*\n⚡ `Response: ${ping}ms``,
             edit: pong.key
         });
     } catch (e) {
