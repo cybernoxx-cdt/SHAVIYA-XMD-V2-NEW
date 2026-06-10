@@ -173,11 +173,11 @@ async function sendFallback(conn, mek, from, q, videos) {
 //  .ts command
 // ══════════════════════════════════════════════════════════════
 cmd({
-    pattern: "ts",
+    pattern: "ts2",
     react: "🔍",
     fromMe: false,
     category: "search",
-    desc: "TikTok videos search කරලා carousel ලෙස show කරන්න"
+    desc: "TikTok videos search"
 }, async (conn, mek, m, { from, q, reply }) => {
     const query = getQuery(q);
     if (!query) {
