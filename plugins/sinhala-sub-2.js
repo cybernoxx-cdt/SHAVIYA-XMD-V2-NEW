@@ -1,8 +1,14 @@
-// plugins/sinhalasub.js — SHAVIYA-XMD V2 | React System + Number Reply
+// plugins/sinhala-sub-2.js — SHAVIYA-XMD V2 | FULLY FIXED
+// ✅ Fix 1: direct_link fallback (link / url / direct_link)
+// ✅ Fix 2: Movie video ලෙස send + download link දෙකම
+// ✅ Fix 3: listenForNumberReply — @lid + fromMe bot reply fix
+// ✅ Fix 4: quality match — size vs quality field fix
+// ✅ Fix 5: timeout extended to 10min
+
 const { cmd } = require('../command');
 const axios = require("axios");
 
-const API_KEY = "zan_FIAO7Ayh_eo1vllkep6";
+const API_KEY  = "zan_FIAO7Ayh_eo1vllkep6";
 const API_BASE = "https://api.zanta-mini.store/api/sinhalasub";
 
 function getQuery(q) {
@@ -18,31 +24,70 @@ async function react(conn, from, key, emoji) {
     try { await conn.sendMessage(from, { react: { text: emoji, key } }); } catch {}
 }
 
-// ── Number reply listener ─────────────────────────────────────
+// ✅ FIX 3: listenForNumberReply — @lid + bot number + fromMe fix
 function listenForNumberReply(conn, from, sender, targetMsgId, timeoutMs, callback) {
-    const handler = (upsert) => {
-        const msg = upsert.messages?.[0];
+    const senderNum = sender.split("@")[0].replace(/[^0-9]/g, "");
+
+    const handler = ({ messages }) => {
+        const msg = messages?.[0];
         if (!msg?.message) return;
+
+        // reply context check
+        const allMsgTypes = [
+            msg.message.extendedTextMessage,
+            msg.message.imageMessage,
+            msg.message.videoMessage,
+            msg.message.audioMessage,
+            msg.message.documentMessage,
+            msg.message.ephemeralMessage?.message?.extendedTextMessage,
+        ];
+        const stanzaId = allMsgTypes.find(t => t?.contextInfo?.stanzaId)?.contextInfo?.stanzaId;
+        if (stanzaId !== targetMsgId) return;
+
+        // sender check — number + @lid support
+        const msgJid = msg.key.participant || msg.key.remoteJid || "";
+        const msgNum = msgJid.split("@")[0].replace(/[^0-9]/g, "");
+        const isCorrectUser = msgNum === senderNum || msgJid.includes("@lid");
+
+        if (msg.key.remoteJid !== from && msg.key.remoteJid !== from.replace("@s.whatsapp.net", "")) return;
+        if (!isCorrectUser) return;
+
+        // get text
         const text = (
+            msg.message.extendedTextMessage?.text ||
             msg.message.conversation ||
-            msg.message.extendedTextMessage?.text || ""
+            msg.message.ephemeralMessage?.message?.extendedTextMessage?.text ||
+            ""
         ).trim();
-        const context   = msg.message.extendedTextMessage?.contextInfo;
-        const msgSender = msg.key.participant || msg.key.remoteJid;
-        const isReply   = context?.stanzaId === targetMsgId;
-        const isUser    = msgSender.includes(sender.split("@")[0]) || msgSender.includes("@lid");
-        if (msg.key.remoteJid === from && isUser && isReply && /^\d+$/.test(text)) {
-            conn.ev.off("messages.upsert", handler);
-            clearTimeout(timer);
-            callback(text, msg);
-        }
+
+        if (!/^\d+$/.test(text)) return;
+
+        conn.ev.off("messages.upsert", handler);
+        clearTimeout(timer);
+        callback(text, msg);
     };
+
     const timer = setTimeout(() => conn.ev.off("messages.upsert", handler), timeoutMs);
     conn.ev.on("messages.upsert", handler);
 }
 
+// ✅ FIX 1: direct_link fallback helper
+function getDirectLink(linkObj) {
+    return linkObj?.direct_link || linkObj?.link || linkObj?.url || linkObj?.download_link || null;
+}
+
+// ✅ FIX 4: quality match helper (size OR quality field)
+function matchQuality(linkObj, qualityStr) {
+    const s = (linkObj?.size || "").toLowerCase();
+    const q = (linkObj?.quality || "").toLowerCase();
+    const t = qualityStr.toLowerCase();
+    return s.includes(t) || q.includes(t) ||
+           s.replace(/\s/g,"").includes(t.replace(/\s/g,"")) ||
+           q.replace(/\s/g,"").includes(t.replace(/\s/g,""));
+}
+
 // ══════════════════════════════════════════════════════════════
-//  .movie command
+//  .ss2 command
 // ══════════════════════════════════════════════════════════════
 cmd({
     pattern: "ss2",
@@ -58,8 +103,8 @@ cmd({
     if (!query) {
         return reply(
             `🎬 *සිංහල චිත්‍රපට සෙවුම*\n\n` +
-            `*Usage:* ${_p}movie <movie name>\n` +
-            `*Example:* ${_p}movie kishkindha`
+            `*Usage:* ${_p}ss2 <movie name>\n` +
+            `*Example:* ${_p}ss2 kishkindha`
         );
     }
 
@@ -86,7 +131,7 @@ cmd({
         const sentMsg = await conn.sendMessage(from, { text: listMsg }, { quoted: mek });
         await react(conn, from, mek.key, "✅");
 
-        listenForNumberReply(conn, from, sender, sentMsg.key.id, 5 * 60 * 1000, async (num, replyMsg) => {
+        listenForNumberReply(conn, from, sender, sentMsg.key.id, 10 * 60 * 1000, async (num, replyMsg) => {
             const idx = parseInt(num) - 1;
             if (idx < 0 || idx >= results.length) {
                 await react(conn, from, replyMsg.key, "❌");
@@ -110,7 +155,7 @@ async function fetchQualityOptions(conn, mek, triggerMsg, from, sender, prefix, 
 
         const { data } = await axios.get(
             `${API_BASE}/dl?apiKey=${API_KEY}&text=${encodeURIComponent(movieUrl)}`,
-            { timeout: 15000 }
+            { timeout: 20000 }
         );
 
         if (!data?.success || !data?.results?.links?.length) {
@@ -119,44 +164,115 @@ async function fetchQualityOptions(conn, mek, triggerMsg, from, sender, prefix, 
         }
 
         const allLinks   = data.results.links;
-        const videoLinks = allLinks.filter(l => l.quality !== "Subtitles");
-        const subLink    = allLinks.find(l => l.quality === "Subtitles");
-        const has720p    = videoLinks.some(l => l.size === "HD 720p");
-        const has480p    = videoLinks.some(l => l.size === "SD 480p");
 
-        if (!has720p && !has480p) {
+        // ✅ FIX 4: quality/size field දෙකම check කරනවා
+        const videoLinks = allLinks.filter(l => {
+            const q = (l.quality || "").toLowerCase();
+            const s = (l.size || "").toLowerCase();
+            return !q.includes("subtitle") && !s.includes("subtitle");
+        });
+        const subLink = allLinks.find(l => {
+            const q = (l.quality || "").toLowerCase();
+            const s = (l.size || "").toLowerCase();
+            return q.includes("subtitle") || s.includes("subtitle");
+        });
+
+        const has720p = videoLinks.some(l => matchQuality(l, "720p") || matchQuality(l, "hd"));
+        const has480p = videoLinks.some(l => matchQuality(l, "480p") || matchQuality(l, "sd"));
+        const hasOther = videoLinks.length > 0;
+
+        if (!hasOther) {
             await react(conn, from, triggerMsg.key, "❌");
-            return conn.sendMessage(from, { text: `❌ 720p හෝ 480p quality නෑ.` }, { quoted: mek });
+            return conn.sendMessage(from, { text: `❌ Download links හමු නොවිණි.` }, { quoted: mek });
         }
 
         const options = [];
         let qualMsg = `🎬 *${title}*\n📥 *Quality reply කරලා තෝරන්න:*\n\n`;
-        if (has720p) { qualMsg += `*1.* 🎥 720p (HD) – උසස් quality\n`; options.push("HD 720p"); }
-        if (has480p) { qualMsg += `*2.* 📺 480p (SD) – කුඩා ගොනු\n`;  options.push("SD 480p"); }
+
+        if (has720p) { qualMsg += `*1.* 🎥 720p (HD) – උසස් quality\n`; options.push("720p"); }
+        if (has480p) { qualMsg += `*${options.length + 1}.* 📺 480p (SD) – කුඩා ගොනු\n`; options.push("480p"); }
+
+        // 720p/480p නැත්නම් ඇති links list කරනවා
+        if (options.length === 0) {
+            videoLinks.slice(0, 4).forEach((l, i) => {
+                const label = l.quality || l.size || `Option ${i+1}`;
+                qualMsg += `*${i + 1}.* ${label}\n`;
+                options.push(l.quality || l.size || `opt${i}`);
+            });
+        }
+
         qualMsg += `\n📌 *ඉහත message reply කරලා අංකය type කරන්න*`;
 
         const sentMsg = await conn.sendMessage(from, { text: qualMsg }, { quoted: mek });
         await react(conn, from, triggerMsg.key, "✅");
 
-        listenForNumberReply(conn, from, sender, sentMsg.key.id, 5 * 60 * 1000, async (num, replyMsg) => {
+        listenForNumberReply(conn, from, sender, sentMsg.key.id, 10 * 60 * 1000, async (num, replyMsg) => {
             const qIdx = parseInt(num) - 1;
             if (qIdx < 0 || qIdx >= options.length) {
                 await react(conn, from, replyMsg.key, "❌");
                 return conn.sendMessage(from, { text: `❌ 1–${options.length} අතර reply කරන්න.` }, { quoted: mek });
             }
+
             await react(conn, from, replyMsg.key, "📥");
-            const link = videoLinks.find(l => l.size === options[qIdx]);
+
+            // ✅ FIX 4: size/quality දෙකම match
+            const link = videoLinks.find(l => matchQuality(l, options[qIdx])) || videoLinks[qIdx];
+
             if (!link) {
                 await react(conn, from, replyMsg.key, "❌");
                 return conn.sendMessage(from, { text: `❌ Link හමු නොවිණි.` }, { quoted: mek });
             }
-            await conn.sendMessage(from, {
-                text: `✅ *${title}*\n\n` +
-                      `📥 *Download Link (${options[qIdx]}):*\n${link.direct_link}` +
-                      (subLink ? `\n\n📝 *Subtitles:*\n${subLink.direct_link}` : "") +
-                      `\n\n> 🎬 Powered by SHAVIYA-XMD V2`
-            }, { quoted: mek });
-            await react(conn, from, replyMsg.key, "✅");
+
+            // ✅ FIX 1: direct_link fallback
+            const dlLink  = getDirectLink(link);
+            const subDl   = subLink ? getDirectLink(subLink) : null;
+            const quality = link.quality || link.size || options[qIdx];
+
+            if (!dlLink) {
+                await react(conn, from, replyMsg.key, "❌");
+                return conn.sendMessage(from, { text: `❌ Download link හමු නොවිණි.` }, { quoted: mek });
+            }
+
+            await react(conn, from, replyMsg.key, "⏳");
+            await conn.sendMessage(from, { text: `⏳ Movie download කරනවා... ටිකක් ඉන්න.` }, { quoted: mek });
+
+            // ✅ FIX 2: Video ලෙස send කරනවා, fail වෙනවිට link දෙනවා
+            try {
+                const response = await axios.get(dlLink, {
+                    responseType: "arraybuffer",
+                    timeout: 5 * 60 * 1000,
+                    maxContentLength: 300 * 1024 * 1024, // 300MB max
+                    headers: { "User-Agent": "Mozilla/5.0" }
+                });
+
+                const videoBuffer = Buffer.from(response.data);
+
+                await conn.sendMessage(from, {
+                    video: videoBuffer,
+                    mimetype: "video/mp4",
+                    caption:
+                        `✅ *${title}*\n` +
+                        `🎥 Quality: ${quality}\n` +
+                        (subDl ? `📝 Subtitles: ${subDl}\n` : "") +
+                        `\n> 🎬 Powered by SHAVIYA-XMD V2`
+                }, { quoted: mek });
+
+                await react(conn, from, replyMsg.key, "✅");
+
+            } catch (videoErr) {
+                // Video send fail වෙනවිට download link text ලෙස දෙනවා
+                console.error("Video send error:", videoErr.message);
+                await conn.sendMessage(from, {
+                    text:
+                        `✅ *${title}*\n\n` +
+                        `📥 *Download Link (${quality}):*\n${dlLink}` +
+                        (subDl ? `\n\n📝 *Subtitles:*\n${subDl}` : "") +
+                        `\n\n_⚠️ Video direct send අසාර්ථකයි — link copy කරලා download කරන්න_` +
+                        `\n\n> 🎬 Powered by SHAVIYA-XMD V2`
+                }, { quoted: mek });
+
+                await react(conn, from, replyMsg.key, "✅");
+            }
         });
 
     } catch (err) {
