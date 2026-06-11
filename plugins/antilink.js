@@ -16,10 +16,10 @@ const LINK_REGEX = /(?:https?:\/\/|www\.|wa\.me\/|chat\.whatsapp\.com\/)[^\s]*/g
 
 // Track warnings in memory (also persist to settings)
 function getWarnData() {
-    return getSetting('antilinkWarns') || {};
+    return getSetting('antilinkWarns', sessionId) || {};
 }
 function saveWarnData(data) {
-    setSetting('antilinkWarns', data);
+    setSetting('antilinkWarns', data, sessionId);
 }
 
 // ── Toggle command ────────────────────────────
@@ -31,13 +31,13 @@ cmd({
     react: '🔗',
     filename: __filename
 },
-async (conn, mek, m, { isOwner, q, from, reply }) => {
+async (conn, mek, m, { isOwner, q, from, reply, sessionId }) => {
     if (!isOwner) return reply('❌ *Owner only command!*');
 
     const sub = (q || '').toLowerCase().trim();
 
     if (!sub || (sub !== 'on' && sub !== 'off')) {
-        const cur = getSetting('antiLink') ?? false;
+        const cur = getSetting('antiLink', sessionId) ?? false;
         return reply(
 `🔗 *Anti-Link Status*
 
@@ -49,18 +49,18 @@ Usage:
         );
     }
 
-    setSetting('antiLink', sub === 'on');
+    setSetting('antiLink', sub === 'on', sessionId);
     reply(`${sub === 'on' ? '✅' : '❌'} *Anti-Link ${sub === 'on' ? 'Enabled' : 'Disabled'}!*\n\n${sub === 'on' ? '🔗 All links will be deleted in groups.' : '🔓 Links are now allowed.'}`);
 });
 
 // ── Auto listener: runs on every message ─────
 cmd({ on: 'body' },
-async (conn, mek, m, { from, sender, senderNumber, isOwner, body }) => {
+async (conn, mek, m, { from, sender, senderNumber, isOwner, body, sessionId }) => {
     try {
         // Only in groups
         if (!from.endsWith('@g.us')) return;
 
-        const enabled = getSetting('antiLink') ?? false;
+        const enabled = getSetting('antiLink', sessionId) ?? false;
         if (!enabled) return;
         if (isOwner) return; // Owner exempt
 
@@ -86,10 +86,10 @@ async (conn, mek, m, { from, sender, senderNumber, isOwner, body }) => {
         } catch {}
 
         // Warn system
-        const warns = getWarnData();
+        const warns = getWarnData(sessionId);
         const key = senderNumber;
         warns[key] = (warns[key] || 0) + 1;
-        saveWarnData(warns);
+        saveWarnData(warns, sessionId);
 
         const warnCount = warns[key];
 
@@ -103,7 +103,7 @@ async (conn, mek, m, { from, sender, senderNumber, isOwner, body }) => {
                 }, { quoted: mek });
                 // Reset warns after removal
                 warns[key] = 0;
-                saveWarnData(warns);
+                saveWarnData(warns, sessionId);
             } catch (e) {
                 await conn.sendMessage(from, {
                     text: `⚠️ @${senderNumber} — I tried to remove you but I'm not admin. This is *Warning ${warnCount}/3*. Stop sharing links!\n> SHAVIYA-XMD V2 🔗`,
