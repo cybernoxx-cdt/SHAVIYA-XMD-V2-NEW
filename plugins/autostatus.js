@@ -31,12 +31,12 @@ cmd({
     react: '👁️',
     filename: __filename
 },
-async (conn, mek, m, { isOwner, q, reply }) => {
+async (conn, mek, m, { isOwner, q, reply, sessionId }) => {
     if (!isOwner) return reply('❌ Owner only command!');
 
-    const current    = getSetting('autoStatusRead');
-    const likeState  = getSetting('autoStatusLike');
-    const likeEmoji  = getSetting('autoStatusEmoji') || '❤️';
+    const current    = getSetting('autoStatusRead', sessionId);
+    const likeState  = getSetting('autoStatusLike', sessionId);
+    const likeEmoji  = getSetting('autoStatusEmoji', sessionId) || '❤️';
 
     if (!q) {
         return reply(
@@ -54,11 +54,11 @@ async (conn, mek, m, { isOwner, q, reply }) => {
     const arg = q.trim().toLowerCase();
 
     if (arg === 'on') {
-        await setSetting('autoStatusRead', true);
+        await setSetting('autoStatusRead', true, sessionId);
         return reply('✅ *Auto Status View ON!*');
     }
     if (arg === 'off') {
-        await setSetting('autoStatusRead', false);
+        await setSetting('autoStatusRead', false, sessionId);
         return reply('❌ *Auto Status View OFF*');
     }
 
@@ -74,11 +74,11 @@ cmd({
     react: '💚',
     filename: __filename
 },
-async (conn, mek, m, { isOwner, q, reply }) => {
+async (conn, mek, m, { isOwner, q, reply, sessionId }) => {
     if (!isOwner) return reply('❌ Owner only command!');
 
-    const current   = getSetting('autoStatusLike');
-    const likeEmoji = getSetting('autoStatusEmoji') || '❤️';
+    const current   = getSetting('autoStatusLike', sessionId);
+    const likeEmoji = getSetting('autoStatusEmoji', sessionId) || '❤️';
 
     // No args — show status
     if (!q) {
@@ -98,11 +98,11 @@ async (conn, mek, m, { isOwner, q, reply }) => {
 
     // Toggle on/off
     if (argLower === 'on') {
-        await setSetting('autoStatusLike', true);
+        await setSetting('autoStatusLike', true, sessionId);
         return reply(`✅ *Auto React ON!*\nBot will react ${likeEmoji} to every status.`);
     }
     if (argLower === 'off') {
-        await setSetting('autoStatusLike', false);
+        await setSetting('autoStatusLike', false, sessionId);
         return reply('❌ *Auto React OFF*');
     }
 
@@ -118,7 +118,7 @@ async (conn, mek, m, { isOwner, q, reply }) => {
             return reply(`❌ *Invalid emoji!*\nSend a single emoji only.\nExample: \`.autolike emoji 💜\``);
         }
 
-        await setSetting('autoStatusEmoji', newEmoji);
+        await setSetting('autoStatusEmoji', newEmoji, sessionId);
         return reply(`✅ *React emoji changed to ${newEmoji}*\nSaved to database.`);
     }
 
