@@ -229,7 +229,7 @@ ${locationLine}
 // ══════════════════════════════════════════════════════════
 async function onDelete(conn, updates, sessionId) {
     try {
-        if (!getSetting('antidelete')) return;
+        if (!getSetting('antidelete', sessionId)) return;
 
         const rawOwner = conn.user?.id?.split(':')[0]?.split('@')[0];
         if (!rawOwner) return;
