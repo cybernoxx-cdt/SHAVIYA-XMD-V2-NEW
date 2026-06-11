@@ -1,11 +1,26 @@
 const { cmd } = require('../command');
 const axios = require('axios');
 
+async function getDeepSeek(query) {
+    const { data } = await axios.get(
+        `https://whiteshadow-x-api.onrender.com/api/ai/deepseekr1?q=${encodeURIComponent(query)}&think=true&apitoken=e76n2P`,
+        {
+            timeout: 60000,
+            headers: {
+                "User-Agent": "Mozilla/5.0"
+            }
+        }
+    );
+
+    return data;
+}
+
+// Answer Only
 cmd({
     pattern: "deepseek",
     alias: ["ds", "ai"],
     react: "🧠",
-    desc: "DeepSeek R1 AI Chat",
+    desc: "DeepSeek AI",
     category: "ai",
     filename: __filename
 },
@@ -13,79 +28,55 @@ async (conn, mek, m, { from, q, reply }) => {
 
     try {
 
-        if (!q) {
-            return reply(`🧠 *DeepSeek R1 AI*
+        if (!q) return reply("Please provide a prompt.");
 
-Example:
-.deepseek Hello
-.deepseek Write a WhatsApp Bot`);
-        }
+        const data = await getDeepSeek(q);
 
-        await conn.sendMessage(from, {
-            react: {
-                text: "⏳",
-                key: mek.key
-            }
-        });
-
-        const api = `https://whiteshadow-x-api.onrender.com/api/ai/deepseekr1?q=${encodeURIComponent(q)}&think=true&apitoken=e76n2P`;
-
-        const { data } = await axios.get(api, {
-            timeout: 60000,
-            headers: {
-                "User-Agent": "Mozilla/5.0"
-            }
-        });
-
-        if (!data.status) {
-            return reply("❌ Failed To Get Response From DeepSeek API");
-        }
-
-        const answer = data.result?.answer || "No Answer";
-        const reasoning = data.result?.reasoning || "No Thinking Data";
-
-        const msg = `╭━━〔 🧠 DEEPSEEK R1 〕━━⬣
-┃❍ Query : ${q}
-╰━━━━━━━━━━━━⬣
-
-🤔 *Thinking*
-${reasoning}
-
-━━━━━━━━━━━━━━⬣
-
-💬 *Answer*
-${answer}
-
-> Powered By SHAVIYA-XMD`;
+        const answer = data.result?.answer || "No response.";
 
         await conn.sendMessage(
             from,
             {
-                text: msg
+                text: `${answer}\n\n> Powered By SHAVIYA-XMD`
             },
-            {
-                quoted: mek
-            }
+            { quoted: mek }
         );
 
-        await conn.sendMessage(from, {
-            react: {
-                text: "✅",
-                key: mek.key
-            }
-        });
+    } catch (e) {
+        console.log(e);
+        reply(`Error: ${e.message}`);
+    }
+});
+
+// Thinking + Answer
+cmd({
+    pattern: "thinking",
+    react: "🤔",
+    desc: "DeepSeek Thinking",
+    category: "ai",
+    filename: __filename
+},
+async (conn, mek, m, { from, q, reply }) => {
+
+    try {
+
+        if (!q) return reply("Please provide a prompt.");
+
+        const data = await getDeepSeek(q);
+
+        const thinking = data.result?.reasoning || "No thinking available.";
+        const answer = data.result?.answer || "No response.";
+
+        await conn.sendMessage(
+            from,
+            {
+                text: `${thinking}\n\n${answer}\n\n> Powered By SHAVIYA-XMD`
+            },
+            { quoted: mek }
+        );
 
     } catch (e) {
-
         console.log(e);
-
-        await conn.sendMessage(from, {
-            react: {
-                text: "❌",
-                key: mek.key
-            }
-        });
-
-        reply(`❌ DeepSeek Error\n\n${e.message}`);
+        reply(`Error: ${e.message}`);
     }
 });
