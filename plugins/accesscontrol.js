@@ -4,9 +4,11 @@ const path = require('path');
 
 // ═══════════════════════════════════════════════════
 //  Access Config — MongoDB Persist + File Fallback
-//  ✅ Uses shared mongoose connection (no raw MongoClient)
+//  ✅ Per-session isolation — each bot session has own settings
+//  ✅ FIX: _AccessModel re-checked every call (no stale cache)
+//  ✅ FIX: Delayed retry captures sessionId+cfg in closure correctly
 //  ✅ Falls back to file if MongoDB not connected
-//  ✅ FIX: Mode-based silent block — no "owner only" message
+//  ✅ FIX: Mode-based silent block
 //  ✅ FIX: inbox/group/premium modes work correctly
 //  Restart වෙද්දිත් settings නැතිවෙන්නෙ නෑ ✅
 // ═══════════════════════════════════════════════════
@@ -14,13 +16,16 @@ const path = require('path');
 const DATA_DIR = path.join(__dirname, '../data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// ── Mongoose model (shared connection) ──────────────────────
+// ── Mongoose model — re-init every call until connected ──────
+// FIX: _AccessModel cached globally caused second session to miss model init.
+// Now we check readyState every time and reinit if needed.
 let _AccessModel = null;
 function getAccessModel() {
-  if (_AccessModel) return _AccessModel;
   try {
     const mongoose = require('mongoose');
     if (mongoose.connection.readyState !== 1) return null;
+    // Re-use if already created
+    if (_AccessModel) return _AccessModel;
     const schema = new mongoose.Schema(
       { _id: String, data: mongoose.Schema.Types.Mixed },
       { collection: 'access_config' }
@@ -72,29 +77,40 @@ async function getAccessConfig(sessionId) {
 }
 
 // ── Save config: Mongoose + local file ──────────────────────
+// FIX: Delayed retry now correctly captures sessionId & cfg via closure
 async function saveAccessConfig(sessionId, cfg) {
+  // Always save to file first (fast, guaranteed)
   try {
     fs.writeFileSync(getLocalFile(sessionId), JSON.stringify(cfg, null, 2));
   } catch (e) {}
 
-  try {
+  // Save to MongoDB
+  const tryMongoSave = async (sid, data) => {
     const Model = getAccessModel();
-    if (Model) {
-      await Model.findByIdAndUpdate(
-        sessionId,
-        { $set: { data: cfg } },
-        { upsert: true, new: true }
-      );
-      console.log('[ACCESS] ✅ Saved to MongoDB');
+    if (!Model) return false;
+    await Model.findByIdAndUpdate(
+      sid,
+      { $set: { data: data } },
+      { upsert: true, new: true }
+    );
+    return true;
+  };
+
+  try {
+    const saved = await tryMongoSave(sessionId, cfg);
+    if (saved) {
+      console.log(`[ACCESS] ✅ Saved to MongoDB [${sessionId}]`);
     } else {
+      // MongoDB not ready yet — retry with correct closure (FIX: was losing sessionId before)
+      const _sid = sessionId;
+      const _cfg = JSON.parse(JSON.stringify(cfg)); // deep copy — prevent mutation
       setTimeout(async () => {
         try {
-          const M2 = getAccessModel();
-          if (M2) {
-            await M2.findByIdAndUpdate(sessionId, { $set: { data: cfg } }, { upsert: true });
-            console.log('[ACCESS] ✅ Delayed MongoDB save OK');
-          }
-        } catch (_) {}
+          const ok = await tryMongoSave(_sid, _cfg);
+          if (ok) console.log(`[ACCESS] ✅ Delayed MongoDB save OK [${_sid}]`);
+        } catch (err) {
+          console.error(`[ACCESS] Delayed save error [${_sid}]:`, err.message);
+        }
       }, 3000);
     }
   } catch (e) {
@@ -164,34 +180,24 @@ global.checkAccess = function(sessionId, senderNumber, isOwner, isGroup) {
   switch (mode) {
 
     case 'public':
-      // Everyone allowed
       return { allowed: true, mode };
 
     case 'private':
-      // Owner-only mode — silently ignore all other users
-      // reason: null means index.js sends nothing
       return { allowed: false, reason: null, mode };
 
     case 'inbox':
-      // Only DM (non-group) allowed
       if (!isGroup) return { allowed: true, mode };
-      // In group → silent block
       return { allowed: false, reason: null, mode };
 
     case 'group':
-      // Only groups allowed
       if (isGroup) return { allowed: true, mode };
-      // In DM → silent block
       return { allowed: false, reason: null, mode };
 
     case 'premium':
-      // Premium users allowed everywhere
       if (isPremium) return { allowed: true, mode };
-      // Non-premium → silent block
       return { allowed: false, reason: null, mode };
 
     case 'privatepremium':
-      // Premium users in DM only
       if (isPremium && !isGroup) return { allowed: true, mode };
       return { allowed: false, reason: null, mode };
 
