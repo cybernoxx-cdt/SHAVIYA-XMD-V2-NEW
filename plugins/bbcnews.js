@@ -4,56 +4,70 @@ const axios = require('axios');
 cmd({
     pattern: "bbc",
     alias: ["newsbbc"],
-    desc: "Get latest BBC News",
-    category: "news",
     react: "📰",
+    desc: "Latest BBC Sinhala News",
+    category: "news",
     filename: __filename
 },
-async (conn, mek, m, { from, reply, q }) => {
+async (conn, mek, m, { from, q, reply }) => {
+
     try {
 
-        const limit = q && !isNaN(q) ? q : "5";
+        const limit = q || "1";
 
         const api = `https://bbc-whiteshadow.vercel.app/?limit=${limit}`;
 
-        const res = await axios.get(api, {
-            timeout: 30000,
-            headers: {
-                "User-Agent": "Mozilla/5.0"
-            }
+        const { data } = await axios.get(api, {
+            timeout: 60000
         });
 
-        const data = res.data;
-
-        if (!data || !Array.isArray(data) || data.length === 0) {
-            return reply("❌ BBC News not found.");
+        if (!data.success || !data.result || data.result.length < 1) {
+            return reply("❌ No BBC News Found");
         }
 
-        let msg = "📰 *BBC LATEST NEWS*\n\n";
+        const news = data.result[0];
 
-        data.forEach((news, i) => {
-            msg += `*${i + 1}. ${news.title || "No Title"}*\n`;
+        let caption = `📰 *BBC SINHALA NEWS*\n\n`;
+        caption += `📌 *Title:* ${news.title}\n\n`;
 
-            if (news.description)
-                msg += `📄 ${news.description}\n`;
+        if (news.timestamp) {
+            caption += `📅 *Date:* ${news.timestamp}\n\n`;
+        }
 
-            if (news.link)
-                msg += `🔗 ${news.link}\n`;
+        if (news.content) {
+            let content = news.content.substring(0, 1500);
 
-            msg += "\n";
-        });
+            if (news.content.length > 1500) {
+                content += "\n\n...";
+            }
 
-        await conn.sendMessage(
-            from,
-            { text: msg },
-            { quoted: mek }
-        );
+            caption += `${content}\n\n`;
+        }
 
-    } catch (e) {
-        console.error(e);
+        caption += `🔗 ${news.url}\n\n`;
+        caption += `> Powered By SHAVIYA-XMD`;
 
-        reply(
-            `❌ BBC API Error\n\n${e.message}`
-        );
+        if (news.imageUrl) {
+            await conn.sendMessage(
+                from,
+                {
+                    image: { url: news.imageUrl },
+                    caption
+                },
+                { quoted: mek }
+            );
+        } else {
+            await conn.sendMessage(
+                from,
+                { text: caption },
+                { quoted: mek }
+            );
+        }
+
+    } catch (err) {
+
+        console.log(err);
+
+        reply(`❌ BBC Error\n\n${err.message}`);
     }
 });
