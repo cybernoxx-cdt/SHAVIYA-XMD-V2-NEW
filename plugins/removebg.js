@@ -14,9 +14,13 @@ async (conn, mek, m, { from, reply }) => {
 
     try {
 
-        const quoted = mek.quoted;
+        if (!m.quoted) {
+            return reply("🖼️ Reply To An Image");
+        }
 
-        if (!quoted) {
+        const mime = m.quoted.mimetype || "";
+
+        if (!mime.includes("image")) {
             return reply("🖼️ Reply To An Image");
         }
 
@@ -27,32 +31,26 @@ async (conn, mek, m, { from, reply }) => {
             }
         });
 
-        // Download replied image
-        const media = await quoted.download();
+        const media = await m.quoted.download();
 
         if (!media) {
-            return reply("❌ Failed To Download Image");
+            return reply("❌ Image Download Failed");
         }
 
-        // Upload image to Telegraph
         const imageUrl = await TelegraPh(media);
 
         if (!imageUrl) {
             return reply("❌ Telegraph Upload Failed");
         }
 
-        // RemoveBG API
         const api = `https://whiteshadow-x-api.onrender.com/api/ai/removebg?url=${encodeURIComponent(imageUrl)}&apitoken=e76n2P`;
 
         const { data } = await axios.get(api, {
-            timeout: 120000,
-            headers: {
-                "User-Agent": "Mozilla/5.0"
-            }
+            timeout: 120000
         });
 
         if (!data.status || !data.resultsImage) {
-            return reply("❌ Failed To Remove Background");
+            return reply("❌ RemoveBG API Failed");
         }
 
         await conn.sendMessage(
@@ -73,7 +71,7 @@ async (conn, mek, m, { from, reply }) => {
 
     } catch (err) {
 
-        console.log(err);
+        console.log("REMOVEBG ERROR:", err.response?.data || err);
 
         await conn.sendMessage(from, {
             react: {
@@ -82,6 +80,12 @@ async (conn, mek, m, { from, reply }) => {
             }
         });
 
-        reply(`❌ RemoveBG Failed\n\n${err.message}`);
+        reply(
+            JSON.stringify(
+                err.response?.data || err.message,
+                null,
+                2
+            )
+        );
     }
 });
