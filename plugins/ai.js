@@ -1,21 +1,6 @@
 const { cmd } = require('../command');
 const axios = require('axios');
 
-async function getDeepSeek(query) {
-    const { data } = await axios.get(
-        `https://whiteshadow-x-api.onrender.com/api/ai/deepseekr1?q=${encodeURIComponent(query)}&think=true&apitoken=e76n2P`,
-        {
-            timeout: 60000,
-            headers: {
-                "User-Agent": "Mozilla/5.0"
-            }
-        }
-    );
-
-    return data;
-}
-
-// Answer Only
 cmd({
     pattern: "deepseek",
     alias: ["ds", "ai"],
@@ -28,55 +13,65 @@ async (conn, mek, m, { from, q, reply }) => {
 
     try {
 
-        if (!q) return reply("Please provide a prompt.");
+        if (!q) {
+            return reply(`Example:
+.deepseek Hello
+.deepseek Write a WhatsApp Bot`);
+        }
 
-        const data = await getDeepSeek(q);
+        await conn.sendMessage(from, {
+            react: {
+                text: "⏳",
+                key: mek.key
+            }
+        });
 
-        const answer = data.result?.answer || "No response.";
+        const { data } = await axios.get(
+            `https://whiteshadow-x-api.onrender.com/api/ai/deepseekr1?q=${encodeURIComponent(q)}&think=false&apitoken=e76n2P`,
+            {
+                timeout: 60000,
+                headers: {
+                    "User-Agent": "Mozilla/5.0"
+                }
+            }
+        );
+
+        if (!data.success && !data.status) {
+            return reply("Failed To Get Response From DeepSeek API");
+        }
+
+        const answer = data.result?.answer || "No Answer";
 
         await conn.sendMessage(
             from,
             {
-                text: `${answer}\n\n> Powered By SHAVIYA-XMD`
+                text: `${answer}
+
+> Powered By SHAVIYA-XMD`
             },
-            { quoted: mek }
-        );
-
-    } catch (e) {
-        console.log(e);
-        reply(`Error: ${e.message}`);
-    }
-});
-
-// Thinking + Answer
-cmd({
-    pattern: "thinking",
-    react: "🤔",
-    desc: "DeepSeek Thinking",
-    category: "ai",
-    filename: __filename
-},
-async (conn, mek, m, { from, q, reply }) => {
-
-    try {
-
-        if (!q) return reply("Please provide a prompt.");
-
-        const data = await getDeepSeek(q);
-
-        const thinking = data.result?.reasoning || "No thinking available.";
-        const answer = data.result?.answer || "No response.";
-
-        await conn.sendMessage(
-            from,
             {
-                text: `${thinking}\n\n${answer}\n\n> Powered By SHAVIYA-XMD`
-            },
-            { quoted: mek }
+                quoted: mek
+            }
         );
 
+        await conn.sendMessage(from, {
+            react: {
+                text: "✅",
+                key: mek.key
+            }
+        });
+
     } catch (e) {
+
         console.log(e);
+
+        await conn.sendMessage(from, {
+            react: {
+                text: "❌",
+                key: mek.key
+            }
+        });
+
         reply(`Error: ${e.message}`);
     }
 });
