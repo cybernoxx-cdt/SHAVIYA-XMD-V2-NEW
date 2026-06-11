@@ -9,35 +9,26 @@ cmd({
     category: "ai",
     filename: __filename
 },
-async (conn, mek, m, {
-    from,
-    q,
-    reply
-}) => {
+async (conn, mek, m, { from, q, reply }) => {
 
     try {
 
         if (!q) {
-            return reply(
-                "*🧠 DeepSeek R1 AI*\n\n" +
-                "Example:\n" +
-                ".deepseek Hello\n" +
-                ".deepseek Write a WhatsApp bot"
-            );
+            return reply(`🧠 *DeepSeek R1 AI*
+
+Example:
+.deepseek Hello
+.deepseek Write a WhatsApp Bot`);
         }
 
-        await conn.sendMessage(
-            from,
-            {
-                react: {
-                    text: "⏳",
-                    key: mek.key
-                }
+        await conn.sendMessage(from, {
+            react: {
+                text: "⏳",
+                key: mek.key
             }
-        );
+        });
 
-        const api =
-        `https://whiteshadow-x-api.onrender.com/api/ai/deepseekr1?q=${encodeURIComponent(q)}&think=true&apitoken=e76n2P`;
+        const api = `https://whiteshadow-x-api.onrender.com/api/ai/deepseekr1?q=${encodeURIComponent(q)}&think=true&apitoken=e76n2P`;
 
         const { data } = await axios.get(api, {
             timeout: 60000,
@@ -46,61 +37,55 @@ async (conn, mek, m, {
             }
         });
 
-        let result = "";
-
-        if (typeof data === "string") {
-            result = data;
+        if (!data.status) {
+            return reply("❌ Failed To Get Response From DeepSeek API");
         }
 
-        else if (data.result) {
-            result = data.result;
-        }
+        const answer = data.result?.answer || "No Answer";
+        const reasoning = data.result?.reasoning || "No Thinking Data";
 
-        else if (data.response) {
-            result = data.response;
-        }
+        const msg = `╭━━〔 🧠 DEEPSEEK R1 〕━━⬣
+┃❍ Query : ${q}
+╰━━━━━━━━━━━━⬣
 
-        else if (data.answer) {
-            result = data.answer;
-        }
+🤔 *Thinking*
+${reasoning}
 
-        else if (data.message) {
-            result = data.message;
-        }
+━━━━━━━━━━━━━━⬣
 
-        else {
-            result = JSON.stringify(data, null, 2);
-        }
+💬 *Answer*
+${answer}
+
+> Powered By SHAVIYA-XMD`;
 
         await conn.sendMessage(
             from,
             {
-                text:
-                `╭━━〔 🧠 DEEPSEEK R1 〕━━⬣\n` +
-                `┃❍ Query : ${q}\n` +
-                `╰━━━━━━━━━━━━⬣\n\n` +
-                `${result}\n\n` +
-                `> Powered By SHAVIYA-XMD`
+                text: msg
             },
-            { quoted: mek }
-        );
-
-        await conn.sendMessage(
-            from,
             {
-                react: {
-                    text: "✅",
-                    key: mek.key
-                }
+                quoted: mek
             }
         );
 
-    } catch (err) {
+        await conn.sendMessage(from, {
+            react: {
+                text: "✅",
+                key: mek.key
+            }
+        });
 
-        console.log(err);
+    } catch (e) {
 
-        reply(
-            `❌ DeepSeek Error\n\n${err.message}`
-        );
+        console.log(e);
+
+        await conn.sendMessage(from, {
+            react: {
+                text: "❌",
+                key: mek.key
+            }
+        });
+
+        reply(`❌ DeepSeek Error\n\n${e.message}`);
     }
 });
