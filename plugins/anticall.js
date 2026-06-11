@@ -15,7 +15,7 @@ const { getSetting, setSetting } = require('../lib/settings');
 // ── Core handler — called from index.js on call.upsert ───────
 async function onCall(conn, calls) {
     try {
-        const enabled = getSetting('antiCall');
+        const enabled = getSetting('antiCall', sessionId);
         if (enabled === false || enabled === 'false') return;
 
         const rawOwner = conn.user?.id?.split(':')[0]?.split('@')[0];
@@ -90,7 +90,7 @@ cmd({
     category: 'owner',
     filename: __filename,
 },
-async (conn, mek, m, { isOwner, args, reply, from }) => {
+async (conn, mek, m, { isOwner, args, reply, from, sessionId }) => {
     if (!isOwner) return reply('❌ *Owner only!*');
 
     const current = getSetting('antiCall');
@@ -117,7 +117,7 @@ _When ON: All incoming calls are auto-rejected and caller gets a warning message
     }
 
     const newVal = arg === 'on';
-    await setSetting('antiCall', newVal);
+    await setSetting('antiCall', newVal, sessionId);
 
     await conn.sendMessage(from, {
         react: { text: newVal ? '✅' : '❌', key: mek.key }
