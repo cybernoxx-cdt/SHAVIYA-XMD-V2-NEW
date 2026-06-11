@@ -13,19 +13,19 @@ cmd({
     react: '🛡️',
     filename: __filename
 },
-async (conn, mek, m, { from, isOwner, q, reply }) => {
+async (conn, mek, m, { from, isOwner, q, reply, sessionId }) => {
     if (!isOwner) return reply('❌ Owner only command!');
 
     if (!q) {
-        const current = getSetting('antidelete');
+        const current = getSetting('antidelete', sessionId);
         return reply(`🛡️ *Antidelete* is currently: *${current ? 'ON ✅' : 'OFF ❌'}*\n\nUsage: .antidelete on / off`);
     }
 
     if (q === 'on') {
-        setSetting('antidelete', true);
+        setSetting('antidelete', true, sessionId);
         reply('✅ *Antidelete ON* - Deleted messages will be shown!');
     } else if (q === 'off') {
-        setSetting('antidelete', false);
+        setSetting('antidelete', false, sessionId);
         reply('❌ *Antidelete OFF* - Disabled.');
     } else {
         reply('Usage: .antidelete on / off');
