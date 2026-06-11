@@ -123,15 +123,15 @@ cmd({
     react:    '🔊',
     filename: __filename
 },
-async (conn, mek, m, { isOwner, q, reply }) => {
+async (conn, mek, m, { isOwner, q, reply, sessionId }) => {
     if (!isOwner) return reply('❌ *Owner only command!*');
     const sub = (q || '').toLowerCase().trim();
     if (!sub || (sub !== 'on' && sub !== 'off')) {
-        const cur = getSetting('autoVoice') ?? false;
+        const cur = getSetting('autoVoice', sessionId) ?? false;
         return reply(`🔊 *Auto Voice Status*\n\n📌 *Current:* ${cur ? '✅ ON' : '❌ OFF'}\n\nUsage:\n• *.autovoice on*  → Enable\n• *.autovoice off* → Disable\n\n> 𝑺𝑯𝑨𝑽𝑰𝒀𝑨-𝑿𝑴𝑫 𝑽𝟐 ⚡`);
     }
     const newVal = sub === 'on';
-    setSetting('autoVoice', newVal);
+    setSetting('autoVoice', newVal, sessionId);
     return reply(`${newVal ? '✅' : '❌'} *Auto Voice ${sub.toUpperCase()}!*\n\n_Saved instantly — no restart needed_ ✅\n\n> 𝑺𝑯𝑨𝑽𝑰𝒀𝑨-𝑿𝑴𝑫 𝑽𝟐 ⚡`);
 });
 
@@ -154,9 +154,9 @@ function getJsonCaches() {
 //  on:body — auto voice / sticker / reply handler
 // ══════════════════════════════════════════════════════════
 cmd({ on: 'body', dontAddCommandList: true },
-async (conn, mek, m, { from, body, isOwner }) => {
+async (conn, mek, m, { from, body, isOwner, sessionId }) => {
     try {
-        const enabled = getSetting('autoVoice') ?? getConfig('AUTO_VOICE') ?? false;
+        const enabled = getSetting('autoVoice', sessionId) ?? getConfig('AUTO_VOICE', sessionId) ?? false;
         if (!enabled) return;
         if (isOwner) return;
         if (!body || !body.trim()) return;
