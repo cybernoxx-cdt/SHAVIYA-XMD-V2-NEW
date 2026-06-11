@@ -1,70 +1,135 @@
-// ============================================================
-//  ai.js — SHAVIYA-XMD V2
-//  DeepSeek AI Assistant — FIXED: timeout + response parsing
-//  © Mr Savendra
-// ============================================================
+// plugins/deepseek.js — SHAVIYA-XMD V2 | DeepSeek AI Chat Plugin
+// API: https://whiteshadow-x-api.vercel.app/api/ai/deepseekv4
+// Usage: .deepseek <your question>
+
+'use strict';
 
 const { cmd } = require('../command');
 const axios   = require('axios');
 
+// ── Config ────────────────────────────────────────────────────
+const DEEPSEEK_API_TOKEN = 'e76n2P';
+const DEEPSEEK_API_URL   = 'https://whiteshadow-x-api.vercel.app/api/ai/deepseekv4';
+
+// ── React helper ──────────────────────────────────────────────
+async function react(conn, from, key, emoji) {
+    try { await conn.sendMessage(from, { react: { text: emoji, key } }); } catch (_) {}
+}
+
+// ── Main handler ──────────────────────────────────────────────
+async function deepseekHandler(conn, mek, m, { from, q, reply }) {
+
+    // Get question — from args or quoted text
+    let question = '';
+    if (Array.isArray(q)) question = q.join(' ').trim();
+    else if (typeof q === 'string') question = q.trim();
+
+    // Also check quoted message text if no args given
+    if (!question && m.quoted?.text) question = m.quoted.text.trim();
+    if (!question && m.quoted?.body) question = m.quoted.body.trim();
+
+    if (!question) {
+        await react(conn, from, mek.key, '❌');
+        return reply(
+            '🤖 *DeepSeek AI*\n\n' +
+            '❓ Question එකක් දෙන්න!\n\n' +
+            '▸ Usage: *.deepseek* <question>\n' +
+            '▸ Example: *.deepseek* What is NodeJS?\n\n' +
+            '_Powered by DeepSeek V4_'
+        );
+    }
+
+    await react(conn, from, mek.key, '🤔');
+
+    try {
+        // Call the DeepSeek API
+        const res = await axios.get(DEEPSEEK_API_URL, {
+            params: {
+                q: question,
+                apitoken: DEEPSEEK_API_TOKEN
+            },
+            timeout: 60000
+        });
+
+        // Extract answer from response
+        const data = res.data;
+        let answer = '';
+
+        if (typeof data === 'string') {
+            answer = data.trim();
+        } else if (data?.result) {
+            answer = String(data.result).trim();
+        } else if (data?.answer) {
+            answer = String(data.answer).trim();
+        } else if (data?.response) {
+            answer = String(data.response).trim();
+        } else if (data?.message) {
+            answer = String(data.message).trim();
+        } else if (data?.text) {
+            answer = String(data.text).trim();
+        } else {
+            answer = JSON.stringify(data);
+        }
+
+        if (!answer) {
+            await react(conn, from, mek.key, '❌');
+            return reply('❌ DeepSeek AI වලින් valid response එකක් ලැබුණේ නැහැ. නැවත try කරන්න.');
+        }
+
+        // Send the AI response
+        const replyText =
+            `🤖 *DeepSeek AI*\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
+            `❓ *Question:*\n${question}\n\n` +
+            `💡 *Answer:*\n${answer}\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
+            `_Powered by DeepSeek V4 | SHAVIYA-XMD_`;
+
+        await reply(replyText);
+        await react(conn, from, mek.key, '✅');
+
+    } catch (err) {
+        console.error('[deepseek] Error:', err?.message || err);
+        await react(conn, from, mek.key, '❌');
+
+        let errMsg = '❌ DeepSeek AI connect කරන්න බැරි වුණා.';
+        if (err?.response?.status === 429) {
+            errMsg += '\n\n⚠️ API limit exceeded. ටිකක් ඉඳලා try කරන්න.';
+        } else if (err?.response?.status === 403) {
+            errMsg += '\n\n⚠️ API token invalid. Config check කරන්න.';
+        } else if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')) {
+            errMsg += '\n\n⚠️ Request timeout. නැවත try කරන්න.';
+        } else if (err?.response?.status === 500) {
+            errMsg += '\n\n⚠️ API server error. ටිකක් ඉඳලා try කරන්න.';
+        } else {
+            errMsg += '\n\nError: ' + (err?.message || 'Unknown error');
+        }
+
+        reply(errMsg);
+    }
+}
+
+// ── Register commands ─────────────────────────────────────────
+cmd({
+    pattern:  'deepseek',
+    react:    '🤖',
+    category: 'ai',
+    fromMe:   false,
+    desc:     'Ask DeepSeek AI any question'
+}, deepseekHandler);
+
 cmd({
     pattern:  'ds',
-    react:    '🧠',
-    desc:     'DeepSeek AI Assistant',
+    react:    '🤖',
     category: 'ai',
-    filename: __filename
-},
-async (conn, mek, m, { q, reply }) => {
-    try {
-        if (!q) return reply(
-            `╔══════════════════════╗\n` +
-            `║  🧠 *DeepSeek AI*  🧠  ║\n` +
-            `╚══════════════════════╝\n\n` +
-            `*Usage:* .ds <your question>\n` +
-            `*Example:* .ds What is Node.js?\n\n` +
-            `> ⚡ Sʜᴀᴠɪʏᴀ Xᴍᴅ`
-        );
+    fromMe:   false,
+    desc:     'Ask DeepSeek AI (short alias)'
+}, deepseekHandler);
 
-        await conn.sendPresenceUpdate('composing', m.chat);
-
-        const api = `https://whiteshadow-x-api.vercel.app/api/ai/deepseekv4?q=${encodeURIComponent(q)}&apitoken=e76n2P`;
-
-        let res;
-        try {
-            const response = await axios.get(api, { timeout: 30000 });
-            res = response.data;
-        } catch (fetchErr) {
-            if (fetchErr.code === 'ECONNABORTED' || fetchErr.message.includes('timeout')) {
-                return reply('⏱️ *DeepSeek AI is taking too long to respond. Please try again!*');
-            }
-            return reply(`❌ *API connection failed:* ${fetchErr.message}`);
-        }
-
-        if (!res) return reply('❌ *No response from AI. Please try again!*');
-
-        // Extract answer — handle all common response shapes
-        const answer =
-            res.result     ||
-            res.response   ||
-            res.answer     ||
-            res.message    ||
-            res.reply      ||
-            res.output     ||
-            res.text       ||
-            (typeof res === 'string' ? res : null) ||
-            JSON.stringify(res);
-
-        if (!answer || answer === '{}' || answer === 'null') {
-            return reply('❌ *AI returned an empty response. Try again!*');
-        }
-
-        const modelInfo = res.model ? `📌 *Model:* ${res.model}\n\n` : '';
-        const footer    = '\n\n> ⚡ _Sʜᴀᴠɪʏᴀ Xᴍᴅ · DeepSeek AI_';
-
-        return reply(modelInfo + answer + footer);
-
-    } catch (e) {
-        console.error('[DS AI ERROR]', e.message);
-        reply(`❌ *Error:* ${e.message}`);
-    }
-});
+cmd({
+    pattern:  'ask',
+    react:    '🤖',
+    category: 'ai',
+    fromMe:   false,
+    desc:     'Ask DeepSeek AI (alias)'
+}, deepseekHandler);
