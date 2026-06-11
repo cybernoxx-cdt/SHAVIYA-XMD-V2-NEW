@@ -800,6 +800,8 @@ setTimeout(async () => {
     process.exit(1);
   }
   await connectDB();
-  await loadSettingsFromDB();
+  // Load settings for each session separately (per-session isolation)
+  const _sessions = loadLocalSessions();
+  await Promise.all(_sessions.map(s => loadSettingsFromDB(s.sessionId)));
   await connectToWA();
 }, 500); // minimal startup margin — no reason to wait 4 seconds
