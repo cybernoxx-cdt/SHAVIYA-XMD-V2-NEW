@@ -13,7 +13,7 @@ const path    = require('path');
 
 // ─── FILE FALLBACK PATH ──────────────────────────────────────
 const DATA_DIR      = path.join(__dirname, '../data');
-const FALLBACK_FILE = path.join(DATA_DIR, 'offline_state.json');
+function getFallbackFile(sid) { return path.join(DATA_DIR, `offline_state_${sid}.json`); }
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -38,12 +38,12 @@ function getModel() {
 }
 
 // ─── READ STATE ──────────────────────────────────────────────
-async function readState() {
+async function readState(sessionId = 'main') {
     // 1. MongoDB first
     try {
         const Model = getModel();
         if (Model) {
-            const doc = await Model.findById('alwaysOffline');
+            const doc = await Model.findById(sessionId);
             if (doc) return doc.value;
         }
     } catch (e) {
@@ -52,8 +52,9 @@ async function readState() {
 
     // 2. File fallback
     try {
-        if (fs.existsSync(FALLBACK_FILE)) {
-            const raw = fs.readFileSync(FALLBACK_FILE, 'utf-8');
+        const ff = getFallbackFile(sessionId);
+        if (fs.existsSync(ff)) {
+            const raw = fs.readFileSync(ff, 'utf-8');
             return JSON.parse(raw).alwaysOffline === true;
         }
     } catch (_) {}
@@ -62,13 +63,13 @@ async function readState() {
 }
 
 // ─── WRITE STATE ─────────────────────────────────────────────
-async function writeState(value) {
+async function writeState(value, sessionId = 'main') {
     // 1. MongoDB
     try {
         const Model = getModel();
         if (Model) {
             await Model.findByIdAndUpdate(
-                'alwaysOffline',
+                sessionId,
                 { value },
                 { upsert: true, new: true }
             );
@@ -79,14 +80,17 @@ async function writeState(value) {
 
     // 2. File fallback (always write — double safety)
     try {
-        fs.writeFileSync(FALLBACK_FILE, JSON.stringify({ alwaysOffline: value }, null, 2));
+        fs.writeFileSync(getFallbackFile(sessionId), JSON.stringify({ alwaysOffline: value }, null, 2));
     } catch (e) {
         console.error('[OFFLINE] File write error:', e.message);
     }
 }
 
 // ─── GLOBAL STATE ────────────────────────────────────────────
-if (global._alwaysOffline === undefined) global._alwaysOffline = false;
+if (!global._alwaysOfflineMap) global._alwaysOfflineMap = {};
+// Helper
+function isOffline(sid) { return global._alwaysOfflineMap[sid] === true; }
+function setOffline(sid, val) { global._alwaysOfflineMap[sid] = val; }
 
 // ─── PRESENCE HOOK ───────────────────────────────────────────
 // Registered once — keeps bot offline on every incoming message
@@ -97,7 +101,10 @@ function registerOfflineHook(conn) {
     _hookRegistered = true;
 
     conn.ev.on('messages.upsert', async ({ messages }) => {
-        if (!global._alwaysOffline) return;
+        const _sid = global._activeConns
+            ? [...(global._activeConns.entries() || [])].find(([, cc]) => cc === conn)?.[0] || 'main'
+            : 'main';
+        if (!isOffline(_sid)) return;
         for (const msg of messages) {
             if (!msg.key?.remoteJid) continue;
             try {
@@ -114,29 +121,25 @@ function registerOfflineHook(conn) {
 // 4s delay — wait for mongoose + global._activeConns to be ready
 setTimeout(async () => {
     try {
-        const saved = await readState();
-        global._alwaysOffline = saved;
-
+        // Load state for each active session
         const connMap = global._activeConns;
-
-        if (saved) {
-            // State is ON — apply offline presence immediately
-            console.log('[OFFLINE] Always Offline mode loaded — ON');
-            if (connMap && connMap.size > 0) {
-                for (const [, conn] of connMap) {
-                    registerOfflineHook(conn);
-                    try { await conn.sendPresenceUpdate('unavailable'); } catch (_) {}
-                }
-            }
-        } else {
-            // State is OFF — apply online presence
-            console.log('[OFFLINE] Always Offline mode — OFF');
-            if (connMap && connMap.size > 0) {
-                for (const [, conn] of connMap) {
-                    try { await conn.sendPresenceUpdate('available'); } catch (_) {}
+        if (connMap) {
+            for (const [sid, conn2] of connMap) {
+                const saved = await readState(sid);
+                setOffline(sid, saved);
+                if (saved) {
+                    registerOfflineHook(conn2);
+                    try { await conn2.sendPresenceUpdate('unavailable'); } catch (_) {}
+                } else {
+                    try { await conn2.sendPresenceUpdate('available'); } catch (_) {}
                 }
             }
         }
+        const saved = false; // skip old code below
+
+        const connMap = global._activeConns;
+
+        // (handled above in per-session loop)
     } catch (e) {
         console.error('[OFFLINE] Startup load error:', e.message);
     }
@@ -154,7 +157,7 @@ cmd({
     fromMe:   true,
     filename: __filename
 },
-async (conn, mek, m, { from, q, reply }) => {
+async (conn, mek, m, { from, q, reply, sessionId }) => {
 
     // Register hook on first command use
     registerOfflineHook(conn);
@@ -163,8 +166,8 @@ async (conn, mek, m, { from, q, reply }) => {
 
     // ── ON ──
     if (arg === 'on') {
-        global._alwaysOffline = true;
-        await writeState(true);
+        setOffline(sessionId, true);
+        await writeState(true, sessionId);
         await conn.sendPresenceUpdate('unavailable');
         return reply(
             '👻 *Always Offline Mode — ON*\n\n'
@@ -177,8 +180,8 @@ async (conn, mek, m, { from, q, reply }) => {
 
     // ── OFF ──
     if (arg === 'off') {
-        global._alwaysOffline = false;
-        await writeState(false);
+        setOffline(sessionId, false);
+        await writeState(false, sessionId);
         await conn.sendPresenceUpdate('available');
         return reply(
             '✅ *Always Offline Mode — OFF*\n\n'
@@ -190,7 +193,7 @@ async (conn, mek, m, { from, q, reply }) => {
     }
 
     // ── STATUS ──
-    const status = global._alwaysOffline
+    const status = isOffline(sessionId)
         ? '👻 *ON* — Offline / Invisible'
         : '🟢 *OFF* — Normal Online';
 
