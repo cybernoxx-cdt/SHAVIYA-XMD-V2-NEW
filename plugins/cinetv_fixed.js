@@ -114,7 +114,7 @@ function formatFileSize(bytes) {
 // ═══════════════════════════════════════════════════
 //  API Configuration
 // ═══════════════════════════════════════════════════
-const API_KEY = "6c1c1d3f4684fed0";
+const API_KEY = "dbdd65ee9095e06f";
 const BASE_URL = "https://api-dark-shan-yt.koyeb.app";
 
 // ═══════════════════════════════════════════════════
