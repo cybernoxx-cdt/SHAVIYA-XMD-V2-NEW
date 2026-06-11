@@ -16,11 +16,11 @@ cmd({
     react: '🖊️',
     filename: __filename
 },
-async (conn, mek, m, { isOwner, q, reply }) => {
+async (conn, mek, m, { isOwner, q, reply, sessionId }) => {
     if (!isOwner) return reply('❌ Owner only!');
-    if (!q) return reply(`🖊️ *Current footer:* ${getSetting('footer')}\n\nUsage: .setfooter My Bot Name`);
+    if (!q) return reply(`🖊️ *Current footer:* ${getSetting('footer', sessionId)}\n\nUsage: .setfooter My Bot Name`);
 
-    await setSetting('footer', q);
+    await setSetting('footer', q, sessionId);
     reply(`✅ *Footer set to:* ${q}`);
 });
 
@@ -33,11 +33,11 @@ cmd({
     react: '🖼️',
     filename: __filename
 },
-async (conn, mek, m, { isOwner, q, reply }) => {
+async (conn, mek, m, { isOwner, q, reply, sessionId }) => {
     if (!isOwner) return reply('❌ Owner only!');
-    if (!q) return reply(`🖼️ *Current thumb:* ${getSetting('thumb') || 'Not set'}\n\nUsage: .setthumb https://...`);
+    if (!q) return reply(`🖼️ *Current thumb:* ${getSetting('thumb', sessionId) || 'Not set'}\n\nUsage: .setthumb https://...`);
 
-    await setSetting('thumb', q);
+    await setSetting('thumb', q, sessionId);
     reply(`✅ *Thumbnail URL saved!*`);
 });
 
@@ -50,11 +50,11 @@ cmd({
     react: '🔤',
     filename: __filename
 },
-async (conn, mek, m, { isOwner, q, reply }) => {
+async (conn, mek, m, { isOwner, q, reply, sessionId }) => {
     if (!isOwner) return reply('❌ Owner only!');
-    if (!q) return reply(`🔤 *Current prefix:* ${getSetting('prefix') || 'Not set'}\n\nUsage: .setprefix 🎬`);
+    if (!q) return reply(`🔤 *Current prefix:* ${getSetting('prefix', sessionId) || 'Not set'}\n\nUsage: .setprefix 🎬`);
 
-    await setSetting('prefix', q);
+    await setSetting('prefix', q, sessionId);
     reply(`✅ *Caption prefix set to:* ${q}`);
 });
 
@@ -66,11 +66,11 @@ cmd({
     react: '📝',
     filename: __filename
 },
-async (conn, mek, m, { isOwner, q, reply }) => {
+async (conn, mek, m, { isOwner, q, reply, sessionId }) => {
     if (!isOwner) return reply('❌ Owner only!');
-    if (!q) return reply(`📝 *Current fname:* ${getSetting('fname') || 'Not set'}\n\nUsage: .setfname SHAVIYA`);
+    if (!q) return reply(`📝 *Current fname:* ${getSetting('fname', sessionId) || 'Not set'}\n\nUsage: .setfname SHAVIYA`);
 
-    await setSetting('fname', q);
+    await setSetting('fname', q, sessionId);
     reply(`✅ *File name prefix set to:* ${q}`);
 });
 
@@ -82,19 +82,19 @@ cmd({
     react: '🎬',
     filename: __filename
 },
-async (conn, mek, m, { isOwner, q, reply }) => {
+async (conn, mek, m, { isOwner, q, reply, sessionId }) => {
     if (!isOwner) return reply('❌ Owner only!');
 
     if (!q) {
-        const current = getSetting('moviedoc');
+        const current = getSetting('moviedoc', sessionId);
         return reply(`🎬 *Moviedoc* is: *${current ? 'ON ✅' : 'OFF ❌'}*\n\nUsage: .moviedoc on / off`);
     }
 
     if (q === 'on') {
-        await setSetting('moviedoc', true);
+        await setSetting('moviedoc', true, sessionId);
         reply('✅ *Moviedoc ON* - Movie poster used as thumbnail!');
     } else if (q === 'off') {
-        await setSetting('moviedoc', false);
+        await setSetting('moviedoc', false, sessionId);
         reply('❌ *Moviedoc OFF*');
     } else {
         reply('Usage: .moviedoc on / off');
@@ -110,19 +110,19 @@ cmd({
     react: '🔘',
     filename: __filename
 },
-async (conn, mek, m, { isOwner, q, reply }) => {
+async (conn, mek, m, { isOwner, q, reply, sessionId }) => {
     if (!isOwner) return reply('❌ Owner only!');
 
     if (!q) {
-        const current = getSetting('button');
+        const current = getSetting('button', sessionId);
         return reply(`🔘 *Button mode* is: *${current ? 'ON ✅' : 'OFF ❌'}*\n\nUsage: .button on / off`);
     }
 
     if (q === 'on') {
-        await setSetting('button', true);
+        await setSetting('button', true, sessionId);
         reply('✅ *Button mode ON!*');
     } else if (q === 'off') {
-        await setSetting('button', false);
+        await setSetting('button', false, sessionId);
         reply('❌ *Button mode OFF*');
     } else {
         reply('Usage: .button on / off');
