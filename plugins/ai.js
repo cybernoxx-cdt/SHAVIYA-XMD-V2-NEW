@@ -9,7 +9,7 @@ const axios   = require('axios');
 
 // ── Config ────────────────────────────────────────────────────
 const DEEPSEEK_API_TOKEN = 'e76n2P';
-const DEEPSEEK_API_URL   = 'https://whiteshadow-x-api.vercel.app/api/ai/deepseekv4';
+const DEEPSEEK_API_BASE  = 'https://whiteshadow-x-api.vercel.app/api/ai/deepseekv4';
 
 // ── React helper ──────────────────────────────────────────────
 async function react(conn, from, key, emoji) {
@@ -24,7 +24,6 @@ async function deepseekHandler(conn, mek, m, { from, q, reply }) {
     if (Array.isArray(q)) question = q.join(' ').trim();
     else if (typeof q === 'string') question = q.trim();
 
-    // Also check quoted message text if no args given
     if (!question && m.quoted?.text) question = m.quoted.text.trim();
     if (!question && m.quoted?.body) question = m.quoted.body.trim();
 
@@ -40,52 +39,64 @@ async function deepseekHandler(conn, mek, m, { from, q, reply }) {
     }
 
     await react(conn, from, mek.key, '🤔');
+    await reply('🤖 DeepSeek AI සිතනවා... ටිකක් ඉන්න.');
 
     try {
-        // Call the DeepSeek API
-        const res = await axios.get(DEEPSEEK_API_URL, {
-            params: {
-                q: question,
-                apitoken: DEEPSEEK_API_TOKEN
-            },
-            timeout: 60000
+        // ✅ FIX: Manually build URL with encodeURIComponent — avoids axios param encoding issues
+        const url = `${DEEPSEEK_API_BASE}?q=${encodeURIComponent(question)}&apitoken=${DEEPSEEK_API_TOKEN}`;
+
+        const res = await axios.get(url, {
+            timeout: 90000,
+            headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0'
+            }
         });
 
-        // Extract answer from response
         const data = res.data;
-        let answer = '';
 
-        if (typeof data === 'string') {
-            answer = data.trim();
-        } else if (data?.result) {
-            answer = String(data.result).trim();
-        } else if (data?.answer) {
-            answer = String(data.answer).trim();
-        } else if (data?.response) {
-            answer = String(data.response).trim();
-        } else if (data?.message) {
-            answer = String(data.message).trim();
-        } else if (data?.text) {
-            answer = String(data.text).trim();
-        } else {
-            answer = JSON.stringify(data);
-        }
+        // ✅ API returns: { success, creator, prompt, model, reasoning, response }
+        let answer = '';
+        if (data?.response)      answer = String(data.response).trim();
+        else if (data?.result)   answer = String(data.result).trim();
+        else if (data?.answer)   answer = String(data.answer).trim();
+        else if (data?.message)  answer = String(data.message).trim();
+        else if (typeof data === 'string') answer = data.trim();
+        else answer = JSON.stringify(data);
 
         if (!answer) {
             await react(conn, from, mek.key, '❌');
             return reply('❌ DeepSeek AI වලින් valid response එකක් ලැබුණේ නැහැ. නැවත try කරන්න.');
         }
 
-        // Send the AI response
-        const replyText =
+        // ✅ WhatsApp 4096 char limit — split if too long
+        const header =
             `🤖 *DeepSeek AI*\n` +
             `━━━━━━━━━━━━━━━━━━\n` +
-            `❓ *Question:*\n${question}\n\n` +
-            `💡 *Answer:*\n${answer}\n` +
-            `━━━━━━━━━━━━━━━━━━\n` +
-            `_Powered by DeepSeek V4 | SHAVIYA-XMD_`;
+            `❓ *Q:* ${question}\n\n` +
+            `💡 *Answer:*\n`;
 
-        await reply(replyText);
+        const footer = `\n━━━━━━━━━━━━━━━━━━\n_DeepSeek V4 | SHAVIYA-XMD_`;
+
+        const maxLen = 4000 - header.length - footer.length;
+
+        if (answer.length <= maxLen) {
+            await reply(header + answer + footer);
+        } else {
+            // Send in chunks
+            await reply(header + answer.slice(0, maxLen) + '\n_(continued...)_');
+            let remaining = answer.slice(maxLen);
+            while (remaining.length > 0) {
+                const chunk = remaining.slice(0, 4000);
+                remaining   = remaining.slice(4000);
+                await conn.sendMessage(from, {
+                    text: remaining.length > 0
+                        ? chunk + '\n_(continued...)_'
+                        : chunk + footer
+                }, { quoted: mek });
+            }
+        }
+
         await react(conn, from, mek.key, '✅');
 
     } catch (err) {
@@ -93,17 +104,15 @@ async function deepseekHandler(conn, mek, m, { from, q, reply }) {
         await react(conn, from, mek.key, '❌');
 
         let errMsg = '❌ DeepSeek AI connect කරන්න බැරි වුණා.';
-        if (err?.response?.status === 429) {
-            errMsg += '\n\n⚠️ API limit exceeded. ටිකක් ඉඳලා try කරන්න.';
-        } else if (err?.response?.status === 403) {
-            errMsg += '\n\n⚠️ API token invalid. Config check කරන්න.';
-        } else if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')) {
-            errMsg += '\n\n⚠️ Request timeout. නැවත try කරන්න.';
-        } else if (err?.response?.status === 500) {
-            errMsg += '\n\n⚠️ API server error. ටිකක් ඉඳලා try කරන්න.';
-        } else {
-            errMsg += '\n\nError: ' + (err?.message || 'Unknown error');
-        }
+        const status = err?.response?.status;
+
+        if (status === 429)      errMsg += '\n\n⚠️ API rate limit. ටිකක් ඉඳලා try කරන්න.';
+        else if (status === 403) errMsg += '\n\n⚠️ API token invalid.';
+        else if (status === 400) errMsg += '\n\n⚠️ Bad request. Question වෙනස් කරලා try කරන්න.';
+        else if (status === 500) errMsg += '\n\n⚠️ API server error. ටිකක් ඉඳලා try කරන්න.';
+        else if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout'))
+                                 errMsg += '\n\n⚠️ Timeout. Internet check කරලා නැවත try කරන්න.';
+        else                     errMsg += '\n\nError: ' + (err?.message || 'Unknown');
 
         reply(errMsg);
     }
