@@ -73,7 +73,9 @@ async function makeThumbnail(moviePosterUrl, hardThumbUrl, movieDocOn) {
 // ═══════════════════════════════════════════════════
 //  Wait for Reply Function
 // ═══════════════════════════════════════════════════
-function waitForReply(conn, from, sender, targetId, timeout = 1800000) { // 30 minutes
+function waitForReply(conn, from, sender, targetId) {
+  // No timeout — listener stays active until a valid numbered reply arrives,
+  // no matter how long the user takes to respond.
   return new Promise((resolve) => {
     let settled = false;
     const handler = (update) => {
@@ -93,11 +95,6 @@ function waitForReply(conn, from, sender, targetId, timeout = 1800000) { // 30 m
       }
     };
     conn.ev.on("messages.upsert", handler);
-    setTimeout(() => {
-      if (settled) return;
-      conn.ev.off("messages.upsert", handler);
-      resolve(null);
-    }, timeout);
   });
 }
 
@@ -191,81 +188,21 @@ async function resolveDownloadLink(dlUrl, label) {
 }
 
 // ═══════════════════════════════════════════════════
-//  Smart Size Parser  — "1.4 GB" / "850 MB" / bytes
+//  Smart Send  — always sends as document, no size limit
 // ═══════════════════════════════════════════════════
-function parseSizeMB(raw) {
-  if (!raw) return null;
-  const str = raw.toString().trim().toUpperCase();
-  const num = parseFloat(str.replace(/[^0-9.]/g, ''));
-  if (isNaN(num)) return null;
-  if (str.includes('GB')) return num * 1024;
-  if (str.includes('KB')) return num / 1024;
-  if (str.includes('MB')) return num;
-  // raw bytes
-  if (num > 1048576) return num / (1024 * 1024);
-  return null;
-}
 
-// ═══════════════════════════════════════════════════
-//  Smart Send  — auto-detects real size via HEAD,
-//  sends as doc if safe, sends link card if too big
-// ═══════════════════════════════════════════════════
-// WhatsApp හරහා bot safely upload කරන්න පුලුවන් max size
-// Heroku free dyno RAM ~512MB → limit 450MB safe
-const MAX_SEND_MB = 450;
-
-async function getRealSizeMB(url) {
-  try {
-    const res = await axios.head(url, { timeout: 10000 });
-    const cl = res.headers['content-length'];
-    if (cl) return parseInt(cl) / (1024 * 1024);
-  } catch (_) {}
-  return null;
-}
 
 async function smartSendMovie(conn, from, dlResult, title, quality, thumb, caption, quotedMsg) {
-  // Step 1: size raw string parse
-  let sizeMB = parseSizeMB(dlResult.fileSize);
-
-  // Step 2: size string වලින් හොයාගන්න බැරි නම් HEAD request
-  if (!sizeMB && dlResult.url) {
-    console.log(`📏 [SHAVIYA-XMD] HEAD check size: ${title}`);
-    sizeMB = await getRealSizeMB(dlResult.url);
-  }
-
-  console.log(`📦 [SHAVIYA-XMD] Size: ${sizeMB ? sizeMB.toFixed(1) + ' MB' : 'unknown'} | Limit: ${MAX_SEND_MB} MB`);
-
-  // Step 3: size නොදැනේ නම් හෝ limit ඇතුළේ නම් → direct document send
-  if (!sizeMB || sizeMB <= MAX_SEND_MB) {
-    const docMsg = await conn.sendMessage(from, {
-      document: { url: dlResult.url },
-      fileName: dlResult.fileName,
-      mimetype: dlResult.mimetype || 'video/mp4',
-      jpegThumbnail: thumb,
-      caption: caption
-    }, { quoted: quotedMsg });
-    console.log(`✅ [SHAVIYA-XMD] Sent as document: ${dlResult.fileName}`);
-    await conn.sendMessage(from, { react: { text: "✅", key: docMsg.key } });
-    return;
-  }
-
-  // Step 4: file too big → link card send කරනවා, bot crash වෙන්නේ නෑ
-  console.log(`⚠️ [SHAVIYA-XMD] File too large (${sizeMB.toFixed(1)} MB) — sending link card`);
-  const formattedMB = sizeMB >= 1024
-    ? `${(sizeMB / 1024).toFixed(2)} GB`
-    : `${sizeMB.toFixed(0)} MB`;
-
-  const linkMsg = await conn.sendMessage(from, {
-    text: `🎬 *${title}*\n` +
-          `💎 *Quality:* ${quality}\n` +
-          `📦 *Size:* ${formattedMB}\n\n` +
-          `⚠️ *File size too large to send directly via WhatsApp*\n` +
-          `*(Max: ${MAX_SEND_MB} MB — this file is ${formattedMB})*\n\n` +
-          `📥 *Direct Download Link:*\n` +
-          `${dlResult.url}\n\n` +
-          `💡 *IDM / browser හරහා download කරන්න*`
+  // Size limit check removed — always send as document regardless of size.
+  const docMsg = await conn.sendMessage(from, {
+    document: { url: dlResult.url },
+    fileName: dlResult.fileName,
+    mimetype: dlResult.mimetype || 'video/mp4',
+    jpegThumbnail: thumb,
+    caption: caption
   }, { quoted: quotedMsg });
-  await conn.sendMessage(from, { react: { text: "🔗", key: linkMsg.key } });
+  console.log(`✅ [SHAVIYA-XMD] Sent as document: ${dlResult.fileName}`);
+  await conn.sendMessage(from, { react: { text: "✅", key: docMsg.key } });
 }
 
 // ═══════════════════════════════════════════════════
