@@ -49,9 +49,18 @@ cmd({
       return reply(`⚠️ *Reply to a voice note or audio file with* \`.vchange ${effectKey}\``);
     }
 
-    const type = m.quoted.mtype;
-    if (type !== "audioMessage" && type !== "videoMessage") {
-      return reply("⚠️ *Please reply to a voice note or audio/video file!*");
+    // Resolve mtype robustly — m.quoted.mtype can be undefined depending on
+    // how the message was wrapped (e.g. forwarded, status, view-once).
+    let quotedMsg = m.quoted.message || m.quoted;
+    let type = m.quoted.mtype || Object.keys(quotedMsg)[0];
+
+    if (type === "viewOnceMessageV2" || type === "viewOnceMessage") {
+      quotedMsg = quotedMsg[type].message;
+      type = Object.keys(quotedMsg)[0];
+    }
+
+    if (type !== "audioMessage" && type !== "videoMessage" && type !== "pttMessage") {
+      return reply(`⚠️ *Please reply to a voice note or audio/video file!* (detected type: ${type || "unknown"})`);
     }
 
     await conn.sendMessage(from, { react: { text: "⬇️", key: mek.key } });
