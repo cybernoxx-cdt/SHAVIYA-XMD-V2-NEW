@@ -135,11 +135,6 @@ setTimeout(async () => {
                 }
             }
         }
-        const saved = false; // skip old code below
-
-        const connMap = global._activeConns;
-
-        // (handled above in per-session loop)
     } catch (e) {
         console.error('[OFFLINE] Startup load error:', e.message);
     }
