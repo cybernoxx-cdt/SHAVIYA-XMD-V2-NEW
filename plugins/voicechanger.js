@@ -3,17 +3,39 @@ const fs = require("fs");
 const path = require("path");
 const ffmpeg = require("fluent-ffmpeg");
 
+// ── Resolve ffmpeg binary (ffmpeg-static preferred, then system ffmpeg) ──
+// Without this, fluent-ffmpeg cannot find the ffmpeg binary on most hosts
+// (Heroku, containers, etc.) and every conversion fails silently.
+let ffmpegPath = null;
+try {
+  const staticBin = require("ffmpeg-static");
+  if (staticBin && fs.existsSync(staticBin)) {
+    try { fs.chmodSync(staticBin, 0o755); } catch (_) {}
+    ffmpegPath = staticBin;
+  }
+} catch (_) {}
+
+if (!ffmpegPath) {
+  try {
+    const { execSync } = require("child_process");
+    const s = execSync("which ffmpeg 2>/dev/null", { encoding: "utf8" }).trim();
+    if (s) ffmpegPath = s;
+  } catch (_) {}
+}
+
+if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
+
 // ═══════════════════════════════════════════════════════════════
 //  Voice Changer — .vchange <effect>  (reply to a voice note)
 //  Pure ffmpeg — no external API, works fully offline/self-hosted.
 // ═══════════════════════════════════════════════════════════════
 
 const EFFECTS = {
-  alvin: { filter: "asetrate=44100*1.6,aresample=44100,atempo=0.95", emoji: "🐿️", label: "Alvin (Chipmunk)" },
-  hulk:  { filter: "asetrate=44100*0.65,aresample=44100,atempo=1.25,bass=g=6", emoji: "💚", label: "Hulk (Monster)" },
-  robot: { filter: "afftfilt=real='hypot(re,im)*sin(0)':imag='hypot(re,im)*cos(0)':win_size=512:overlap=0.75,aecho=0.6:0.5:40:0.25", emoji: "🤖", label: "Robot" },
-  baby:  { filter: "asetrate=44100*1.9,aresample=44100,atempo=0.8", emoji: "👶", label: "Baby" },
-  deep:  { filter: "asetrate=44100*0.8,aresample=44100,atempo=1.1,bass=g=3", emoji: "🕳️", label: "Deep Voice" },
+  alvin: { filter: "asetrate=44100*1.6,aresample=44100,atempo=0.625", emoji: "🐿️", label: "Alvin (Chipmunk)" },
+  hulk:  { filter: "asetrate=44100*0.65,aresample=44100,atempo=1.538,bass=g=6", emoji: "💚", label: "Hulk (Monster)" },
+  robot: { filter: "vibrato=f=7:d=0.9,aecho=0.7:0.6:30:0.4,atempo=1.0", emoji: "🤖", label: "Robot" },
+  baby:  { filter: "asetrate=44100*1.9,aresample=44100,atempo=0.5263", emoji: "👶", label: "Baby" },
+  deep:  { filter: "asetrate=44100*0.8,aresample=44100,atempo=1.25,bass=g=3", emoji: "🕳️", label: "Deep Voice" },
 };
 
 const effectList = Object.entries(EFFECTS)
@@ -104,6 +126,6 @@ cmd({
   } catch (err) {
     console.error("[vchange]", err);
     await conn.sendMessage(from, { react: { text: "❌", key: mek.key } });
-    reply("*❌ Error processing voice. Make sure ffmpeg is installed and try again.*");
+    reply(`*❌ Error processing voice:*\n${err.message || err}`);
   }
 });
