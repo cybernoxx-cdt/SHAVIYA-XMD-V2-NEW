@@ -63,11 +63,11 @@ let antidelete, handleAutoForward;
 const { initAntiCrash } = require('./lib/anticrash');
 
 // ================= Global Variables =================
-const ownerNumber = (config.OWNER_NUMBER || "94707085822")
+const ownerNumber = (config.OWNER_NUMBER || "94758127752")
   .split(",")
   .map(n => n.replace(/[^0-9]/g, "").trim())
   .filter(Boolean);
-const botName = "SHAVIYA-XMD V2";
+const botName = "SHAVIYA XMD";
 let activeSessions = new Set();
 const reconnectingSessions = new Set();
 const sentConnectMsg = new Set();
@@ -460,30 +460,25 @@ async function startBot(sessionId, authPath, envConfig) {
 
             const botNum = conn.user.id.split(":")[0];
             const modeStr = (config.MODE || "public").toUpperCase();
+            const selfJid = conn.user.id.split(":")[0] + "@s.whatsapp.net";
 
             const upMsg =
-`✦ ──────────────────── ✦
-    🔮 *𝗦𝗛𝗔𝗩𝗜𝗬𝗔 𝗫𝗠𝗗 𝗩𝟮* 🔮
-✦ ──────────────────── ✦
+`乂  S H A V I Y A - X M D  乂
 
-> 💠 *ᴄᴏɴɴᴇᴄᴛᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ* ✅
+  ➜  Session   :  Online
+  ➜  Number    :  ${botNum}
+  ➜  Prefix    :  ${prefix}
+  ➜  Version   :  V2.0
+  ➜  Mode      :  ${modeStr}
+  ➜  Host      :  Heroku
+  ➜  Started   :  ${now}
 
-⊹ 🤖 *Bot*        ➤  SHAVIYA-XMD V2
-⊹ 📱 *Number*     ➤  +${botNum}
-⊹ 🔑 *Prefix*     ➤  [ ${prefix} ]
-⊹ 💎 *Version*    ➤  V2.0
-⊹ ⚡ *Engine*     ➤  GOD Core
-⊹ 🌐 *Mode*       ➤  ${modeStr}
-⊹ 🎯 *Platform*   ➤  ʜᴇʀᴏᴋᴜ
-⊹ 🛡️ *Security*   ➤  Active
-⊹ 🕐 *Time*       ➤  ${now}
+  Type ${prefix}menu to see all commands.
 
-✦ ──────────────────── ✦
-  🌟 *Pᴏᴡᴇʀᴅ Bʏ Sʜᴀᴠɪʏᴀ* 💐
-✦ ──────────────────── ✦`;
+  ── Shaviya-Xmd ──`;
 
             await conn.sendMessage(
-              ownerNumber[0] + "@s.whatsapp.net",
+              selfJid,
               {
                 image: { url: "https://whiteshadow-uploader.vercel.app/files/cui.jpg" },
                 caption: upMsg,
