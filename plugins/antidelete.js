@@ -10,12 +10,51 @@
 //   ✅ DM: shows SENDER @mention
 //   ✅ All media types handled
 //   ✅ Cache size enforced + 2hr cleanup
+//   ✅ NEW: Anti-ViewOnce — forwards view-once media to owner instantly
+//           (controlled by the existing "autoViewOnce" setting, see
+//           plugins/antidelete_toggle.js for antidelete itself and
+//           plugins/settings.js -> .setting autovv on/off for this)
 // ============================================
 
 'use strict';
 
+const fs   = require('fs');
+const path = require('path');
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 const { getSetting } = require('../lib/settings');
+
+// ── Temp media dir (for view-once forwarding) ─────────────
+const TEMP_MEDIA_DIR = path.join(__dirname, '../tmp');
+if (!fs.existsSync(TEMP_MEDIA_DIR)) {
+    try { fs.mkdirSync(TEMP_MEDIA_DIR, { recursive: true }); } catch {}
+}
+
+function getFolderSizeInMB(folderPath) {
+    try {
+        const files = fs.readdirSync(folderPath);
+        let totalSize = 0;
+        for (const file of files) {
+            const filePath = path.join(folderPath, file);
+            if (fs.statSync(filePath).isFile()) totalSize += fs.statSync(filePath).size;
+        }
+        return totalSize / (1024 * 1024);
+    } catch {
+        return 0;
+    }
+}
+
+function cleanTempFolderIfLarge() {
+    try {
+        if (getFolderSizeInMB(TEMP_MEDIA_DIR) > 200) {
+            for (const file of fs.readdirSync(TEMP_MEDIA_DIR)) {
+                try { fs.unlinkSync(path.join(TEMP_MEDIA_DIR, file)); } catch {}
+            }
+        }
+    } catch (err) {
+        console.log('[ANTIDELETE temp cleanup]:', err.message);
+    }
+}
+setInterval(cleanTempFolderIfLarge, 60_000);
 
 // ── Message cache ─────────────────────────────────────────
 const msgCache = new Map();
@@ -105,6 +144,60 @@ async function downloadMedia(msgContent) {
 }
 
 // ══════════════════════════════════════════════════════════
+//   Anti-ViewOnce — forward view-once media to owner instantly
+//   Gated on the existing "autoViewOnce" setting
+//   (toggle with: .setting autovv on   /   .setting autovv off)
+// ══════════════════════════════════════════════════════════
+async function handleViewOnce(conn, mek, sessionId, senderJid, senderNumber, pushName) {
+    try {
+        if (!getSetting('autoViewOnce', sessionId)) return;
+
+        const vo =
+            mek.message?.viewOnceMessageV2?.message ||
+            mek.message?.viewOnceMessageV2Extension?.message ||
+            mek.message?.viewOnceMessage?.message ||
+            null;
+        if (!vo) return;
+
+        const mediaType = vo.imageMessage ? 'image' : (vo.videoMessage ? 'video' : null);
+        if (!mediaType) return;
+
+        const mediaMsg  = mediaType === 'image' ? vo.imageMessage : vo.videoMessage;
+        const caption   = mediaMsg.caption || '';
+
+        const buffer = await downloadMedia({ [`${mediaType}Message`]: mediaMsg });
+        if (!buffer) return;
+
+        const ownerJid = `${conn.user?.id?.split(':')[0]?.split('@')[0]}@s.whatsapp.net`;
+        const mentionJid = senderNumber ? `${senderNumber}@s.whatsapp.net` : null;
+
+        const time = new Date().toLocaleString('en-GB', {
+            timeZone: 'Asia/Colombo',
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            hour12: true,
+        });
+
+        const info =
+`🔓 *VIEW-ONCE MEDIA CAPTURED*
+━━━━━━━━━━━━━━━━━━━━━
+👤 *Name:*      ${pushName}
+📱 *Sender:*    ${senderNumber ? `@${senderNumber} (+${senderNumber})` : 'Unknown'}
+🕐 *Time:*      ${time}
+━━━━━━━━━━━━━━━━━━━━━${caption ? `\n💬 *Caption:* ${caption}` : ''}`;
+
+        await conn.sendMessage(ownerJid, {
+            [mediaType]: buffer,
+            caption: info,
+            mentions: mentionJid ? [mentionJid] : [],
+        });
+
+    } catch (e) {
+        console.log('[ANTIDELETE viewOnce]:', e.message);
+    }
+}
+
+// ══════════════════════════════════════════════════════════
 //   onMessage — cache every incoming message
 // ══════════════════════════════════════════════════════════
 async function onMessage(conn, mek, sessionId) {
@@ -140,6 +233,11 @@ async function onMessage(conn, mek, sessionId) {
         const senderNumber = extractNumber(senderJid);
         const pushName     = mek.pushName || (mek.key.fromMe ? 'Me' : senderNumber) || 'Unknown';
 
+        // ── Anti-ViewOnce — fire-and-forget, never blocks caching ──
+        if (!mek.key.fromMe) {
+            handleViewOnce(conn, mek, sessionId, senderJid, senderNumber, pushName).catch(() => {});
+        }
+
         msgCache.set(id, {
             msgContent,
             chat,
@@ -162,25 +260,42 @@ async function onMessage(conn, mek, sessionId) {
 }
 
 // ══════════════════════════════════════════════════════════
-//   buildInfo — header with SENDER + DELETED BY
+//   buildInfo — "ANTIDELETE REPORT" style header
+//   Always shows Deleted By + Sender + Number (DM & group)
+//   DeletedBy/Sender resolved via full LID resolution
 // ══════════════════════════════════════════════════════════
 async function buildInfo(conn, cached, update) {
-    const { senderNumber, pushName, chat, isGroup, fromMe } = cached;
+    const { senderJid, senderNumber, pushName, chat, isGroup, fromMe } = cached;
 
-    const senderMentionJid  = senderNumber ? `${senderNumber}@s.whatsapp.net` : null;
-    const senderDisplay     = senderMentionJid ? `@${senderNumber} (+${senderNumber})` : 'Unknown';
+    const senderMentionJid = senderNumber ? `${senderNumber}@s.whatsapp.net` : (senderJid || null);
+    const senderNumDisplay = senderNumber || (senderJid ? senderJid.split('@')[0] : 'Unknown');
 
-    const time = new Date().toLocaleString('en-GB', {
+    const time = new Date().toLocaleString('en-US', {
         timeZone: 'Asia/Colombo',
-        day: '2-digit', month: 'short', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-        hour12: true,
+        hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit',
+        day: '2-digit', month: '2-digit', year: 'numeric',
     });
 
-    let locationLine;
-    let mentions = senderMentionJid ? [senderMentionJid] : [];
-    let deletedByLine = '';
+    // ── Resolve deleter (works for both group & DM) ──────────
+    // In a group, deleter comes from update.key.participant.
+    // In a DM, the deleter is whoever's chat this is (the other party),
+    // unless the bot/owner deleted it (handled by caller before calling this).
+    const rawDeleterJid = isGroup
+        ? (update?.key?.participant || '')
+        : (update?.key?.participant || update?.key?.remoteJid || chat || '');
 
+    const deleterJid = (rawDeleterJid && !rawDeleterJid.endsWith('@g.us'))
+        ? resolveSenderJid(rawDeleterJid, conn)
+        : '';
+    const deleterNumber = extractNumber(deleterJid) || senderNumber;
+
+    // ── Mentions: always include both deleter + sender ───────
+    const mentions = [];
+    const deleterMentionJid = deleterNumber ? `${deleterNumber}@s.whatsapp.net` : null;
+    if (deleterMentionJid) mentions.push(deleterMentionJid);
+    if (senderMentionJid && senderMentionJid !== deleterMentionJid) mentions.push(senderMentionJid);
+
+    let groupLine = '';
     if (isGroup) {
         let groupName = '';
         try {
@@ -189,37 +304,17 @@ async function buildInfo(conn, cached, update) {
         } catch {
             groupName = chat.split('@')[0];
         }
-        locationLine = `👥 *Group:*      ${groupName}`;
-
-        const rawDeleterJid  = update?.key?.participant || '';
-        // Never treat group JID as deleter
-        const deleterJid     = (rawDeleterJid && !rawDeleterJid.endsWith('@g.us'))
-            ? resolveSenderJid(rawDeleterJid, conn)
-            : '';
-        const deleterNumber  = extractNumber(deleterJid);
-
-        if (deleterNumber && deleterNumber !== senderNumber) {
-            const deleterMentionJid = `${deleterNumber}@s.whatsapp.net`;
-            mentions.push(deleterMentionJid);
-            deletedByLine = `\n🗑️ *Deleted By:* @${deleterNumber} (+${deleterNumber})`;
-        } else if (deleterNumber === senderNumber) {
-            deletedByLine = `\n🗑️ *Deleted By:* Self`;
-        }
-
-    } else {
-        locationLine = fromMe
-            ? `💬 *Chat:*       Sent by Me (Bot)`
-            : `💬 *Chat:*       Private DM`;
+        groupLine = `*👥 Group:* ${groupName}\n`;
     }
 
     const text =
-`🗑️ *DELETED MESSAGE DETECTED*
-━━━━━━━━━━━━━━━━━━━━━
-👤 *Name:*      ${pushName}
-📱 *Sender:*    ${senderDisplay}${deletedByLine}
-${locationLine}
-🕐 *Time:*      ${time}
-━━━━━━━━━━━━━━━━━━━━━`;
+`*🔰 ANTIDELETE REPORT 🔰*
+
+*🗑️ Deleted By:* @${deleterNumber || senderNumDisplay}
+*👤 Sender:* @${senderNumDisplay}
+*📱 Number:* +${senderNumDisplay}
+*🕒 Time:* ${time}
+${groupLine}`;
 
     return { text, mentions };
 }
