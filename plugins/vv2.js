@@ -88,7 +88,7 @@ async (conn, mek, m, { from, sender, isOwner, reply }) => {
         await conn.sendMessage(sender, messageContent, { quoted: mek });
 
         // React success
-        try { await conn.sendMessage(from, { react: { text: '✅', key: mek.key } }); } catch {}
+        try { await conn.sendMessage(from, { react: { text: '', key: mek.key } }); } catch {}
 
     } catch (error) {
         console.error('[VV2 ERROR]', error.message);
