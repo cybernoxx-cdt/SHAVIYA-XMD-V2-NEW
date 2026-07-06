@@ -11,6 +11,7 @@
 'use strict';
 
 const { cmd } = require('../command');
+const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 
 const VIEWONCE_TYPES = new Set([
     'viewOnceMessage',
@@ -18,40 +19,82 @@ const VIEWONCE_TYPES = new Set([
     'viewOnceMessageV2Extension',
 ]);
 
-cmd({ on: 'body' },
+// ── Raw extraction — works directly off mek.message, independent of
+//    lib/msg.js's sms() normalization. This means the plugin still
+//    works even if sms() fails/throws for an unrelated reason. ──
+function extractViewOnce(mek) {
+    const msg = mek?.message;
+    if (!msg) return null;
+
+    const topType = Object.keys(msg).find(k => VIEWONCE_TYPES.has(k));
+    if (!topType) return null;
+
+    const inner = msg[topType]?.message;
+    if (!inner) return null;
+
+    const innerType = Object.keys(inner).find(k =>
+        k === 'imageMessage' || k === 'videoMessage' || k === 'audioMessage'
+    );
+    if (!innerType) return null;
+
+    return { innerType, mediaMsg: inner[innerType] };
+}
+
+async function downloadRaw(mediaMsg, mediaType) {
+    const stream = await downloadContentFromMessage(mediaMsg, mediaType);
+    let buffer = Buffer.alloc(0);
+    for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
+    return buffer;
+}
+
+cmd({ on: 'body', filename: __filename },
 async (conn, mek, m, { sessionId }) => {
     try {
-        // Only real view-once wrappers — ignore everything else
-        if (!VIEWONCE_TYPES.has(m.type)) return;
-        if (!m.msg) return;
-
         // Never forward the bot's own outgoing view-once (if any)
-        if (m.fromMe) return;
+        if (mek?.key?.fromMe) return;
 
-        const innerType = m.msg.type; // imageMessage / videoMessage / audioMessage
-        if (!['imageMessage', 'videoMessage', 'audioMessage'].includes(innerType)) return;
+        // ── Primary path: use lib/msg.js normalized m (when available) ──
+        let innerType, mediaMsg;
+        if (m && VIEWONCE_TYPES.has(m.type) && m.msg &&
+            ['imageMessage', 'videoMessage', 'audioMessage'].includes(m.msg.type)) {
+            innerType = m.msg.type;
+            mediaMsg  = m.msg;
+        } else {
+            // ── Fallback: extract directly from raw mek.message ──
+            const extracted = extractViewOnce(mek);
+            if (!extracted) return;
+            innerType = extracted.innerType;
+            mediaMsg  = extracted.mediaMsg;
+        }
 
         // ── Download the media before it disappears ──────────
         let buffer;
         try {
-            buffer = await m.download();
+            buffer = m && mediaMsg === m.msg
+                ? await m.download()
+                : await downloadRaw(mediaMsg, innerType.replace('Message', ''));
         } catch (e) {
             console.log('[AUTO-VIEWONCE] download failed:', e.message);
             return;
         }
         if (!buffer || !buffer.length) return;
 
-        // ── Resolve sender + owner ────────────────────────────
-        const senderNumber = (m.sender || '').split('@')[0].split(':')[0];
-        const ownerJid = conn.user.id.split(':')[0] + '@s.whatsapp.net';
+        // ── Resolve sender + chat + owner (fallback to raw key if m missing) ──
+        const chat        = m?.chat || mek.key?.remoteJid || '';
+        const isGroup      = m?.isGroup ?? chat.endsWith('@g.us');
+        const rawSender    = m?.sender || (mek.key?.fromMe
+            ? conn.user?.id
+            : (mek.key?.participant || mek.key?.remoteJid || ''));
+        const senderNumber = (rawSender || '').split('@')[0].split(':')[0];
+        const ownerJid      = conn.user.id.split(':')[0] + '@s.whatsapp.net';
 
         let groupName = '';
-        if (m.isGroup) {
+        if (isGroup) {
             try {
-                const meta = await conn.groupMetadata(m.chat);
+                const meta = await conn.groupMetadata(chat);
                 groupName = meta.subject;
             } catch {
-                groupName = m.chat.split('@')[0];
+                groupName = chat.split('@')[0];
             }
         }
 
@@ -62,13 +105,13 @@ async (conn, mek, m, { sessionId }) => {
             hour12: true,
         });
 
-        const caption = m.msg.caption || '';
+        const caption = mediaMsg.caption || '';
 
         const info =
 `🔓 *VIEW-ONCE AUTO-CAPTURED*
 ━━━━━━━━━━━━━━━━━━━━━
 👤 *Sender:*  @${senderNumber}
-${m.isGroup ? `👥 *Group:*   ${groupName}\n` : ''}🕐 *Time:*    ${time}
+${isGroup ? `👥 *Group:*   ${groupName}\n` : ''}🕐 *Time:*    ${time}
 ━━━━━━━━━━━━━━━━━━━━━${caption ? `\n💬 *Caption:* ${caption}` : ''}`;
 
         const mentions = senderNumber ? [`${senderNumber}@s.whatsapp.net`] : [];
@@ -91,7 +134,7 @@ ${m.isGroup ? `👥 *Group:*   ${groupName}\n` : ''}🕐 *Time:*    ${time}
             await conn.sendMessage(ownerJid, {
                 audio: buffer,
                 mimetype: 'audio/mp4',
-                ptt: m.msg.ptt || false,
+                ptt: mediaMsg.ptt || false,
             });
         }
 
