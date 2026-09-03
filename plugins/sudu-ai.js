@@ -1,280 +1,823 @@
 'use strict';
 
 /**
- * SHAVIYA-XMD V2 — SUDU AI AGENT
+ * ============================================================
+ * SHAVIYA-XMD V2
+ * SUDU AI AGENT
+ * ============================================================
  *
- * Always-on AI wife/girlfriend style agent powered by ZANTA-MD /wife API.
+ * Works with:
  *
- * Trigger examples (normal messages, no command required):
  *   sudu kohomada?
  *   Sudu mata adarei da?
  *   සුදු කොහොමද?
  *
- * Force command:
- *   sudu kohomada?
+ *   .sudu kohomada?
+ *   .සුදු කොහොමද?
  *
- * The plugin is intentionally self-contained and uses axios, which is
- * already present in the SHAVIYA-XMD V2 package.
+ * API:
+ *   ZANTA-MD /wife
+ *
+ * API KEY:
+ *   HARD CODED BELOW
+ * ============================================================
  */
 
 const { cmd } = require('../command');
 const axios = require('axios');
 
-const API_URL = 'https://api.zanta-mini.store/api/wife';
-const API_KEY = process.env.SUDU_AI_API_KEY || process.env.ZANTA_API_KEY || '';
 
-// ─────────────────────────────────────────────────────────────
-// Settings
-// ─────────────────────────────────────────────────────────────
+/* ============================================================
+   API SETTINGS
+============================================================ */
+
+const API_URL =
+    'https://api.zanta-mini.store/api/wife';
+
+const API_KEY =
+    'zan_vWpU1lkr_g6wwxdlvyv';
+
+
+/* ============================================================
+   CONFIG
+============================================================ */
+
 const CONFIG = {
-    // Maximum user text sent to the API. Prevents accidental huge requests.
+
+    /*
+     * Maximum text sent to API
+     */
     maxTextLength: 2000,
 
-    // API timeout. Keep it high enough for an AI model response.
+    /*
+     * API timeout
+     */
     timeoutMs: 60000,
 
-    // Small per-chat cooldown to avoid accidental API spam.
-    cooldownMs: 1200,
+    /*
+     * Small cooldown per chat
+     */
+    cooldownMs: 1000,
 
-    // When true, only messages containing a standalone trigger word activate.
-    // This avoids matching words such as "suddenly".
-    wordBoundary: true,
-
-    // Trigger words. Add more if you want.
-    triggers: ['sudu', 'සුදු'],
-
-    // If true, bot replies to its own outgoing messages are ignored.
-    ignoreFromMe: true,
-
-    // If true, the always-on listener works in groups as well as private chats.
+    /*
+     * Group support
+     */
     groupsEnabled: true,
 
-    // If true, command sudu works even when the normal trigger is disabled.
-    commandEnabled: true,
+    /*
+     * Ignore bot's own messages
+     */
+    ignoreFromMe: true,
+
 };
+
+
+/* ============================================================
+   COOLDOWN
+============================================================ */
 
 const cooldowns = new Map();
 
-function normalizeText(value) {
-    return String(value || '').replace(/\s+/gu, ' ').trim();
-}
-
-function hasTrigger(text) {
-    const clean = normalizeText(text);
-    if (!clean) return false;
-
-    for (const trigger of CONFIG.triggers) {
-        if (CONFIG.wordBoundary) {
-            // Unicode-aware boundary for Latin/Sinhala trigger words.
-            const re = new RegExp(`(?:^|[^\\p{L}\\p{N}_])${escapeRegExp(trigger)}(?=$|[^\\p{L}\\p{N}_])`, 'iu');
-            if (re.test(clean)) return true;
-        } else if (clean.toLocaleLowerCase().includes(trigger.toLocaleLowerCase())) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-function escapeRegExp(value) {
-    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function removeTrigger(text) {
-    let clean = normalizeText(text);
-
-    for (const trigger of CONFIG.triggers) {
-        const re = new RegExp(`(?:^|[^\\p{L}\\p{N}_])${escapeRegExp(trigger)}(?=$|[^\\p{L}\\p{N}_])`, 'iu');
-        if (re.test(clean)) {
-            clean = clean.replace(re, ' ').replace(/\s+/gu, ' ').trim();
-            break;
-        }
-    }
-
-    return clean;
-}
-
-function getApiKey() {
-    return process.env.SUDU_AI_API_KEY || process.env.ZANTA_API_KEY || API_KEY;
-}
-
-function getReplyFromResponse(data) {
-    // Current API shape:
-    // { success: true, creator: 'ZANTA-MD', message: 'Success',
-    //   result: { reply: '...', model: '...' } }
-    const candidates = [
-        data?.result?.reply,
-        data?.reply,
-        data?.result?.answer,
-        data?.answer,
-        data?.data?.reply,
-        data?.data?.answer,
-    ];
-
-    const answer = candidates.find(v => typeof v === 'string' && v.trim());
-    return answer ? answer.trim() : '';
-}
-
-function isSuccess(data) {
-    // Current API reports success=true. Accept a few common variants so
-    // harmless API envelope changes do not immediately break the plugin.
-    if (data?.success === false) return false;
-    if (data?.status === false) return false;
-    if (data?.error) return false;
-    return true;
-}
-
-async function askSudu(text) {
-    const apiKey = getApiKey();
-    if (!apiKey) {
-        throw new Error('SUDU_AI_API_KEY is not configured');
-    }
-
-    const userText = normalizeText(text).slice(0, CONFIG.maxTextLength) || 'Hi';
-
-    const response = await axios.get(API_URL, {
-        params: {
-            apiKey,
-            text: userText,
-        },
-        timeout: CONFIG.timeoutMs,
-        headers: {
-            'Accept': 'application/json',
-            'User-Agent': 'SHAVIYA-XMD-V2-SUDU-Agent/1.0',
-        },
-        validateStatus: status => status >= 200 && status < 500,
-    });
-
-    const data = response.data;
-
-    if (response.status >= 400) {
-        const apiMessage = data?.message || data?.error || `HTTP ${response.status}`;
-        throw new Error(String(apiMessage));
-    }
-
-    if (!isSuccess(data)) {
-        throw new Error(String(data?.message || data?.error || 'AI API returned an unsuccessful response'));
-    }
-
-    const reply = getReplyFromResponse(data);
-    if (!reply) {
-        throw new Error('AI API returned no reply');
-    }
-
-    return {
-        reply,
-        model: data?.result?.model || data?.model || null,
-    };
-}
 
 function canRun(chatId) {
-    const now = Date.now();
-    const last = cooldowns.get(chatId) || 0;
 
-    if (now - last < CONFIG.cooldownMs) return false;
+    const now = Date.now();
+
+    const last =
+        cooldowns.get(chatId) || 0;
+
+    if (
+        now - last <
+        CONFIG.cooldownMs
+    ) {
+        return false;
+    }
+
     cooldowns.set(chatId, now);
 
-    // Prevent unbounded memory growth on long-running bots.
+    /*
+     * Prevent unlimited memory growth
+     */
     if (cooldowns.size > 5000) {
-        for (const [key, timestamp] of cooldowns) {
-            if (now - timestamp > CONFIG.cooldownMs * 10) cooldowns.delete(key);
+
+        for (
+            const [key, timestamp]
+            of cooldowns
+        ) {
+
+            if (
+                now - timestamp >
+                CONFIG.cooldownMs * 10
+            ) {
+
+                cooldowns.delete(key);
+
+            }
         }
     }
 
     return true;
 }
 
-async function runAgent(conn, mek, { from, text, reply }) {
-    if (CONFIG.ignoreFromMe && mek?.key?.fromMe) return;
-    if (!from || !text) return;
-    if (!CONFIG.groupsEnabled && from.endsWith('@g.us')) return;
-    if (!canRun(from)) return;
+
+/* ============================================================
+   TEXT HELPERS
+============================================================ */
+
+function cleanText(value) {
+
+    return String(value || '')
+        .replace(/\s+/gu, ' ')
+        .trim();
+
+}
+
+
+/*
+ * Remove sudu / සුදු from beginning of message.
+ *
+ * Examples:
+ *
+ * sudu hello
+ * -> hello
+ *
+ * සුදු කොහොමද
+ * -> කොහොමද
+ *
+ * .sudu hello
+ * -> hello
+ *
+ * .සුදු hello
+ * -> hello
+ */
+
+function removeTrigger(text) {
+
+    let clean =
+        cleanText(text);
+
+    /*
+     * Remove optional dot prefix
+     */
+    clean =
+        clean.replace(/^\.\s*/u, '');
+
+    /*
+     * Remove trigger from beginning
+     */
+    clean =
+        clean.replace(
+            /^(?:sudu|සුදු)(?:\s+|$)/iu,
+            ''
+        );
+
+    return cleanText(clean);
+}
+
+
+/* ============================================================
+   API RESPONSE PARSER
+============================================================ */
+
+function getApiReply(data) {
+
+    /*
+     * Current API response:
+     *
+     * {
+     *   success: true,
+     *   result: {
+     *      reply: "...",
+     *      model: "..."
+     *   }
+     * }
+     */
+
+    const candidates = [
+
+        data?.result?.reply,
+
+        data?.reply,
+
+        data?.result?.answer,
+
+        data?.answer,
+
+        data?.data?.reply,
+
+        data?.data?.answer,
+
+    ];
+
+
+    const found =
+        candidates.find(
+            value =>
+                typeof value === 'string' &&
+                value.trim()
+        );
+
+
+    return found
+        ? found.trim()
+        : '';
+}
+
+
+/* ============================================================
+   API REQUEST
+============================================================ */
+
+async function askSudu(text) {
+
+    const prompt =
+        cleanText(text)
+            .slice(
+                0,
+                CONFIG.maxTextLength
+            ) || 'Hi';
+
+
+    console.log(
+        `[SUDU-AI] Sending prompt: ${prompt}`
+    );
+
+
+    const response =
+        await axios.get(
+            API_URL,
+            {
+
+                params: {
+
+                    apiKey:
+                        API_KEY,
+
+                    text:
+                        prompt,
+
+                },
+
+                timeout:
+                    CONFIG.timeoutMs,
+
+                headers: {
+
+                    Accept:
+                        'application/json',
+
+                    'User-Agent':
+                        'SHAVIYA-XMD-V2-SUDU-AI/2.0',
+
+                },
+
+                validateStatus:
+                    status =>
+                        status >= 200 &&
+                        status < 500,
+
+            }
+        );
+
+
+    const data =
+        response.data;
+
+
+    console.log(
+        '[SUDU-AI] API status:',
+        response.status
+    );
+
+
+    /*
+     * HTTP error
+     */
+
+    if (
+        response.status >= 400
+    ) {
+
+        const errorMessage =
+            data?.message ||
+            data?.error ||
+            `HTTP ${response.status}`;
+
+        throw new Error(
+            String(errorMessage)
+        );
+
+    }
+
+
+    /*
+     * API success=false
+     */
+
+    if (
+        data?.success === false
+    ) {
+
+        throw new Error(
+            String(
+                data?.message ||
+                data?.error ||
+                'API returned success=false'
+            )
+        );
+
+    }
+
+
+    /*
+     * Get AI response
+     */
+
+    const reply =
+        getApiReply(data);
+
+
+    if (!reply) {
+
+        console.error(
+            '[SUDU-AI] Unexpected API response:',
+            JSON.stringify(data)
+        );
+
+        throw new Error(
+            'API returned no AI reply'
+        );
+
+    }
+
+
+    return {
+
+        reply,
+
+        model:
+            data?.result?.model ||
+            data?.model ||
+            null,
+
+    };
+
+}
+
+
+/* ============================================================
+   SEND AI RESPONSE
+============================================================ */
+
+async function runSudu(
+    conn,
+    mek,
+    {
+        from,
+        text,
+        reply
+    }
+) {
 
     try {
-        const prompt = removeTrigger(text) || 'Hi';
 
-        await conn.sendMessage(from, {
-            react: { text: '💗', key: mek.key }
-        }).catch(() => {});
+        /*
+         * Basic checks
+         */
 
-        const result = await askSudu(prompt);
+        if (
+            CONFIG.ignoreFromMe &&
+            mek?.key?.fromMe
+        ) {
+            return;
+        }
+
+
+        if (!from) {
+            return;
+        }
+
+
+        if (
+            !CONFIG.groupsEnabled &&
+            from.endsWith('@g.us')
+        ) {
+            return;
+        }
+
+
+        /*
+         * Cooldown
+         */
+
+        if (!canRun(from)) {
+            return;
+        }
+
+
+        /*
+         * Get actual question
+         */
+
+        const prompt =
+            cleanText(text) || 'Hi';
+
+
+        /*
+         * React immediately
+         */
 
         await conn.sendMessage(
             from,
-            { text: result.reply },
-            { quoted: mek }
+            {
+                react: {
+                    text: '💗',
+                    key: mek.key
+                }
+            }
+        ).catch(() => {});
+
+
+        /*
+         * API request
+         */
+
+        const result =
+            await askSudu(prompt);
+
+
+        /*
+         * Send AI reply
+         */
+
+        await conn.sendMessage(
+            from,
+            {
+                text:
+                    result.reply
+            },
+            {
+                quoted:
+                    mek
+            }
         );
 
-        await conn.sendMessage(from, {
-            react: { text: '❤️', key: mek.key }
-        }).catch(() => {});
+
+        /*
+         * Success reaction
+         */
+
+        await conn.sendMessage(
+            from,
+            {
+                react: {
+                    text: '❤️',
+                    key: mek.key
+                }
+            }
+        ).catch(() => {});
+
+
+        console.log(
+            '[SUDU-AI] Response sent successfully'
+        );
+
+
     } catch (error) {
-        console.error('[SUDU-AI] Error:', error?.message || error);
 
-        await conn.sendMessage(from, {
-            react: { text: '❌', key: mek.key }
-        }).catch(() => {});
+        console.error(
+            '[SUDU-AI] ERROR:',
+            error?.message ||
+            error
+        );
 
-        // Do not expose the API key or raw axios config to users.
-        if (error?.message === 'SUDU_AI_API_KEY is not configured') {
-            return reply('❌ *SUDU AI* API key is not configured. Add `SUDU_AI_API_KEY` to your environment variables.');
-        }
 
-        return reply('❌ Sudu AI ටිකක් busy. ටිකකින් ආයෙත් try කරන්න.');
-    }
-}
+        /*
+         * Error reaction
+         */
 
-// ─────────────────────────────────────────────────────────────
-// 1) Always-on listener — catches normal messages containing
-//    "sudu" / "සුදු" anywhere in a chat.
-// ─────────────────────────────────────────────────────────────
-cmd({
-    on: 'body',
-    dontAddCommandList: true,
-    filename: __filename,
-}, async (conn, mek, m, { from, body, reply }) => {
-    try {
-        if (!hasTrigger(body)) return;
-        await runAgent(conn, mek, { from, text: body, reply });
-    } catch (e) {
-        console.error('[SUDU-AI BODY]', e?.message || e);
-    }
-});
+        await conn.sendMessage(
+            from,
+            {
+                react: {
+                    text: '❌',
+                    key: mek.key
+                }
+            }
+        ).catch(() => {});
 
-// ─────────────────────────────────────────────────────────────
-// 2) Explicit command — sudu <message>
-// ─────────────────────────────────────────────────────────────
-if (CONFIG.commandEnabled) {
-    cmd({
-        pattern: 'sudu',
-        alias: ['wifeai', 'girlfriendai', 'suduai'],
-        react: '💗',
-        desc: 'Sudu AI Wife/Girlfriend Agent',
-        category: 'ai',
-        filename: __filename,
-    }, async (conn, mek, m, { from, q, reply }) => {
-        // Explicit command should not be blocked by the trigger parser.
-        if (CONFIG.ignoreFromMe && mek?.key?.fromMe) return;
-        if (!from) return;
-        if (!CONFIG.groupsEnabled && from.endsWith('@g.us')) return;
-        if (!canRun(from)) return;
+
+        /*
+         * Tell user
+         */
 
         try {
-            const result = await askSudu(q || 'Hi');
+
             await conn.sendMessage(
                 from,
-                { text: result.reply },
-                { quoted: mek }
+                {
+                    text:
+                        '❌ *Sudu AI* response එක ගන්න බැරි වුණා.\n\n' +
+                        'ටිකකින් ආයෙත් try කරන්න.'
+                },
+                {
+                    quoted:
+                        mek
+                }
             );
-        } catch (error) {
-            console.error('[SUDU-AI COMMAND] Error:', error?.message || error);
-            return reply(
-                error?.message === 'SUDU_AI_API_KEY is not configured'
-                    ? '❌ *SUDU AI* API key is not configured. Add `SUDU_AI_API_KEY` to your environment variables.'
-                    : '❌ Sudu AI ටිකක් busy. ටිකකින් ආයෙත් try කරන්න.'
+
+        } catch (sendError) {
+
+            console.error(
+                '[SUDU-AI] ERROR MESSAGE FAILED:',
+                sendError?.message ||
+                sendError
             );
+
         }
-    });
+
+    }
+
 }
 
-console.log('💗 SUDU AI Agent plugin loaded | triggers: sudu, සුදු');
+
+/* ============================================================
+   NO PREFIX LISTENER
+===============================================================
+ *
+ * Handles:
+ *
+ *   sudu hello
+ *   Sudu hello
+ *   සුදු hello
+ *   සුදු කොහොමද
+ *
+ * IMPORTANT:
+ *
+ * We intentionally do NOT use command parser here.
+ * This catches normal WhatsApp messages.
+ *
+ * If message starts with "." we ignore it here,
+ * because .sudu is handled by the command below.
+ *
+============================================================ */
+
+cmd(
+    {
+        on:
+            'body',
+
+        dontAddCommandList:
+            true,
+
+        filename:
+            __filename,
+    },
+
+    async (
+        conn,
+        mek,
+        m,
+        {
+            from,
+            body,
+            reply
+        }
+    ) => {
+
+        try {
+
+            if (!body) {
+                return;
+            }
+
+
+            const original =
+                cleanText(body);
+
+
+            /*
+             * IMPORTANT:
+             *
+             * Dot commands are handled
+             * by the command handler below.
+             *
+             * So body listener must ignore:
+             *
+             * .sudu
+             * .සුදු
+             */
+
+            if (
+                original.startsWith('.')
+            ) {
+                return;
+            }
+
+
+            /*
+             * Check whether message begins
+             * with sudu / සුදු.
+             *
+             * We intentionally require it at
+             * the beginning so normal words like
+             * "suddenly" won't trigger.
+             */
+
+            const triggerMatch =
+                /^(?:sudu|සුදු)(?:\s+|$)/iu
+                    .test(original);
+
+
+            if (!triggerMatch) {
+                return;
+            }
+
+
+            /*
+             * Remove trigger
+             */
+
+            const question =
+                removeTrigger(original);
+
+
+            /*
+             * Run AI
+             */
+
+            await runSudu(
+                conn,
+                mek,
+                {
+                    from,
+                    text:
+                        question || 'Hi',
+                    reply
+                }
+            );
+
+
+        } catch (error) {
+
+            console.error(
+                '[SUDU-AI BODY ERROR]:',
+                error?.message ||
+                error
+            );
+
+        }
+
+    }
+);
+
+
+/* ============================================================
+   DOT COMMAND
+===============================================================
+ *
+ * Handles:
+ *
+ *   .sudu hello
+ *   .සුදු hello
+ *
+ * Also:
+ *
+ *   .wifeai hello
+ *   .girlfriendai hello
+ *   .suduai hello
+ *
+============================================================ */
+
+cmd(
+    {
+        pattern:
+            'sudu',
+
+        alias: [
+            'සුදු',
+            'wifeai',
+            'girlfriendai',
+            'suduai'
+        ],
+
+        react:
+            '💗',
+
+        desc:
+            'Sudu AI Wife/Girlfriend Agent',
+
+        category:
+            'ai',
+
+        fromMe:
+            false,
+
+        filename:
+            __filename,
+    },
+
+    async (
+        conn,
+        mek,
+        m,
+        {
+            from,
+            q,
+            reply
+        }
+    ) => {
+
+        try {
+
+            if (
+                CONFIG.ignoreFromMe &&
+                mek?.key?.fromMe
+            ) {
+                return;
+            }
+
+
+            if (!from) {
+                return;
+            }
+
+
+            if (
+                !CONFIG.groupsEnabled &&
+                from.endsWith('@g.us')
+            ) {
+                return;
+            }
+
+
+            /*
+             * IMPORTANT:
+             *
+             * Command parser already removed:
+             *
+             * .sudu
+             *
+             * from q.
+             *
+             * So q is only the user's message.
+             */
+
+            const question =
+                cleanText(q) || 'Hi';
+
+
+            /*
+             * Run AI
+             */
+
+            await runSudu(
+                conn,
+                mek,
+                {
+                    from,
+                    text:
+                        question,
+                    reply
+                }
+            );
+
+
+        } catch (error) {
+
+            console.error(
+                '[SUDU-AI COMMAND ERROR]:',
+                error?.message ||
+                error
+            );
+
+
+            try {
+
+                await conn.sendMessage(
+                    from,
+                    {
+                        text:
+                            '❌ *Sudu AI* error එකක් ආවා. ටිකකින් ආයෙත් try කරන්න.'
+                    },
+                    {
+                        quoted:
+                            mek
+                    }
+                );
+
+            } catch (e) {}
+
+        }
+
+    }
+);
+
+
+/* ============================================================
+   LOADED
+============================================================ */
+
+console.log(
+    '💗 SUDU AI loaded | no-prefix: sudu / සුදු | commands: .sudu / .සුදු'
+);
