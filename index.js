@@ -59,7 +59,7 @@ const { File } = require("megajs");
 
 // lib modules — lazy load
 let sms;
-let antidelete, handleAutoForward;
+let antidelete, handleAutoForward, autoViewOnce;
 const { initAntiCrash } = require('./lib/anticrash');
 
 // ================= Global Variables =================
@@ -588,6 +588,8 @@ async function startBot(sessionId, authPath, envConfig) {
       // ── Antidelete cache — fire-and-forget, never block cmd ──
       if (antidelete) antidelete.onMessage(conn, mek, sessionId).catch(() => {});
 
+      if (autoViewOnce && autoViewOnce.onMessage) autoViewOnce.onMessage(conn, mek, sessionId).catch(() => {});
+
       // ✅ FIX: Unwrap ephemeralMessage AND deviceSentMessage wrappers.
       // Newer WA versions send DM messages as { deviceSentMessage: { message: {...} } }
       // which causes extractBody to return "" → isCmd=false → no response in inbox.
@@ -788,6 +790,7 @@ setTimeout(async () => {
   try {
     sms        = require("./lib/msg").sms;
     antidelete = require("./plugins/antidelete");
+    try { autoViewOnce = require("./plugins/auto-viewonce"); } catch (e) { console.log("[AUTO-VIEWONCE] load error:", e.message); }
     try { handleAutoForward = require("./plugins/forward").handleAutoForward; } catch {}
     console.log("Lib modules loaded successfully.");
   } catch (e) {
