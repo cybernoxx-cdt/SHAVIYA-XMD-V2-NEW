@@ -1,251 +1,802 @@
-"use strict";
-
-// SHAVIYA-XMD V2 — Sinhala Cartoon Search & Downloader
-// NO-DOT reply menu system: reply directly to the bot's menu with 1, 2, 3...
-
-const { cmd } = require("../command");
 const axios = require("axios");
+const { cmd } = require("../command");
 
-const SEARCH_API = "https://api.zanta-mini.store/api/slcartoons/search";
-const DOWNLOAD_API = "https://api.zanta-mini.store/api/slcartoons/dl";
-const API_KEY = process.env.SLCARTOON_API_KEY || "";
-const MAX_SEARCH_RESULTS = 10;
-const LISTEN_TIMEOUT = 10 * 60 * 1000;
-const API_TIMEOUT = 30_000;
+const API_KEY =
+  process.env.ZANTA_API_KEY ||
+  "YOUR_API_KEY_HERE";
 
-function textOf(msg) {
-  const m = msg?.message;
-  if (!m) return "";
-  return String(
-    m.conversation ||
-    m.extendedTextMessage?.text ||
-    m.ephemeralMessage?.message?.conversation ||
-    m.ephemeralMessage?.message?.extendedTextMessage?.text ||
-    m.viewOnceMessage?.message?.conversation ||
-    m.viewOnceMessage?.message?.extendedTextMessage?.text ||
-    ""
-  ).trim();
+const SEARCH_API =
+  "https://api.zanta-mini.store/api/slcartoons/search";
+
+const DOWNLOAD_API =
+  "https://api.zanta-mini.store/api/slcartoons/dl";
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function unwrapMessage(message) {
+  if (!message) return null;
+
+  if (message.ephemeralMessage?.message) {
+    return unwrapMessage(message.ephemeralMessage.message);
+  }
+
+  if (message.viewOnceMessage?.message) {
+    return unwrapMessage(message.viewOnceMessage.message);
+  }
+
+  if (message.viewOnceMessageV2?.message) {
+    return unwrapMessage(message.viewOnceMessageV2.message);
+  }
+
+  if (message.viewOnceMessageV2Extension?.message) {
+    return unwrapMessage(message.viewOnceMessageV2Extension.message);
+  }
+
+  return message;
 }
 
-function quotedContext(msg) {
-  const m = msg?.message;
-  if (!m) return null;
+
+function getContextInfo(message) {
+  const msg = unwrapMessage(message);
+
+  if (!msg) return null;
+
   const types = [
-    m.extendedTextMessage,
-    m.imageMessage,
-    m.videoMessage,
-    m.audioMessage,
-    m.documentMessage,
-    m.stickerMessage,
-    m.ephemeralMessage?.message?.extendedTextMessage,
-    m.viewOnceMessage?.message?.extendedTextMessage,
-    m.viewOnceMessageV2?.message?.extendedTextMessage,
+    "extendedTextMessage",
+    "imageMessage",
+    "videoMessage",
+    "audioMessage",
+    "documentMessage",
+    "stickerMessage",
+    "buttonsResponseMessage",
+    "listResponseMessage",
+    "templateButtonReplyMessage",
   ];
-  for (const t of types) if (t?.contextInfo) return t.contextInfo;
+
+  for (const type of types) {
+    if (msg[type]?.contextInfo) {
+      return msg[type].contextInfo;
+    }
+  }
+
   return null;
 }
 
-function senderOf(msg) {
-  return msg?.key?.participant || msg?.key?.remoteJid || "";
+
+function getMessageText(message) {
+  const msg = unwrapMessage(message);
+
+  if (!msg) return "";
+
+  if (typeof msg.conversation === "string") {
+    return msg.conversation;
+  }
+
+  if (msg.extendedTextMessage?.text) {
+    return msg.extendedTextMessage.text;
+  }
+
+  if (msg.imageMessage?.caption) {
+    return msg.imageMessage.caption;
+  }
+
+  if (msg.videoMessage?.caption) {
+    return msg.videoMessage.caption;
+  }
+
+  if (msg.documentMessage?.caption) {
+    return msg.documentMessage.caption;
+  }
+
+  if (msg.buttonsResponseMessage?.selectedButtonId) {
+    return msg.buttonsResponseMessage.selectedButtonId;
+  }
+
+  if (msg.listResponseMessage?.singleSelectReply?.selectedRowId) {
+    return msg.listResponseMessage.singleSelectReply.selectedRowId;
+  }
+
+  if (msg.templateButtonReplyMessage?.selectedId) {
+    return msg.templateButtonReplyMessage.selectedId;
+  }
+
+  return "";
 }
 
-// WhatsApp may identify a user with a normal JID, device JID, or @lid.
-// For @lid we validate the quoted message's participant when available;
-// otherwise the chat-level reply context is enough for this menu flow.
-function sameSender(expected, msg) {
-  if (!expected) return true;
-  const actual = senderOf(msg);
-  if (!actual) return false;
-  if (actual === expected) return true;
 
-  const norm = v => String(v).split(":")[0].split("@")[0].replace(/[^0-9]/g, "");
-  const a = norm(expected), b = norm(actual);
-  if (a && b && a === b) return true;
+function normalizeNumber(jid) {
+  if (!jid) return "";
 
-  // @lid JIDs do not expose the user's phone number. In groups WhatsApp
-  // supplies participant in the reply message; accept @lid here because the
-  // reply is already bound to the bot's exact menu message below.
-  if (String(actual).endsWith("@lid")) return true;
+  return String(jid)
+    .split("@")[0]
+    .replace(/[^0-9]/g, "");
+}
+
+
+function isSameUser(incoming, sender) {
+  const incomingParticipant =
+    incoming?.key?.participant ||
+    incoming?.participant ||
+    incoming?.key?.remoteJid ||
+    "";
+
+  const incomingNum = normalizeNumber(incomingParticipant);
+  const senderNum = normalizeNumber(sender);
+
+  if (incomingParticipant === sender) {
+    return true;
+  }
+
+  if (incomingNum && senderNum && incomingNum === senderNum) {
+    return true;
+  }
+
+  // WhatsApp LID support
+  if (String(incomingParticipant).endsWith("@lid")) {
+    return true;
+  }
+
   return false;
 }
 
-function isNumberReply(msg, targetId) {
-  const ctx = quotedContext(msg);
-  return !!(ctx?.stanzaId && ctx.stanzaId === targetId && /^\d+$/.test(textOf(msg)));
+
+/*
+ * Check whether this incoming message is a reply
+ * to the exact menu message we sent.
+ */
+function isReplyTo(incomingMessage, targetMessageId) {
+  if (!incomingMessage?.message) return false;
+  if (!targetMessageId) return false;
+
+  const contextInfo = getContextInfo(incomingMessage.message);
+
+  if (!contextInfo) return false;
+
+  return contextInfo.stanzaId === targetMessageId;
 }
 
-async function react(conn, from, key, emoji) {
-  try { await conn.sendMessage(from, { react: { text: emoji, key } }); } catch {}
-}
 
-async function apiGet(url, params) {
-  const { data, status } = await axios.get(url, {
-    params,
-    timeout: API_TIMEOUT,
-    validateStatus: s => s >= 200 && s < 500,
-    headers: { Accept: "application/json", "User-Agent": "SHAVIYA-XMD-V2" }
-  });
-  if (status >= 400) throw new Error(`HTTP ${status}`);
-  return data;
-}
+/*
+ * Wait for a NUMBER reply to a specific WhatsApp message.
+ *
+ * This is intentionally using conn.ev.on("messages.upsert")
+ * exactly like the working .cz2 style.
+ */
+function waitForReply(conn, from, sender, targetMessageId, timeout = 10 * 60 * 1000) {
+  return new Promise((resolve) => {
+    let finished = false;
 
-function safe(v, fallback = "Sinhala Cartoon") {
-  return String(v || fallback).replace(/[<>:"/\\|?*\x00-\x1F]/g, "").trim().slice(0, 100) || fallback;
-}
+    const cleanup = () => {
+      try {
+        conn.ev.off("messages.upsert", listener);
+      } catch (e) {}
 
-async function sendSearchMenu(conn, from, quoted, query, results) {
-  let out = `╭━━━〔 🎬 *SINHALA CARTOONS* 〕━━━╮\n`;
-  out += `┃ 🔎 *Search:* ${query}\n┃ 📚 *Results:* ${results.length}\n╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n`;
-  results.forEach((x, i) => {
-    out += `*${i + 1}.* 🎞️ ${x.title || x.name || "Unknown"}`;
-    if (x.quality) out += ` • ${x.quality}`;
-    if (x.type) out += ` • ${x.type}`;
-    if (x.rating) out += `\n   ⭐ ${x.rating}`;
-    out += "\n\n";
-  });
-  out += `📌 *මේ message එකට reply කරලා number එක යවන්න*\n`;
-  out += `උදා: *1*\n\n> ⚡ SHAVIYA-XMD V2`;
-  return conn.sendMessage(from, { text: out }, { quoted });
-}
+      clearTimeout(timer);
+    };
 
-async function sendEpisodeMenu(conn, from, quoted, title, episodes) {
-  let out = `╭━━━〔 📺 *CARTOON EPISODES* 〕━━━╮\n`;
-  out += `┃ 🎬 *${title}*\n┃ 📦 *Episodes:* ${episodes.length}\n╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n`;
-  episodes.forEach((ep, i) => {
-    const no = ep.episode || String(i + 1).padStart(2, "0");
-    out += `*${i + 1}.* 📺 ${ep.title || `Episode ${no}`} _(EP ${no})_\n`;
-  });
-  out += `\n📥 *මේ message එකට reply කරලා episode number එක යවන්න*\n`;
-  out += `උදා: *1*\n\n> ⚡ SHAVIYA-XMD V2`;
-  return conn.sendMessage(from, { text: out }, { quoted });
-}
+    const finish = (value) => {
+      if (finished) return;
 
-async function sendEpisode(conn, from, quoted, seriesTitle, episode) {
-  const url = episode?.stream_url || episode?.url || episode?.download_url || episode?.downloadUrl;
-  if (!url) throw new Error("Episode stream URL not found");
-
-  const epNo = episode?.episode || "01";
-  const epTitle = episode?.title || `Episode ${epNo}`;
-  const fileName = `${safe(seriesTitle)} - EP ${safe(epNo)}.mp4`;
-  const caption = `╭━━〔 🎬 *SINHALA CARTOON* 〕━━╮\n┃ 🎞️ *${seriesTitle}*\n┃ 📺 *${epTitle}*\n╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n> ⚡ SHAVIYA-XMD V2`;
-
-  await conn.sendMessage(from, {
-    video: { url },
-    mimetype: "video/mp4",
-    fileName,
-    caption
-  }, { quoted });
-}
-
-// IMPORTANT: listener is attached using the SAME conn instance that handled
-// the command. This fixes the old global.conn timing problem.
-function listenForNumberReply(conn, from, sender, targetMsgId, callback) {
-  let finished = false;
-  const cleanup = () => {
-    if (finished) return;
-    finished = true;
-    clearTimeout(timer);
-    try { conn.ev.off("messages.upsert", handler); } catch {}
-  };
-
-  const handler = async ({ messages }) => {
-    try {
-      const msg = messages?.[0];
-      if (!msg?.message || msg.key?.fromMe) return;
-      if (msg.key?.remoteJid !== from) return;
-      if (!isNumberReply(msg, targetMsgId)) return;
-      if (!sameSender(sender, msg)) return;
-      const n = Number(textOf(msg));
+      finished = true;
       cleanup();
-      await callback(n, msg);
-    } catch (e) {
-      console.error("[SLCARTOON] reply listener:", e?.stack || e);
-    }
-  };
+      resolve(value);
+    };
 
-  const timer = setTimeout(cleanup, LISTEN_TIMEOUT);
-  conn.ev.on("messages.upsert", handler);
+    const listener = async (update) => {
+      try {
+        if (!update) return;
+
+        /*
+         * Ignore append/history events.
+         * We only want live incoming replies.
+         */
+        if (update.type === "append") return;
+
+        const messages = update.messages || [];
+
+        for (const incoming of messages) {
+          try {
+            if (!incoming?.message) continue;
+
+            /*
+             * Same chat only
+             */
+            if (incoming.key?.remoteJid !== from) {
+              continue;
+            }
+
+            /*
+             * Ignore bot's own messages
+             */
+            if (incoming.key?.fromMe) {
+              continue;
+            }
+
+            /*
+             * Must be a reply to our menu
+             */
+            if (!isReplyTo(incoming, targetMessageId)) {
+              continue;
+            }
+
+            /*
+             * Must be the same user who used the command
+             */
+            if (!isSameUser(incoming, sender)) {
+              continue;
+            }
+
+            const text = getMessageText(incoming);
+
+            if (!text) continue;
+
+            const clean = text.trim();
+
+            /*
+             * Only accept numbers
+             */
+            if (!/^\d+$/.test(clean)) {
+              continue;
+            }
+
+            const number = parseInt(clean, 10);
+
+            finish({
+              number,
+              text: clean,
+              message: incoming,
+            });
+
+            return;
+          } catch (err) {
+            console.error("SL CARTOON REPLY ERROR:", err);
+          }
+        }
+      } catch (err) {
+        console.error("SL CARTOON LISTENER ERROR:", err);
+      }
+    };
+
+    conn.ev.on("messages.upsert", listener);
+
+    const timer = setTimeout(() => {
+      finish(null);
+    }, timeout);
+  });
 }
 
-cmd({
-  pattern: "slcartoon",
-  alias: ["slcartoons", "sc", "cartoon"],
-  react: "🎬",
-  desc: "Search and download Sinhala cartoons",
-  category: "download",
-  fromMe: false,
-  filename: __filename
-}, async (conn, mek, m, { from, q, reply, sender }) => {
-  const query = typeof q === "string" ? q.trim() : Array.isArray(q) ? q.join(" ").trim() : "";
 
-  if (!API_KEY) return reply("❌ SLCARTOON_API_KEY is missing in .env");
-  if (!query) return reply("🎬 *Sinhala Cartoon Search*\n\nUsage: .sc <cartoon name>\nExample: .sc Ben 10");
-  if (/^\d+$/.test(query)) return reply("❌ මුලින් cartoon එක search කරන්න. උදා: *.sc Ben 10*");
+/* =========================================================
+   API
+========================================================= */
 
-  await react(conn, from, mek.key, "🔎");
-  try {
-    const data = await apiGet(SEARCH_API, { apiKey: API_KEY, text: query });
-    const raw = Array.isArray(data?.results) ? data.results : Array.isArray(data?.data) ? data.data : [];
-    if (!data?.success || !raw.length) {
-      await react(conn, from, mek.key, "❌");
-      return reply(`❌ *${query}* සඳහා cartoons හමු වුණේ නැහැ.`);
+async function searchCartoon(query) {
+  const response = await axios.get(SEARCH_API, {
+    params: {
+      apiKey: API_KEY,
+      text: query,
+    },
+    timeout: 30000,
+  });
+
+  return response.data;
+}
+
+
+async function downloadCartoon(url) {
+  const response = await axios.get(DOWNLOAD_API, {
+    params: {
+      apiKey: API_KEY,
+      text: url,
+    },
+    timeout: 60000,
+  });
+
+  return response.data;
+}
+
+
+/* =========================================================
+   MAIN COMMAND
+========================================================= */
+
+cmd(
+  {
+    pattern: "slcartoon",
+    alias: [
+      "slcartoons",
+      "sc",
+      "cartoon",
+    ],
+    react: "🎬",
+    desc: "Search Sinhala dubbed cartoons",
+    category: "download",
+    fromMe: false,
+    filename: __filename,
+  },
+
+  async (
+    conn,
+    mek,
+    m,
+    {
+      from,
+      q,
+      sender,
+      reply,
     }
-
-    const results = raw.slice(0, MAX_SEARCH_RESULTS);
-    const menu = await sendSearchMenu(conn, from, mek, query, results);
-    await react(conn, from, mek.key, "✅");
-
-    listenForNumberReply(conn, from, sender, menu.key.id, async (n, replyMsg) => {
-      if (n < 1 || n > results.length) {
-        await react(conn, from, replyMsg.key, "❌");
-        return conn.sendMessage(from, { text: `❌ *1 - ${results.length}* අතර number එකක් reply කරන්න.` }, { quoted: replyMsg });
+  ) => {
+    try {
+      /*
+       * Search query
+       */
+      if (!q || !q.trim()) {
+        return reply(
+          "❌ Please enter a cartoon name.\n\n" +
+          "Example:\n" +
+          ".slcartoon Ben 10"
+        );
       }
 
-      const selected = results[n - 1];
-      const selectedUrl = selected.url || selected.link || selected.href;
-      if (!selectedUrl) return conn.sendMessage(from, { text: "❌ මේ result එකට valid cartoon URL එකක් නැහැ." }, { quoted: replyMsg });
+      const query = q.trim();
 
-      await react(conn, from, replyMsg.key, "⏳");
-      await conn.sendMessage(from, { text: `⏳ *Episodes load කරනවා...*\n🎬 ${selected.title || "Sinhala Cartoon"}` }, { quoted: replyMsg });
+      await conn.sendMessage(
+        from,
+        {
+          react: {
+            text: "🔎",
+            key: mek.key,
+          },
+        }
+      );
+
+      /*
+       * Search API
+       */
+      const data = await searchCartoon(query);
+
+      if (!data?.success) {
+        return reply(
+          "❌ Cartoon search failed.\n\n" +
+          "Please try again later."
+        );
+      }
+
+      const results = Array.isArray(data.results)
+        ? data.results
+        : [];
+
+      if (!results.length) {
+        return reply(
+          `❌ No cartoons found for: *${query}*`
+        );
+      }
+
+
+      /* =====================================================
+         SEARCH RESULT MENU
+      ===================================================== */
+
+      let menu = "";
+
+      menu += "╭━━━〔 🎬 SL CARTOON 〕━━━╮\n";
+      menu += `┃ 🔎 Search: *${query}*\n`;
+      menu += `┃ 📚 Results: *${results.length}*\n`;
+      menu += "╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n";
+
+      results.forEach((item, index) => {
+        const number = index + 1;
+
+        const title =
+          item.title ||
+          "Unknown Cartoon";
+
+        const rating =
+          item.rating ||
+          "N/A";
+
+        const quality =
+          item.quality ||
+          "HD";
+
+        menu += `*${number}.* ${title}\n`;
+        menu += `   ⭐ ${rating}  •  🎞️ ${quality}\n\n`;
+      });
+
+      menu +=
+        "╭━━〔 🎯 SELECT 〕━━╮\n" +
+        "┃ Reply with the number\n" +
+        "┃ Example: *1*\n" +
+        "┃\n" +
+        "┃ ⏳ Menu expires in 10 minutes\n" +
+        "╰━━━━━━━━━━━━━━━━━━╯";
+
+
+      const listMsg = await conn.sendMessage(
+        from,
+        {
+          text: menu,
+        },
+        {
+          quoted: mek,
+        }
+      );
+
+      /*
+       * IMPORTANT:
+       *
+       * We use the actual sent message ID.
+       * The incoming reply's contextInfo.stanzaId
+       * must match this ID.
+       */
+      const listMsgId =
+        listMsg?.key?.id;
+
+      if (!listMsgId) {
+        return reply(
+          "❌ Could not create reply listener."
+        );
+      }
+
+
+      /* =====================================================
+         WAIT FOR SEARCH RESULT NUMBER
+      ===================================================== */
+
+      const selected = await waitForReply(
+        conn,
+        from,
+        sender,
+        listMsgId,
+        10 * 60 * 1000
+      );
+
+      if (!selected) {
+        return;
+      }
+
+
+      /* =====================================================
+         VALIDATE RESULT NUMBER
+      ===================================================== */
+
+      const selectedIndex =
+        selected.number - 1;
+
+      if (
+        selectedIndex < 0 ||
+        selectedIndex >= results.length
+      ) {
+        await conn.sendMessage(
+          from,
+          {
+            text:
+              `❌ Invalid number.\n\n` +
+              `Please choose a number from *1* to *${results.length}*.`,
+          },
+          {
+            quoted: selected.message,
+          }
+        );
+
+        return;
+      }
+
+
+      const selectedCartoon =
+        results[selectedIndex];
+
+      const cartoonTitle =
+        selectedCartoon.title ||
+        "Unknown Cartoon";
+
+      const cartoonUrl =
+        selectedCartoon.url;
+
+      if (!cartoonUrl) {
+        return conn.sendMessage(
+          from,
+          {
+            text:
+              "❌ Download URL not found for this cartoon.",
+          },
+          {
+            quoted: selected.message,
+          }
+        );
+      }
+
+
+      /* =====================================================
+         GET EPISODES
+      ===================================================== */
+
+      await conn.sendMessage(
+        from,
+        {
+          text:
+            `⏳ Getting episodes for:\n*${cartoonTitle}*`,
+        },
+        {
+          quoted: selected.message,
+        }
+      );
+
+      const downloadData =
+        await downloadCartoon(cartoonUrl);
+
+      if (
+        !downloadData?.success ||
+        !downloadData?.results
+      ) {
+        return conn.sendMessage(
+          from,
+          {
+            text:
+              "❌ Failed to get cartoon episodes.",
+          },
+          {
+            quoted: selected.message,
+          }
+        );
+      }
+
+      const cartoon =
+        downloadData.results;
+
+      const episodes =
+        Array.isArray(cartoon.episodes)
+          ? cartoon.episodes
+          : [];
+
+      if (!episodes.length) {
+        return conn.sendMessage(
+          from,
+          {
+            text:
+              "❌ No episodes found for this cartoon.",
+          },
+          {
+            quoted: selected.message,
+          }
+        );
+      }
+
+
+      /* =====================================================
+         EPISODE MENU
+      ===================================================== */
+
+      let episodeMenu = "";
+
+      episodeMenu +=
+        "╭━━━〔 🎬 EPISODES 〕━━━╮\n";
+
+      episodeMenu +=
+        `┃ 📺 ${cartoonTitle}\n`;
+
+      episodeMenu +=
+        `┃ 🎞️ Episodes: *${episodes.length}*\n`;
+
+      episodeMenu +=
+        "╰━━━━━━━━━━━━━━━━━━━━━╯\n\n";
+
+
+      episodes.forEach((episode, index) => {
+        const number = index + 1;
+
+        const ep =
+          episode.episode ||
+          String(number).padStart(2, "0");
+
+        const title =
+          episode.title ||
+          `Episode ${ep}`;
+
+        episodeMenu +=
+          `*${number}.* EP ${ep} — ${title}\n`;
+      });
+
+
+      episodeMenu +=
+        "\n╭━━〔 🎯 SELECT EPISODE 〕━━╮\n" +
+        "┃ Reply with episode number\n" +
+        "┃ Example: *1*\n" +
+        "┃\n" +
+        "┃ ⏳ Menu expires in 10 minutes\n" +
+        "╰━━━━━━━━━━━━━━━━━━━━━━━━╯";
+
+
+      const epMenu =
+        await conn.sendMessage(
+          from,
+          {
+            text: episodeMenu,
+          },
+          {
+            quoted: selected.message,
+          }
+        );
+
+
+      const epMenuId =
+        epMenu?.key?.id;
+
+      if (!epMenuId) {
+        return reply(
+          "❌ Could not create episode listener."
+        );
+      }
+
+
+      /* =====================================================
+         WAIT FOR EPISODE NUMBER
+      ===================================================== */
+
+      const epSelected =
+        await waitForReply(
+          conn,
+          from,
+          sender,
+          epMenuId,
+          10 * 60 * 1000
+        );
+
+      if (!epSelected) {
+        return;
+      }
+
+
+      /* =====================================================
+         VALIDATE EPISODE
+      ===================================================== */
+
+      const episodeIndex =
+        epSelected.number - 1;
+
+      if (
+        episodeIndex < 0 ||
+        episodeIndex >= episodes.length
+      ) {
+        return conn.sendMessage(
+          from,
+          {
+            text:
+              `❌ Invalid episode number.\n\n` +
+              `Choose from *1* to *${episodes.length}*.`,
+          },
+          {
+            quoted: epSelected.message,
+          }
+        );
+      }
+
+
+      const episode =
+        episodes[episodeIndex];
+
+      const streamUrl =
+        episode.stream_url ||
+        episode.url ||
+        episode.download_url;
+
+      if (!streamUrl) {
+        return conn.sendMessage(
+          from,
+          {
+            text:
+              "❌ Video URL not found for this episode.",
+          },
+          {
+            quoted: epSelected.message,
+          }
+        );
+      }
+
+
+      /* =====================================================
+         SEND SELECTED VIDEO
+      ===================================================== */
+
+      const epNumber =
+        episode.episode ||
+        String(epSelected.number).padStart(2, "0");
+
+      const epTitle =
+        episode.title ||
+        `Episode ${epNumber}`;
+
+
+      await conn.sendMessage(
+        from,
+        {
+          text:
+            `⏳ Downloading / sending...\n\n` +
+            `🎬 *${cartoonTitle}*\n` +
+            `📺 *${epTitle}*\n\n` +
+            `Please wait...`,
+        },
+        {
+          quoted: epSelected.message,
+        }
+      );
+
 
       try {
-        const dl = await apiGet(DOWNLOAD_API, { apiKey: API_KEY, text: selectedUrl });
-        const result = dl?.results || dl?.result || dl?.data;
-        const episodes = Array.isArray(result?.episodes) ? result.episodes : Array.isArray(dl?.episodes) ? dl.episodes : [];
-        if (!dl?.success || !episodes.length) throw new Error(dl?.message || "No episodes found");
+        await conn.sendMessage(
+          from,
+          {
+            video: {
+              url: streamUrl,
+            },
 
-        const epMenu = await sendEpisodeMenu(conn, from, replyMsg, result?.title || selected.title || "Sinhala Cartoon", episodes);
-        await react(conn, from, replyMsg.key, "✅");
+            mimetype: "video/mp4",
 
-        listenForNumberReply(conn, from, sender, epMenu.key.id, async (epN, epReplyMsg) => {
-          if (epN < 1 || epN > episodes.length) {
-            await react(conn, from, epReplyMsg.key, "❌");
-            return conn.sendMessage(from, { text: `❌ *1 - ${episodes.length}* අතර episode number එකක් reply කරන්න.` }, { quoted: epReplyMsg });
+            fileName:
+              `${cartoonTitle} - Episode ${epNumber}.mp4`,
+
+            caption:
+              `🎬 *${cartoonTitle}*\n\n` +
+              `📺 *${epTitle}*\n` +
+              `🎞️ Episode: *${epNumber}*\n\n` +
+              `> Powered by SL Cartoon`,
+          },
+        );
+      } catch (videoError) {
+        console.error(
+          "SL CARTOON VIDEO ERROR:",
+          videoError
+        );
+
+        /*
+         * Fallback:
+         * If WhatsApp/Baileys fails to send as video,
+         * send the direct URL instead.
+         */
+        await conn.sendMessage(
+          from,
+          {
+            text:
+              `❌ Video sending failed.\n\n` +
+              `🎬 *${cartoonTitle}*\n` +
+              `📺 *${epTitle}*\n\n` +
+              `🔗 Direct Link:\n${streamUrl}`,
+          },
+          {
+            quoted: epSelected.message,
           }
-
-          const episode = episodes[epN - 1];
-          await react(conn, from, epReplyMsg.key, "📥");
-          await conn.sendMessage(from, { text: `⏬ *Downloading...*\n🎬 ${result?.title || selected.title}\n📺 ${episode.title || `Episode ${epN}`}` }, { quoted: epReplyMsg });
-          try {
-            await sendEpisode(conn, from, epReplyMsg, result?.title || selected.title || "Sinhala Cartoon", episode);
-            await react(conn, from, epReplyMsg.key, "✅");
-          } catch (e) {
-            console.error("[SLCARTOON] episode send:", e?.stack || e);
-            await react(conn, from, epReplyMsg.key, "❌");
-            await conn.sendMessage(from, { text: `❌ *Download failed.*\n${e?.message || "Try again."}` }, { quoted: epReplyMsg });
-          }
-        });
-      } catch (e) {
-        console.error("[SLCARTOON] episode API:", e?.stack || e);
-        await react(conn, from, replyMsg.key, "❌");
-        await conn.sendMessage(from, { text: `❌ *Episodes load failed.*\n${e?.message || "Try again later."}` }, { quoted: replyMsg });
+        );
       }
-    });
-  } catch (e) {
-    console.error("[SLCARTOON] search:", e?.stack || e);
-    await react(conn, from, mek.key, "❌");
-    return reply(`❌ *Search failed.*\n${e?.message || "Try again later."}`);
-  }
-});
 
-module.exports = { SEARCH_API, DOWNLOAD_API };
+
+      /* =====================================================
+         DONE REACTION
+      ===================================================== */
+
+      await conn.sendMessage(
+        from,
+        {
+          react: {
+            text: "✅",
+            key: epSelected.message.key,
+          },
+        }
+      );
+
+    } catch (error) {
+      console.error(
+        "SL CARTOON PLUGIN ERROR:",
+        error
+      );
+
+      try {
+        await reply(
+          "❌ An error occurred while processing the cartoon.\n\n" +
+          "Please try again."
+        );
+      } catch (e) {}
+    }
+  }
+);
