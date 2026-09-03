@@ -2,12 +2,13 @@
 
 /**
  * ============================================================
- * SUDU AI PLUGIN - FULLY FIXED
+ * SUDU AI PLUGIN - FULLY FIXED WITH DEBUG
  * ============================================================
  */
 
 const { cmd } = require('../command');
 const axios = require('axios');
+const fs = require('fs');
 
 /* ============================================================
    API SETTINGS
@@ -22,11 +23,22 @@ const API_KEY = 'zan_vWpU1lkr_g6wwxdlvyv';
 
 const CONFIG = {
     maxTextLength: 2000,
-    timeoutMs: 60000,
-    cooldownMs: 1000,
+    timeoutMs: 30000,
+    cooldownMs: 2000,
     groupsEnabled: true,
     ignoreFromMe: true,
+    debugMode: true, // Enable debug
 };
+
+/* ============================================================
+   DEBUG LOGGER
+============================================================ */
+
+function debugLog(...args) {
+    if (CONFIG.debugMode) {
+        console.log('[SUDU-DEBUG]', ...args);
+    }
+}
 
 /* ============================================================
    COOLDOWN
@@ -41,14 +53,6 @@ function canRun(chatId) {
         return false;
     }
     cooldowns.set(chatId, now);
-    
-    if (cooldowns.size > 5000) {
-        for (const [key, timestamp] of cooldowns) {
-            if (now - timestamp > CONFIG.cooldownMs * 10) {
-                cooldowns.delete(key);
-            }
-        }
-    }
     return true;
 }
 
@@ -72,81 +76,72 @@ function removeTrigger(text) {
 ============================================================ */
 
 function getApiReply(data) {
-    console.log('[SUDU-AI] 📦 Parsing API Response...');
+    debugLog('📦 Parsing API Response:', JSON.stringify(data, null, 2));
     
-    // Direct paths - FIXED
-    if (data?.result?.reply) {
-        console.log('[SUDU-AI] ✅ Found: data.result.reply');
-        return data.result.reply.trim();
-    }
-    
-    if (data?.result?.answer) {
-        console.log('[SUDU-AI] ✅ Found: data.result.answer');
-        return data.result.answer.trim();
-    }
-    
-    if (data?.reply) {
-        console.log('[SUDU-AI] ✅ Found: data.reply');
-        return data.reply.trim();
-    }
-    
-    if (data?.answer) {
-        console.log('[SUDU-AI] ✅ Found: data.answer');
-        return data.answer.trim();
-    }
-    
-    if (data?.data?.reply) {
-        console.log('[SUDU-AI] ✅ Found: data.data.reply');
-        return data.data.reply.trim();
-    }
-    
-    if (data?.data?.answer) {
-        console.log('[SUDU-AI] ✅ Found: data.data.answer');
-        return data.data.answer.trim();
-    }
-    
-    // Try to find any string in the response
-    if (typeof data === 'string') {
-        console.log('[SUDU-AI] ✅ Response is string');
-        return data.trim();
-    }
-    
-    // If response is an object, try to find any string value
-    if (typeof data === 'object' && data !== null) {
-        const stringValues = [];
-        for (const key in data) {
-            if (typeof data[key] === 'string' && data[key].trim().length > 10) {
-                stringValues.push(data[key].trim());
-            }
-            if (typeof data[key] === 'object' && data[key] !== null) {
-                for (const subKey in data[key]) {
-                    if (typeof data[key][subKey] === 'string' && data[key][subKey].trim().length > 10) {
-                        stringValues.push(data[key][subKey].trim());
+    // Try all possible paths
+    const paths = [
+        () => data?.result?.reply,
+        () => data?.result?.answer,
+        () => data?.result?.text,
+        () => data?.reply,
+        () => data?.answer,
+        () => data?.text,
+        () => data?.message,
+        () => data?.response,
+        () => data?.data?.reply,
+        () => data?.data?.answer,
+        () => data?.data?.text,
+        () => {
+            // Try to find any string in the response
+            if (typeof data === 'string') return data;
+            if (typeof data === 'object' && data !== null) {
+                for (const key in data) {
+                    if (typeof data[key] === 'string' && data[key].trim().length > 5) {
+                        return data[key];
+                    }
+                    if (typeof data[key] === 'object' && data[key] !== null) {
+                        for (const subKey in data[key]) {
+                            if (typeof data[key][subKey] === 'string' && data[key][subKey].trim().length > 5) {
+                                return data[key][subKey];
+                            }
+                        }
                     }
                 }
             }
+            return null;
         }
-        if (stringValues.length > 0) {
-            console.log('[SUDU-AI] ✅ Found string value in object');
-            return stringValues[0];
-        }
+    ];
+
+    for (const pathFn of paths) {
+        try {
+            const value = pathFn();
+            if (typeof value === 'string' && value.trim().length > 5) {
+                debugLog('✅ Found reply:', value.substring(0, 50) + '...');
+                return value.trim();
+            }
+        } catch (e) {}
     }
-    
-    console.log('[SUDU-AI] ❌ No reply found');
+
+    debugLog('❌ No reply found in response');
     return null;
 }
 
 /* ============================================================
-   ✅ FIXED: API REQUEST
+   ✅ FIXED: API REQUEST WITH DIRECT TEST
 ============================================================ */
 
 async function askSudu(text) {
     const prompt = cleanText(text).slice(0, CONFIG.maxTextLength) || 'Hi';
 
-    console.log(`[SUDU-AI] 📤 Prompt: "${prompt}"`);
+    debugLog(`📤 Sending to API: "${prompt}"`);
+    debugLog(`🌐 URL: ${API_URL}`);
+    debugLog(`🔑 API Key: ${API_KEY.substring(0, 10)}...`);
 
     try {
-        const response = await axios.get(API_URL, {
+        // First test with simple axios
+        const response = await axios({
+            method: 'GET',
+            url: API_URL,
             params: {
                 apiKey: API_KEY,
                 text: prompt
@@ -158,120 +153,161 @@ async function askSudu(text) {
             }
         });
 
-        console.log(`[SUDU-AI] 📥 Status: ${response.status}`);
+        debugLog(`📥 Response Status: ${response.status}`);
+        debugLog(`📥 Response Headers:`, response.headers);
+        
+        const data = response.data;
+        debugLog(`📦 Response Data:`, JSON.stringify(data).substring(0, 500));
 
         // Check if response is valid
-        if (!response.data) {
+        if (!data) {
             throw new Error('Empty response from API');
         }
 
-        const data = response.data;
-        console.log('[SUDU-AI] 📦 Response:', JSON.stringify(data).substring(0, 200));
-
-        // Check for error in response
+        // Check for error
         if (data.success === false) {
             throw new Error(data.message || data.error || 'API returned error');
         }
 
-        // Get reply using fixed parser
+        // Get reply
         const reply = getApiReply(data);
         
         if (!reply) {
-            console.error('[SUDU-AI] ❌ Full response:', JSON.stringify(data, null, 2));
+            debugLog('❌ Full response:', JSON.stringify(data, null, 2));
             throw new Error('Could not extract reply from API response');
         }
 
-        console.log(`[SUDU-AI] ✅ Reply: "${reply.substring(0, 50)}..."`);
+        debugLog(`✅ Reply extracted: "${reply.substring(0, 50)}..."`);
         
+        // Get model
+        let model = 'AI';
+        if (data?.result?.model) model = data.result.model;
+        else if (data?.model) model = data.model;
+        else if (data?.result?.model) model = data.result.model;
+
         return {
             reply: reply,
-            model: data?.result?.model || data?.model || 'AI',
+            model: model,
             fullData: data
         };
 
     } catch (error) {
-        if (axios.isAxiosError(error)) {
-            console.error('[SUDU-AI] ❌ Network Error:', error.message);
-            if (error.response) {
-                console.error('[SUDU-AI] Response data:', error.response.data);
-            }
-            throw new Error(`Network error: ${error.message}`);
+        debugLog('❌ API Error:', error.message);
+        if (error.response) {
+            debugLog('Response data:', error.response.data);
+            debugLog('Response status:', error.response.status);
         }
         throw error;
     }
 }
 
 /* ============================================================
-   ✅ FIXED: SEND AI RESPONSE
+   ✅ FIXED: SEND AI RESPONSE - WITH DIRECT SEND
 ============================================================ */
 
 async function runSudu(conn, mek, { from, text, reply }) {
-    console.log('[SUDU-AI] 🚀 Running...');
+    debugLog('🚀 Running Sudu AI...');
+    debugLog(`📍 From: ${from}`);
+    debugLog(`📝 Text: "${text}"`);
 
     try {
-        // Check if message is from self
+        // Check self
         if (CONFIG.ignoreFromMe && mek?.key?.fromMe) {
-            console.log('[SUDU-AI] ⏭️ Self message ignored');
+            debugLog('⏭️ Self message ignored');
             return;
         }
 
         if (!from) {
-            console.log('[SUDU-AI] ⏭️ No from');
+            debugLog('⏭️ No from');
             return;
         }
 
+        // Groups
         if (!CONFIG.groupsEnabled && from.endsWith('@g.us')) {
-            console.log('[SUDU-AI] ⏭️ Groups disabled');
+            debugLog('⏭️ Groups disabled');
             return;
         }
 
         const prompt = cleanText(text) || 'Hi';
-        console.log(`[SUDU-AI] 📝 Prompt: "${prompt}"`);
+        debugLog(`📝 Cleaned prompt: "${prompt}"`);
 
         // Cooldown
         if (!canRun(from)) {
-            console.log('[SUDU-AI] ⏭️ Cooldown');
+            debugLog('⏭️ Cooldown active');
             return;
         }
 
-        // Send reaction
-        await conn.sendMessage(from, {
-            react: { text: '💗', key: mek.key }
-        }).catch(() => {});
+        // React - send 1
+        debugLog('💗 Sending reaction...');
+        try {
+            await conn.sendMessage(from, {
+                react: { text: '💗', key: mek.key }
+            });
+        } catch (e) {
+            debugLog('⚠️ React failed:', e.message);
+        }
 
         // Get AI response
+        debugLog('🌐 Calling API...');
         const result = await askSudu(prompt);
-        console.log('[SUDU-AI] ✅ Got response');
+        debugLog('✅ Got API result');
 
-        // Send reply
-        await conn.sendMessage(from, {
-            text: `💕 *Wife AI*\n━━━━━━━━━━━━━━━\n${result.reply}\n━━━━━━━━━━━━━━━\n🤖 ${result.model}`
-        }, {
-            quoted: mek
-        });
+        // Format reply with model
+        const finalText = `💕 *Wife AI*\n━━━━━━━━━━━━━━━\n${result.reply}\n━━━━━━━━━━━━━━━\n🤖 ${result.model}`;
+        debugLog(`📤 Sending reply: "${finalText.substring(0, 50)}..."`);
 
-        // Success reaction
-        await conn.sendMessage(from, {
-            react: { text: '❤️', key: mek.key }
-        }).catch(() => {});
+        // Send message - DIRECT SEND
+        try {
+            await conn.sendMessage(from, {
+                text: finalText
+            }, {
+                quoted: mek
+            });
+            debugLog('✅ Message sent successfully!');
+        } catch (sendError) {
+            debugLog('❌ Send failed:', sendError.message);
+            // Try without quoting
+            try {
+                await conn.sendMessage(from, {
+                    text: finalText
+                });
+                debugLog('✅ Message sent without quote!');
+            } catch (e2) {
+                debugLog('❌ Send without quote failed:', e2.message);
+                throw e2;
+            }
+        }
 
-        console.log('[SUDU-AI] ✅ Done!');
+        // React - send 2
+        try {
+            await conn.sendMessage(from, {
+                react: { text: '❤️', key: mek.key }
+            });
+        } catch (e) {}
+
+        debugLog('✅ Done!');
 
     } catch (error) {
-        console.error('[SUDU-AI] ❌ Error:', error.message);
-        
+        debugLog('❌ ERROR:', error.message);
+        debugLog('❌ Full error:', error);
+
+        // Error reaction
         try {
             await conn.sendMessage(from, {
                 react: { text: '❌', key: mek.key }
             }).catch(() => {});
-            
+        } catch (e) {}
+
+        // Send error message
+        try {
+            const errorMsg = `❌ *Sudu AI Error*\n━━━━━━━━━━━━━━━\n\`\`\`${error.message || 'Unknown error'}\`\`\`\n━━━━━━━━━━━━━━━\n⏳ Try again later.`;
             await conn.sendMessage(from, {
-                text: `❌ *Sudu AI Error*\n━━━━━━━━━━━━━━━\n\`\`\`${error.message || 'Unknown error'}\`\`\`\n━━━━━━━━━━━━━━━\n⏳ Try again later.`
+                text: errorMsg
             }, {
                 quoted: mek
             });
-        } catch (e) {
-            console.error('[SUDU-AI] ❌ Send error failed:', e.message);
+        } catch (sendError) {
+            debugLog('❌ Error message failed:', sendError.message);
         }
     }
 }
@@ -285,29 +321,36 @@ cmd({
     dontAddCommandList: true,
     filename: __filename,
 }, async (conn, mek, m, { from, body, reply }) => {
-    console.log('[SUDU-AI] 📨 Body listener');
+    debugLog('📨 Body listener triggered');
+    debugLog(`📨 Body: "${body}"`);
     
     try {
-        if (!body) return;
+        if (!body) {
+            debugLog('⏭️ No body');
+            return;
+        }
 
         const original = cleanText(body);
-        
+        debugLog(`📝 Cleaned: "${original}"`);
+
         // Skip dot commands
         if (original.startsWith('.')) {
-            console.log('[SUDU-AI] ⏭️ Dot command');
+            debugLog('⏭️ Dot command');
             return;
         }
 
-        // Check for trigger: sudu / සුදු
+        // Check trigger
         const triggerMatch = /^(?:sudu|සුදු)(?:\s+|$)/iu.test(original);
+        debugLog(`🔍 Trigger match: ${triggerMatch}`);
+
         if (!triggerMatch) {
-            console.log('[SUDU-AI] ⏭️ No trigger');
+            debugLog('⏭️ No trigger');
             return;
         }
 
-        // Remove trigger and get question
+        // Remove trigger
         const question = removeTrigger(original);
-        console.log(`[SUDU-AI] 📝 Question: "${question}"`);
+        debugLog(`📝 Question: "${question}"`);
 
         // Run AI
         await runSudu(conn, mek, {
@@ -317,7 +360,7 @@ cmd({
         });
 
     } catch (error) {
-        console.error('[SUDU-AI] ❌ Body error:', error.message);
+        debugLog('❌ BODY ERROR:', error.message);
     }
 });
 
@@ -327,34 +370,34 @@ cmd({
 
 cmd({
     pattern: 'sudu',
-    alias: ['සුදු', 'wife', 'gf'],
+    alias: ['සුදු', 'wife', 'gf', 'wifeai'],
     react: '💗',
     desc: 'Sudu AI - Wife/Girlfriend Agent',
     category: 'ai',
     fromMe: false,
     filename: __filename,
 }, async (conn, mek, m, { from, q, reply, sender }) => {
-    console.log('[SUDU-AI] 📨 Command: .sudu');
-    console.log('[SUDU-AI] 📝 Query:', q);
+    debugLog('📨 Command: .sudu');
+    debugLog(`📝 Query: "${q}"`);
 
     try {
         if (CONFIG.ignoreFromMe && mek?.key?.fromMe) {
-            console.log('[SUDU-AI] ⏭️ Self message');
+            debugLog('⏭️ Self message');
             return;
         }
 
         if (!from) {
-            console.log('[SUDU-AI] ⏭️ No from');
+            debugLog('⏭️ No from');
             return;
         }
 
         if (!CONFIG.groupsEnabled && from.endsWith('@g.us')) {
-            console.log('[SUDU-AI] ⏭️ Groups disabled');
+            debugLog('⏭️ Groups disabled');
             return;
         }
 
         const question = cleanText(q) || 'Hi';
-        console.log(`[SUDU-AI] 📝 Question: "${question}"`);
+        debugLog(`📝 Question: "${question}"`);
 
         await runSudu(conn, mek, {
             from,
@@ -363,16 +406,19 @@ cmd({
         });
 
     } catch (error) {
-        console.error('[SUDU-AI] ❌ Command error:', error.message);
+        debugLog('❌ COMMAND ERROR:', error.message);
         try {
             await conn.sendMessage(from, {
                 text: `❌ *Error*\n\`\`\`${error.message || 'Unknown'}\`\`\``
             }, {
                 quoted: mek
             });
-        } catch (e) {}
+        } catch (e) {
+            debugLog('❌ Error message failed:', e.message);
+        }
     }
 });
 
 console.log('💗 SUDU AI FIXED - Ready!');
 console.log('📌 Commands: .sudu / .සුදු | No-prefix: sudu / සුදු');
+console.log('🔍 Debug mode: ENABLED');
