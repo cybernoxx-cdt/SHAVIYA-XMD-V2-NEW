@@ -1,4 +1,4 @@
-name: SHAVIYA-XMD-V2
+name: SHAVIYA-XMD-V3
 
 on:
   workflow_dispatch:
