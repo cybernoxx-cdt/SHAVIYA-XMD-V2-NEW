@@ -48,8 +48,10 @@ async function react(conn, jid, key, emoji) {
 // ═══════════════════════════════════════════════════
 //  Thumbnail Builder
 // ═══════════════════════════════════════════════════
-async function makeThumbnail(moviePosterUrl, hardThumbUrl, movieDocOn) {
-  const primaryUrl = (movieDocOn && moviePosterUrl) ? moviePosterUrl : hardThumbUrl;
+async function makeThumbnail(moviePosterUrl, hardThumbUrl) {
+  // ✅ Always prefer the real movie/episode poster; only fall back to the
+  // custom default image if the poster is missing or fails to fetch.
+  const primaryUrl = moviePosterUrl || hardThumbUrl;
   const fallbackUrl = hardThumbUrl;
 
   async function fetchThumb(url) {
@@ -139,7 +141,7 @@ function episodeLabel(url, index) {
 //  Send the actual video file (direct CDN url - no ad-gate)
 // ═══════════════════════════════════════════════════
 async function sendDirectFile(conn, from, directUrl, fileName, caption, quotedMsg, posterUrl, sessionId) {
-  const thumb = await makeThumbnail(posterUrl || null, getHardThumbUrl(sessionId), isMovieDocOn(sessionId));
+  const thumb = await makeThumbnail(posterUrl || null, getHardThumbUrl(sessionId));
   await react(conn, from, quotedMsg.key, "📥");
 
   try {
@@ -229,9 +231,9 @@ async function runDetailsFlow(conn, from, sender, selMsg, selected, hardThumb, m
             // Show an episode picker instead of sending a broken multi-url document.
             await react(conn, from, dlSel.msg.key, "📺");
 
-            let epText = `📺 *${cleanTitle(details.title)}*\n\n*Episodes:*\n`;
+            let epText = `📺 *${cleanTitle(details.title)}*\n\n*0.* 📦 All Episodes (download one by one)\n*Episodes:*\n`;
             urls.forEach((u, i) => { epText += `*${i + 1}.* ${episodeLabel(u, i)}\n`; });
-            epText += `\n📌 Episode අංකයෙන් Reply කරන්න.\n${FOOTER}`;
+            epText += `\n📌 Episode අංකයෙන් Reply කරන්න (සියල්ලම ඕන නම් *0* Reply කරන්න).\n${FOOTER}`;
 
             const epMsg = await conn.sendMessage(from, { text: epText }, { quoted: dlSel.msg });
 
@@ -241,10 +243,27 @@ async function runDetailsFlow(conn, from, sender, selMsg, selected, hardThumb, m
                 if (!epSel) break;
 
                 (async () => {
+                  // 0 = download ALL episodes, one after another
+                  if (epSel.text.trim() === "0") {
+                    await react(conn, from, epSel.msg.key, "📦");
+                    await conn.sendMessage(from, {
+                      text: `📦 *${cleanTitle(details.title)}*\n\nEpisodes ${urls.length}ම එකින් එක download කරමින්... ⏳\n\n${FOOTER}`
+                    }, { quoted: epSel.msg });
+
+                    for (let i = 0; i < urls.length; i++) {
+                      const epUrl = urls[i];
+                      const epName = episodeLabel(epUrl, i);
+                      const fileName = `${cleanTitle(details.title)} - ${epName}`.replace(/\.mp4$/i, "") + ".mp4";
+                      const caption = `✅ *Download Complete* (${i + 1}/${urls.length})\n\n🎬 *${cleanTitle(details.title)}*\n📺 *${epName}*\n\n${FOOTER}`;
+                      await sendDirectFile(conn, from, epUrl, fileName, caption, epSel.msg, details.poster || selected.image, sessionId);
+                    }
+                    return;
+                  }
+
                   const epIndex = parseInt(epSel.text) - 1;
                   const epUrl = urls[epIndex];
                   if (isNaN(epIndex) || !epUrl) {
-                    return conn.sendMessage(from, { text: "❌ වලංගු episode අංකයක් ඇතුලත් කරන්න." }, { quoted: epSel.msg });
+                    return conn.sendMessage(from, { text: "❌ වලංගු episode අංකයක් ඇතුලත් කරන්න (0 = සියල්ලම)." }, { quoted: epSel.msg });
                   }
 
                   const epName = episodeLabel(epUrl, epIndex);
