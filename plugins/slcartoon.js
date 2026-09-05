@@ -154,8 +154,10 @@ function bestPoster(details, selected) {
 // ═══════════════════════════════════════════════════
 //  Send the actual video file (direct CDN url - no ad-gate)
 // ═══════════════════════════════════════════════════
-async function sendDirectFile(conn, from, directUrl, fileName, caption, quotedMsg, posterUrl, sessionId) {
-  const thumb = await makeThumbnail(posterUrl || null, getHardThumbUrl(sessionId));
+async function sendDirectFile(conn, from, directUrl, fileName, caption, quotedMsg, posterUrl, sessionId, precomputedThumb) {
+  const thumb = precomputedThumb !== undefined
+    ? precomputedThumb
+    : await makeThumbnail(posterUrl || null, getHardThumbUrl(sessionId));
   await react(conn, from, quotedMsg.key, "📥");
 
   try {
@@ -264,12 +266,18 @@ async function runDetailsFlow(conn, from, sender, selMsg, selected, hardThumb, m
                       text: `📦 *${cleanTitle(details.title)}*\n\nEpisodes ${urls.length}ම එකින් එක download කරමින්... ⏳\n\n${FOOTER}`
                     }, { quoted: epSel.msg });
 
+                    // Fetch the poster thumbnail ONCE and reuse it for every
+                    // episode - fetching it 20 times in a row was hitting the
+                    // image host repeatedly and silently failing partway
+                    // through, which is why later episodes had no thumbnail.
+                    const sharedThumb = await makeThumbnail(bestPoster(details, selected) || null, getHardThumbUrl(sessionId));
+
                     for (let i = 0; i < urls.length; i++) {
                       const epUrl = urls[i];
                       const epName = episodeLabel(epUrl, i);
                       const fileName = `${cleanTitle(details.title)} - ${epName}`.replace(/\.mp4$/i, "") + ".mp4";
                       const caption = `✅ *Download Complete* (${i + 1}/${urls.length})\n\n🎬 *${cleanTitle(details.title)}*\n📺 *${epName}*\n\n${FOOTER}`;
-                      await sendDirectFile(conn, from, epUrl, fileName, caption, epSel.msg, bestPoster(details, selected), sessionId);
+                      await sendDirectFile(conn, from, epUrl, fileName, caption, epSel.msg, null, sessionId, sharedThumb);
                     }
                     return;
                   }
