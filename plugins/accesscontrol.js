@@ -1,6 +1,17 @@
 const { cmd } = require('../command');
 const fs   = require('fs');
 const path = require('path');
+const config = require('../config');
+
+// Default mode comes from .env MODE (public/private/inbox/group/premium/privatepremium)
+// This only applies the FIRST time (before any .setmode was ever saved).
+// After that, whatever was saved with .setmode / MongoDB / local file wins.
+const ENV_DEFAULT_MODE = (config.MODE || 'public').toLowerCase();
+const VALID_MODES = ['public', 'private', 'inbox', 'group', 'premium', 'privatepremium'];
+function defaultAccessConfig() {
+  const mode = VALID_MODES.includes(ENV_DEFAULT_MODE) ? ENV_DEFAULT_MODE : 'public';
+  return { mode, premium: [], banned: [] };
+}
 
 // ═══════════════════════════════════════════════════
 //  Access Config — MongoDB Persist + File Fallback
@@ -73,7 +84,7 @@ async function getAccessConfig(sessionId) {
     if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (e) {}
 
-  return { mode: 'public', premium: [], banned: [] };
+  return defaultAccessConfig();
 }
 
 // ── Save config: Mongoose + local file ──────────────────────
@@ -128,7 +139,7 @@ async function preloadCache(sessionId) {
 }
 
 function getAccessConfigSync(sessionId) {
-  return _configCache[sessionId] || { mode: 'public', premium: [], banned: [] };
+  return _configCache[sessionId] || defaultAccessConfig();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -157,10 +168,10 @@ global.checkAccess = function(sessionId, senderNumber, isOwner, isGroup) {
       if (fs.existsSync(file)) {
         _configCache[sessionId] = JSON.parse(fs.readFileSync(file, 'utf8'));
       } else {
-        _configCache[sessionId] = { mode: 'public', premium: [], banned: [] };
+        _configCache[sessionId] = defaultAccessConfig();
       }
     } catch (_) {
-      _configCache[sessionId] = { mode: 'public', premium: [], banned: [] };
+      _configCache[sessionId] = defaultAccessConfig();
     }
     preloadCache(sessionId); // MongoDB ෙකන් background update
   }
