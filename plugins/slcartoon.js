@@ -138,6 +138,20 @@ function episodeLabel(url, index) {
 }
 
 // ═══════════════════════════════════════════════════
+//  Pick the best poster image.
+//  SinhalaCartoons' "details.poster" field often falls back to a blank
+//  Gravatar silhouette (gravatar.com/avatar/...&d=mm) when the site has
+//  no real poster meta set for that page. In that case the search/latest
+//  listing's "image" field (an actual screenshot/poster jpg) is far
+//  better, so prefer that instead.
+// ═══════════════════════════════════════════════════
+function bestPoster(details, selected) {
+  const p = details?.poster || "";
+  const isPlaceholder = !p || p.includes("gravatar.com");
+  return (isPlaceholder && selected?.image) ? selected.image : (p || selected?.image);
+}
+
+// ═══════════════════════════════════════════════════
 //  Send the actual video file (direct CDN url - no ad-gate)
 // ═══════════════════════════════════════════════════
 async function sendDirectFile(conn, from, directUrl, fileName, caption, quotedMsg, posterUrl, sessionId) {
@@ -199,7 +213,7 @@ async function runDetailsFlow(conn, from, sender, selMsg, selected, hardThumb, m
   infoText += `\n📌 අංකයෙන් Reply කරන්න.\n${FOOTER}`;
 
   const infoMsg = await conn.sendMessage(from, {
-    image: { url: details.poster || selected.image || hardThumb },
+    image: { url: bestPoster(details, selected) || hardThumb },
     caption: infoText
   }, { quoted: selMsg.msg });
 
@@ -224,7 +238,7 @@ async function runDetailsFlow(conn, from, sender, selMsg, selected, hardThumb, m
             const fileUrl = urls[0] || picked.actual_url;
             const fileName = `${cleanTitle(details.title)}.mp4`;
             const caption = `✅ *Download Complete*\n\n🎬 *${cleanTitle(details.title)}*\n💿 *Quality:* ${details.details?.quality || "?"}\n\n${FOOTER}`;
-            await sendDirectFile(conn, from, fileUrl, fileName, caption, dlSel.msg, details.poster || selected.image, sessionId);
+            await sendDirectFile(conn, from, fileUrl, fileName, caption, dlSel.msg, bestPoster(details, selected), sessionId);
 
           } else {
             // 📺 Series/season bundle - multiple episode files under one option.
@@ -255,7 +269,7 @@ async function runDetailsFlow(conn, from, sender, selMsg, selected, hardThumb, m
                       const epName = episodeLabel(epUrl, i);
                       const fileName = `${cleanTitle(details.title)} - ${epName}`.replace(/\.mp4$/i, "") + ".mp4";
                       const caption = `✅ *Download Complete* (${i + 1}/${urls.length})\n\n🎬 *${cleanTitle(details.title)}*\n📺 *${epName}*\n\n${FOOTER}`;
-                      await sendDirectFile(conn, from, epUrl, fileName, caption, epSel.msg, details.poster || selected.image, sessionId);
+                      await sendDirectFile(conn, from, epUrl, fileName, caption, epSel.msg, bestPoster(details, selected), sessionId);
                     }
                     return;
                   }
@@ -269,7 +283,7 @@ async function runDetailsFlow(conn, from, sender, selMsg, selected, hardThumb, m
                   const epName = episodeLabel(epUrl, epIndex);
                   const fileName = `${cleanTitle(details.title)} - ${epName}`.replace(/\.mp4$/i, "") + ".mp4";
                   const caption = `✅ *Download Complete*\n\n🎬 *${cleanTitle(details.title)}*\n📺 *${epName}*\n\n${FOOTER}`;
-                  await sendDirectFile(conn, from, epUrl, fileName, caption, epSel.msg, details.poster || selected.image, sessionId);
+                  await sendDirectFile(conn, from, epUrl, fileName, caption, epSel.msg, bestPoster(details, selected), sessionId);
                 })();
               }
             };
