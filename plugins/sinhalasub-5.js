@@ -5,6 +5,16 @@ const fs = require('fs');
 const path = require('path');
 
 // ═══════════════════════════════════════════════════
+//  API CONFIG (hardcoded)
+// ═══════════════════════════════════════════════════
+const API_BASE   = "https://whiteshadow-x-api.onrender.com/api/movie";
+const API_TOKEN  = "e76n2P"; // hardcoded api key
+
+const SEARCH_URL  = (q)   => `${API_BASE}/sinhalasub-search?q=${encodeURIComponent(q)}&apitoken=${API_TOKEN}`;
+const DETAILS_URL = (url) => `${API_BASE}/sinhalasub-details?url=${encodeURIComponent(url)}&apitoken=${API_TOKEN}`;
+const DL_URL      = (url) => `${API_BASE}/sinhalasub-dl?url=${encodeURIComponent(url)}&apitoken=${API_TOKEN}`;
+
+// ═══════════════════════════════════════════════════
 //  Session Config Helpers
 // ═══════════════════════════════════════════════════
 function getSessionConfig(sessionId) {
@@ -28,10 +38,6 @@ function isMovieDocOn(sessionId) {
   return getSessionConfig(sessionId).movieDoc === true;
 }
 
-function getPrefix(sessionId) {
-  return getSessionConfig(sessionId).docPrefix || "ꜱʜᴀᴠɪʏᴀ xᴍᴅ";
-}
-
 // ═══════════════════════════════════════════════════
 //  React helper
 // ═══════════════════════════════════════════════════
@@ -40,7 +46,7 @@ async function react(conn, jid, key, emoji) {
 }
 
 // ═══════════════════════════════════════════════════
-//  Thumbnail Builder - ONLY for thumbnail (small image, safe)
+//  Thumbnail Builder (small, safe)
 // ═══════════════════════════════════════════════════
 async function makeThumbnail(moviePosterUrl, hardThumbUrl, movieDocOn) {
   const primaryUrl = (movieDocOn && moviePosterUrl) ? moviePosterUrl : hardThumbUrl;
@@ -62,7 +68,7 @@ async function makeThumbnail(moviePosterUrl, hardThumbUrl, movieDocOn) {
 }
 
 // ═══════════════════════════════════════════════════
-//  Wait for reply - single resolve, safe cleanup
+//  waitForReply - multi-use loop (search list / downloads list)
 // ═══════════════════════════════════════════════════
 function waitForReply(conn, from, sender, replyToId, timeout = 600000) {
   return new Promise((resolve) => {
@@ -94,78 +100,54 @@ function waitForReply(conn, from, sender, replyToId, timeout = 600000) {
 }
 
 // ═══════════════════════════════════════════════════
-//  FIX: Send via URL streaming - NO buffer in RAM
-//  Buffer download කළොත් Heroku dyno OOM crash වෙනවා
-//  Pixeldrain URL direct ලෙස WhatsApp stream කරනවා
+//  Clean title (remove trailing "| සිංහල උපසිරසි සමඟ" part for lists)
 // ═══════════════════════════════════════════════════
-async function sendPixelFile(conn, from, pixeldrainUrl, fileName, caption, quotedMsg, posterUrl, sessionId) {
-  const thumb = await makeThumbnail(posterUrl || null, getHardThumbUrl(sessionId), isMovieDocOn(sessionId));
-  await react(conn, from, quotedMsg.key, "📥");
-
-  try {
-    // ✅ URL stream - memory safe, bot restart නොවේ
-    const docMsg = await conn.sendMessage(from, {
-      document: { url: pixeldrainUrl },
-      fileName: fileName.replace(/[\/\\:*?"<>|]/g, ""),
-      mimetype: "video/mp4",
-      jpegThumbnail: thumb || undefined,
-      caption,
-    }, { quoted: quotedMsg });
-
-    await react(conn, from, docMsg.key, "✅");
-
-  } catch (e) {
-    console.log("❌ sendPixelFile error:", e.message);
-    await conn.sendMessage(from, {
-      text: `❌ File send කිරීමේදී දෝෂයක් සිදු විය.\n\n📎 Direct link:\n${pixeldrainUrl}\n\n${caption}`
-    }, { quoted: quotedMsg });
-  }
+function cleanTitle(title) {
+  if (!title) return "Unknown";
+  return title.split("|")[0].trim();
 }
 
 // ═══════════════════════════════════════════════════
-//  SINHALASUB COMMAND
+//  SINHALASUB (WhiteShadow API) COMMAND
 // ═══════════════════════════════════════════════════
 cmd({
   pattern: "sinhalasub",
-  desc: "SinhalaSub.lk Pixeldrain downloader",
+  alias: ["sub", "ssub", "sslk"],
+  desc: "SinhalaSub.lk (WhiteShadow API) Search / Details / Download",
   category: "downloader",
   react: "🔍",
   filename: __filename
 }, async (conn, mek, m, { from, q, reply, sender, sessionId }) => {
   try {
-    if (!q) return reply("❗ Example: .sinhalasub Avatar");
+    if (!q) return reply("❗ Example: `.sinhalasubw Mortal Kombat`");
 
     const FOOTER     = `✫☘${getBotName(sessionId)}☢️☘`;
     const hardThumb  = getHardThumbUrl(sessionId);
     const movieDocOn = isMovieDocOn(sessionId);
-    const DOC_PREFIX = getPrefix(sessionId);
 
     await react(conn, from, m.key, "🔍");
 
-    // 1️⃣ Search
-    let results;
+    // 1️⃣ SEARCH
+    let items;
     try {
-      const searchRes = await axios.get(
-        `https://darkyasiya-new-movie-api.vercel.app/api/movie/sinhalasub/search?q=${encodeURIComponent(q)}`,
-        { timeout: 20000 }
-      );
-      results = searchRes.data?.data?.data;
+      const searchRes = await axios.get(SEARCH_URL(q), { timeout: 20000 });
+      if (!searchRes.data?.success) throw new Error(searchRes.data?.message || "search failed");
+      items = searchRes.data?.result?.items;
     } catch (e) {
       return reply("❌ Search API error: " + e.message);
     }
 
-    if (!results?.length) return reply("❌ No results found. වෙනත් නමකින් සොයන්න.");
+    if (!items?.length) return reply("❌ ප්‍රතිඵල හමු නොවීය. වෙනත් නමකින් සොයන්න.");
 
-    let listText = `🎬 *SinhalaSub.lk Results (Pixeldrain)*\n\n`;
-    results.slice(0, 10).forEach((v, i) => {
-      listText += `*${i + 1}.* ${v.title} (${v.year || ""})\n`;
+    let listText = `🎬 *SinhalaSub.lk Search Results*\n\n`;
+    items.slice(0, 10).forEach((v, i) => {
+      listText += `*${i + 1}.* ${cleanTitle(v.title)}${v.quality ? ` [${v.quality}]` : ""}\n`;
     });
+    listText += `\n📌 අංකයෙන් Reply කරන්න.\n\n${FOOTER}`;
 
-    const listMsg = await conn.sendMessage(from, {
-      text: listText + `\n📌 Reply number\n\n${FOOTER}`
-    }, { quoted: mek });
+    const listMsg = await conn.sendMessage(from, { text: listText }, { quoted: mek });
 
-    // ── Infinite Movie Select Loop ──
+    // ── Movie select loop ──
     const startMovieFlow = async () => {
       while (true) {
         const movieSel = await waitForReply(conn, from, sender, listMsg.key.id);
@@ -173,82 +155,99 @@ cmd({
 
         (async () => {
           const index = parseInt(movieSel.text) - 1;
-          if (isNaN(index) || !results[index]) {
+          const selected = items[index];
+          if (isNaN(index) || !selected) {
             return conn.sendMessage(from, { text: "❌ වලංගු අංකයක් ඇතුලත් කරන්න." }, { quoted: movieSel.msg });
           }
 
           await react(conn, from, movieSel.msg.key, "⏳");
-          const selectedMovie = results[index];
 
-          // 2️⃣ Get movie info
-          let info;
+          // 2️⃣ DETAILS
+          let details;
           try {
-            const infoRes = await axios.get(
-              `https://sadaslk-apis.vercel.app/api/v1/movie/sinhalasub/infodl?q=${encodeURIComponent(selectedMovie.link)}&apiKey=a3b8844e3897880d75331c5b2526d701`,
-              { timeout: 20000 }
-            );
-            info = infoRes.data?.data;
+            const detRes = await axios.get(DETAILS_URL(selected.url), { timeout: 20000 });
+            if (!detRes.data?.success) throw new Error(detRes.data?.message || "details failed");
+            details = detRes.data?.result;
           } catch (e) {
-            return conn.sendMessage(from, { text: "❌ Movie info API error: " + e.message }, { quoted: movieSel.msg });
+            return conn.sendMessage(from, { text: "❌ Details API error: " + e.message }, { quoted: movieSel.msg });
           }
 
-          if (!info) return conn.sendMessage(from, { text: "❌ Movie info හමු නොවීය." }, { quoted: movieSel.msg });
+          if (!details) return conn.sendMessage(from, { text: "❌ Movie details හමු නොවීය." }, { quoted: movieSel.msg });
 
-          // 3️⃣ Filter Pixeldrain links
-          const pixLinks = (info.downloadLinks || []).filter(d =>
-            d.server?.toLowerCase().includes("pixeldrain")
-          );
-
-          if (!pixLinks.length) {
-            return conn.sendMessage(from, {
-              text: `❌ *${info.title}*\n\nPixeldrain links හමු නොවීය.\nවෙනත් quality server ඇති නමුත් Pixeldrain නොමැත.`
-            }, { quoted: movieSel.msg });
+          // 3️⃣ DOWNLOAD LINKS
+          let downloads;
+          try {
+            const dlRes = await axios.get(DL_URL(selected.url), { timeout: 20000 });
+            if (!dlRes.data?.success) throw new Error(dlRes.data?.message || "download fetch failed");
+            downloads = dlRes.data?.result?.downloads;
+          } catch (e) {
+            return conn.sendMessage(from, { text: "❌ Download API error: " + e.message }, { quoted: movieSel.msg });
           }
 
-          let infoText = `🎬 *${info.title}*\n\n`;
-          if (info.date)    infoText += `📅 *Year:* ${info.date}\n`;
-          if (info.country) infoText += `🌍 *Country:* ${info.country}\n`;
-          if (info.rating)  infoText += `⭐ *Rating:* ${info.rating}\n`;
-          if (info.description) infoText += `📝 *Description:* ${info.description.substring(0, 200)}...\n`;
-          infoText += `\n*💎 Available Qualities (Pixeldrain):*\n`;
-          pixLinks.forEach((d, i) => {
-            infoText += `*${i + 1}.* ${d.quality} (${d.size || "?"})\n`;
+          if (!downloads?.length) {
+            return conn.sendMessage(from, { text: `❌ *${cleanTitle(details.title)}*\n\nDownload links හමු නොවීය.` }, { quoted: movieSel.msg });
+          }
+
+          // Build info caption
+          let infoText = `🎬 *${cleanTitle(details.title)}*\n\n`;
+          if (details.meta?.year)    infoText += `📅 *Year:* ${details.meta.year}\n`;
+          if (details.meta?.imdb)    infoText += `⭐ *IMDB:* ${details.meta.imdb}\n`;
+          if (details.meta?.quality) infoText += `💿 *Quality:* ${details.meta.quality}\n`;
+          if (details.meta?.runtime) infoText += `⏱️ *Runtime:* ${details.meta.runtime}\n`;
+          if (details.meta?.views)   infoText += `👁️ *Views:* ${details.meta.views}\n`;
+          if (details.genres?.length) infoText += `🎭 *Genres:* ${details.genres.join(", ")}\n`;
+          if (details.description)  infoText += `📝 *Description:* ${details.description.substring(0, 200)}\n`;
+          if (details.cast?.length)  infoText += `🎬 *Cast:* ${details.cast.slice(0, 5).map(c => c.name).join(", ")}\n`;
+
+          infoText += `\n*💎 Available Downloads:*\n`;
+          downloads.forEach((d, i) => {
+            infoText += `*${i + 1}.* ${d.host} - ${d.quality} (${d.size || "?"})\n`;
           });
-
-          const thumb = await makeThumbnail(selectedMovie.image || null, hardThumb, movieDocOn);
+          infoText += `\n📌 Download අංකයෙන් Reply කරන්න.\n${FOOTER}`;
 
           const infoMsg = await conn.sendMessage(from, {
-            image: { url: selectedMovie.image || hardThumb },
-            caption: infoText + `\n📌 Reply download number\n${FOOTER}`
+            image: { url: details.poster || selected.poster || hardThumb },
+            caption: infoText
           }, { quoted: movieSel.msg });
 
-          // ── Infinite Quality Select Loop ──
-          const startQualityFlow = async () => {
+          // ── Download select loop ──
+          const startDlFlow = async () => {
             while (true) {
               const dlSel = await waitForReply(conn, from, sender, infoMsg.key.id);
               if (!dlSel) break;
 
               (async () => {
                 const dIndex = parseInt(dlSel.text) - 1;
-                if (isNaN(dIndex) || !pixLinks[dIndex]) {
-                  return conn.sendMessage(from, { text: "❌ වලංගු quality අංකයක් ඇතුලත් කරන්න." }, { quoted: dlSel.msg });
+                const picked = downloads[dIndex];
+                if (isNaN(dIndex) || !picked) {
+                  return conn.sendMessage(from, { text: "❌ වලංගු download අංකයක් ඇතුලත් කරන්න." }, { quoted: dlSel.msg });
                 }
 
-                const selectedLink = pixLinks[dIndex];
                 await react(conn, from, dlSel.msg.key, "📥");
 
-                // ✅ FIX: pixeldrain URL — buffer download නැත, URL stream only
-                const fileId = selectedLink.link.split('/').pop().split('?')[0];
-                const pixelStreamUrl = `https://pixeldrain.com/api/file/${fileId}?download`;
-                const fileName = `${info.title} (${selectedLink.quality}).mp4`.replace(/[\/\\:*?"<>|]/g, "");
-                const caption = `🎬 *File:* 【${DOC_PREFIX}】 ${info.title} (${selectedLink.quality}).mp4\n⚖️ *Size:* ${selectedLink.size || "?"}\n💎 *Quality:* ${selectedLink.quality}\n\n${FOOTER}`;
+                // Download page links are redirect/landing pages (not direct file streams),
+                // so we send them as a clickable text link with full info instead of
+                // attempting a raw document stream (which would fail on an HTML page).
+                const caption =
+                  `✅ *Download Link Ready*\n\n` +
+                  `🎬 *${cleanTitle(details.title)}*\n` +
+                  `🌐 *Host:* ${picked.host}\n` +
+                  `💎 *Quality:* ${picked.quality}\n` +
+                  `⚖️ *Size:* ${picked.size || "?"}\n\n` +
+                  `🔗 *Link:*\n${picked.link}\n\n` +
+                  `⚠️ Link එක browser එකෙන් open කර, Download button එක click කරන්න.\n\n${FOOTER}`;
 
-                await sendPixelFile(conn, from, pixelStreamUrl, fileName, caption, dlSel.msg, selectedMovie.image, sessionId);
-
+                try {
+                  const sent = await conn.sendMessage(from, { text: caption }, { quoted: dlSel.msg });
+                  await react(conn, from, sent.key, "✅");
+                } catch (e) {
+                  console.log("❌ sinhalasubw send error:", e.message);
+                  await conn.sendMessage(from, { text: `❌ Link යැවීමේ දෝෂයක්.\n\n🔗 ${picked.link}` }, { quoted: dlSel.msg });
+                }
               })();
             }
           };
-          startQualityFlow();
+          startDlFlow();
 
         })();
       }
@@ -257,7 +256,7 @@ cmd({
     startMovieFlow();
 
   } catch (e) {
-    console.error("📛 SINHALASUB ERROR:", e);
+    console.error("📛 SINHALASUBW ERROR:", e);
     reply("⚠️ Error: " + e.message);
   }
 });
