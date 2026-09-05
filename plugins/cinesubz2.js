@@ -17,6 +17,13 @@ const axios    = require('axios');
 // node-fetch dynamic import (CommonJS safe)
 const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...args));
 
+// ─────────────────────────────────────────────────────
+// WhiteShadow Cinesubz API config
+// ─────────────────────────────────────────────────────
+const CINESUBZ_API_KEY    = 'e76n2P';
+const CINESUBZ_SEARCH_URL = 'https://whiteshadow-x-api.onrender.com/api/movie/cinesubz-search';
+const CINESUBZ_EXTRACT_URL = 'https://whiteshadow-x-api.onrender.com/api/movie/cinesubz-extract';
+
 // FakeVCard — quoted header
 const FakeVCard = {
     key: { fromMe: false, participant: '0@s.whatsapp.net', remoteJid: 'status@broadcast' },
@@ -130,21 +137,21 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
         const query = q.trim();
         await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
-        // ── Step 1: Search ──
+        // ── Step 1: Search (WhiteShadow Cinesubz API) ──
         let data;
         try {
             data = await safeFetch(
-                `https://cinesubz-api-cnw.vercel.app/api/search?q=${encodeURIComponent(query)}`
+                `${CINESUBZ_SEARCH_URL}?q=${encodeURIComponent(query)}&apitoken=${CINESUBZ_API_KEY}`
             );
         } catch (e) {
             return reply(`❌ *Search API Error:* ${e.message}\n_API offline හෝ network issue_`);
         }
 
-        if (!data?.status || !Array.isArray(data?.data) || data.data.length === 0) {
+        if (!data?.success || !Array.isArray(data?.results) || data.results.length === 0) {
             return reply('❌ *සමාවෙන්න, එම නමින් Movies කිසිවක් හමුවූයේ නැත.*');
         }
 
-        const topResults = data.data.slice(0, 10);
+        const topResults = data.results.slice(0, 10);
 
         // ── Step 2: List message ──
         let listText = `🎬 *CINESUBZ MOVIE SEARCH*\n\n🔍 *සෙව්වේ:* ${query}\n👤 *User:* ${pushname}\n\n👇 *ඔබට අවශ්‍ය ෆිල්ම් එකේ අංකය Reply කරන්න*\n\n`;
@@ -210,11 +217,11 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                 const selectedMovie = topResults[selectedIndex];
                 await conn.sendMessage(from, { react: { text: '🎬', key: inMsg.key } });
 
-                // ── Step 4: Extract download links ──
+                // ── Step 4: Extract download links (WhiteShadow Cinesubz API) ──
                 let extData;
                 try {
                     extData = await safeFetch(
-                        `https://cinesubz-api-cnw.vercel.app/api/extract?id=${selectedMovie.id}&type=mv`
+                        `${CINESUBZ_EXTRACT_URL}?id=${selectedMovie.id}&type=mv&apitoken=${CINESUBZ_API_KEY}`
                     );
                 } catch (e) {
                     return conn.sendMessage(from,
@@ -223,7 +230,7 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                     );
                 }
 
-                if (!extData?.status || !Array.isArray(extData?.data) || extData.data.length === 0) {
+                if (!extData?.success || !Array.isArray(extData?.results) || extData.results.length === 0) {
                     return conn.sendMessage(from,
                         { text: '❌ *මෙම චිත්‍රපටියේ Download Links ලබාගත නොහැක.*' },
                         { quoted: inMsg }
@@ -232,9 +239,10 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
 
                 // ── Step 5: Pick best link ──
                 // is_direct_mp4 field නෑ නම් first link use කරනවා
-                const directVideo = extData.data.find(v => v.is_direct_mp4 === true)
-                                 || extData.data.find(v => v.link?.includes('.mp4'))
-                                 || extData.data[0];
+                const directVideo = extData.results.find(v => v.is_direct_mp4 === true)
+                                 || extData.results.find(v => v.type === 'mp4' && v.link?.includes('.mp4'))
+                                 || extData.results.find(v => v.link?.includes('.mp4'))
+                                 || extData.results[0];
                 const baseLink = directVideo?.link;
 
                 if (!baseLink) {
