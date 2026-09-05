@@ -14,6 +14,9 @@ const SEARCH_URL  = (q)   => `${API_BASE}/sinhalasub-search?q=${encodeURICompone
 const DETAILS_URL = (url) => `${API_BASE}/sinhalasub-details?url=${encodeURIComponent(url)}&apitoken=${API_TOKEN}`;
 const DL_URL      = (url) => `${API_BASE}/sinhalasub-dl?url=${encodeURIComponent(url)}&apitoken=${API_TOKEN}`;
 
+// ── Preferred host order (used to pick ONE "best" link per quality) ──
+const HOST_PRIORITY = ["Pixeldrain", "FilesPayout", "DLServer-01", "DLServer-02", "Telagram"];
+
 // ═══════════════════════════════════════════════════
 //  Session Config Helpers
 // ═══════════════════════════════════════════════════
@@ -46,7 +49,7 @@ async function react(conn, jid, key, emoji) {
 }
 
 // ═══════════════════════════════════════════════════
-//  Thumbnail Builder (small, safe)
+//  Thumbnail Builder
 // ═══════════════════════════════════════════════════
 async function makeThumbnail(moviePosterUrl, hardThumbUrl, movieDocOn) {
   const primaryUrl = (movieDocOn && moviePosterUrl) ? moviePosterUrl : hardThumbUrl;
@@ -68,7 +71,7 @@ async function makeThumbnail(moviePosterUrl, hardThumbUrl, movieDocOn) {
 }
 
 // ═══════════════════════════════════════════════════
-//  waitForReply - multi-use loop (search list / downloads list)
+//  waitForReply - multi-use loop
 // ═══════════════════════════════════════════════════
 function waitForReply(conn, from, sender, replyToId, timeout = 600000) {
   return new Promise((resolve) => {
@@ -100,7 +103,7 @@ function waitForReply(conn, from, sender, replyToId, timeout = 600000) {
 }
 
 // ═══════════════════════════════════════════════════
-//  Clean title (remove trailing "| සිංහල උපසිරසි සමඟ" part for lists)
+//  Clean title
 // ═══════════════════════════════════════════════════
 function cleanTitle(title) {
   if (!title) return "Unknown";
@@ -108,11 +111,46 @@ function cleanTitle(title) {
 }
 
 // ═══════════════════════════════════════════════════
+//  Pick ONE best link per quality bucket (480p / 720p / 1080p)
+//  - Groups by normalized quality label
+//  - Within a group, picks the host that appears first in HOST_PRIORITY
+//  - Skips "Subtitles/SRT" entries entirely
+// ═══════════════════════════════════════════════════
+function pickBestQualityLinks(downloads) {
+  const wanted = [
+    { key: "1080", label: "FHD 1080p" },
+    { key: "720",  label: "HD 720p"   },
+    { key: "480",  label: "SD 480p"   },
+  ];
+
+  const results = [];
+
+  for (const w of wanted) {
+    const group = downloads.filter(d =>
+      (d.quality || "").includes(w.key) &&
+      !(d.host || "").toLowerCase().includes("subtitle")
+    );
+    if (!group.length) continue;
+
+    // sort group by host priority
+    group.sort((a, b) => {
+      const ai = HOST_PRIORITY.indexOf(a.host);
+      const bi = HOST_PRIORITY.indexOf(b.host);
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    });
+
+    results.push(group[0]);
+  }
+
+  return results;
+}
+
+// ═══════════════════════════════════════════════════
 //  SINHALASUB (WhiteShadow API) COMMAND
 // ═══════════════════════════════════════════════════
 cmd({
-  pattern: "sinhalasub",
-  alias: ["sub", "ssub", "sslk"],
+  pattern: "sinhalasubw",
+  alias: ["wsub", "wsinhalasub", "sslkw"],
   desc: "SinhalaSub.lk (WhiteShadow API) Search / Details / Download",
   category: "downloader",
   react: "🔍",
@@ -175,35 +213,39 @@ cmd({
           if (!details) return conn.sendMessage(from, { text: "❌ Movie details හමු නොවීය." }, { quoted: movieSel.msg });
 
           // 3️⃣ DOWNLOAD LINKS
-          let downloads;
+          let allDownloads;
           try {
             const dlRes = await axios.get(DL_URL(selected.url), { timeout: 20000 });
             if (!dlRes.data?.success) throw new Error(dlRes.data?.message || "download fetch failed");
-            downloads = dlRes.data?.result?.downloads;
+            allDownloads = dlRes.data?.result?.downloads;
           } catch (e) {
             return conn.sendMessage(from, { text: "❌ Download API error: " + e.message }, { quoted: movieSel.msg });
           }
 
-          if (!downloads?.length) {
+          if (!allDownloads?.length) {
             return conn.sendMessage(from, { text: `❌ *${cleanTitle(details.title)}*\n\nDownload links හමු නොවීය.` }, { quoted: movieSel.msg });
+          }
+
+          // ✅ Filter down to just the best 1080p / 720p / 480p link (no long host list)
+          const bestLinks = pickBestQualityLinks(allDownloads);
+
+          if (!bestLinks.length) {
+            return conn.sendMessage(from, { text: `❌ *${cleanTitle(details.title)}*\n\n480p/720p/1080p qualities හමු නොවීය.` }, { quoted: movieSel.msg });
           }
 
           // Build info caption
           let infoText = `🎬 *${cleanTitle(details.title)}*\n\n`;
           if (details.meta?.year)    infoText += `📅 *Year:* ${details.meta.year}\n`;
           if (details.meta?.imdb)    infoText += `⭐ *IMDB:* ${details.meta.imdb}\n`;
-          if (details.meta?.quality) infoText += `💿 *Quality:* ${details.meta.quality}\n`;
           if (details.meta?.runtime) infoText += `⏱️ *Runtime:* ${details.meta.runtime}\n`;
-          if (details.meta?.views)   infoText += `👁️ *Views:* ${details.meta.views}\n`;
           if (details.genres?.length) infoText += `🎭 *Genres:* ${details.genres.join(", ")}\n`;
           if (details.description)  infoText += `📝 *Description:* ${details.description.substring(0, 200)}\n`;
-          if (details.cast?.length)  infoText += `🎬 *Cast:* ${details.cast.slice(0, 5).map(c => c.name).join(", ")}\n`;
 
-          infoText += `\n*💎 Available Downloads:*\n`;
-          downloads.forEach((d, i) => {
-            infoText += `*${i + 1}.* ${d.host} - ${d.quality} (${d.size || "?"})\n`;
+          infoText += `\n*💎 Quality තෝරන්න:*\n`;
+          bestLinks.forEach((d, i) => {
+            infoText += `*${i + 1}.* ${d.quality} - ${d.size || "?"} (${d.host})\n`;
           });
-          infoText += `\n📌 Download අංකයෙන් Reply කරන්න.\n${FOOTER}`;
+          infoText += `\n📌 අංකයෙන් Reply කරන්න.\n${FOOTER}`;
 
           const infoMsg = await conn.sendMessage(from, {
             image: { url: details.poster || selected.poster || hardThumb },
@@ -218,24 +260,26 @@ cmd({
 
               (async () => {
                 const dIndex = parseInt(dlSel.text) - 1;
-                const picked = downloads[dIndex];
+                const picked = bestLinks[dIndex];
                 if (isNaN(dIndex) || !picked) {
-                  return conn.sendMessage(from, { text: "❌ වලංගු download අංකයක් ඇතුලත් කරන්න." }, { quoted: dlSel.msg });
+                  return conn.sendMessage(from, { text: "❌ වලංගු quality අංකයක් ඇතුලත් කරන්න. (1-" + bestLinks.length + ")" }, { quoted: dlSel.msg });
                 }
 
                 await react(conn, from, dlSel.msg.key, "📥");
 
-                // Download page links are redirect/landing pages (not direct file streams),
-                // so we send them as a clickable text link with full info instead of
-                // attempting a raw document stream (which would fail on an HTML page).
+                // ⚠️ NOTE: SinhalaSub.lk "links/*" pages are a 3-step ad-verification
+                // gateway (click-through + timed unlock) before the real file host is
+                // revealed. There's no API step that returns the final direct file URL,
+                // so the bot cannot auto-stream/send the actual video — it must hand the
+                // gateway link to the user to complete manually.
                 const caption =
                   `✅ *Download Link Ready*\n\n` +
                   `🎬 *${cleanTitle(details.title)}*\n` +
-                  `🌐 *Host:* ${picked.host}\n` +
                   `💎 *Quality:* ${picked.quality}\n` +
-                  `⚖️ *Size:* ${picked.size || "?"}\n\n` +
+                  `⚖️ *Size:* ${picked.size || "?"}\n` +
+                  `🌐 *Host:* ${picked.host}\n\n` +
                   `🔗 *Link:*\n${picked.link}\n\n` +
-                  `⚠️ Link එක browser එකෙන් open කර, Download button එක click කරන්න.\n\n${FOOTER}`;
+                  `⚠️ Link එක browser එකේ open කරලා, 3 verify steps click කර download unlock කරන්න.\n\n${FOOTER}`;
 
                 try {
                   const sent = await conn.sendMessage(from, { text: caption }, { quoted: dlSel.msg });
