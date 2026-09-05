@@ -116,6 +116,90 @@ async function safeFetch(url, timeoutMs = 15000) {
     }
 }
 
+// ─────────────────────────────────────────────────────
+// HELPER: URL එකේ ඇත්තටම embed වී තියෙන quality එක detect කරනවා
+// (filename patterns: 2160p/4K, 1080p, 720p, 480p, 360p)
+// ─────────────────────────────────────────────────────
+function detectQuality(url) {
+    if (!url) return null;
+    if (/2160p|4k/i.test(url))  return '4K';
+    if (/1080p/i.test(url))     return '1080p';
+    if (/720p/i.test(url))      return '720p';
+    if (/480p/i.test(url))      return '480p';
+    if (/360p/i.test(url))      return '360p';
+    return null;
+}
+
+// ─────────────────────────────────────────────────────
+// Cinesubz CDN links (sonic-cloud, evostream, etc.) often need a
+// proper Referer + User-Agent — without them they silently return
+// a tiny error page instead of the real video (this is the actual
+// cause of "KB size" downloads, not just wrong-quality guessing).
+// ─────────────────────────────────────────────────────
+const CINESUBZ_REQUEST_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+    'Referer': 'https://cinesubz.net/',
+    'Accept': '*/*'
+};
+
+// ─────────────────────────────────────────────────────
+// HELPER: link එක ඇත්තටම video file එකක්ද, KB size broken/error
+// page එකක්ද කියලා confirm කරන්න actual headers යොදාගෙන ranged
+// GET එකකින් bytes කිහිපයක් fetch කරලා sniff කරනවා (HEAD request
+// එකකට වඩා reliable — CDN එක HEAD වලට වෙනස් විදිහට behave වෙන්නත් පුළුවන්)
+// ─────────────────────────────────────────────────────
+async function checkVideoLink(url, timeoutMs = 15000) {
+    try {
+        const res = await axios.get(url, {
+            timeout: timeoutMs,
+            maxRedirects: 5,
+            responseType: 'arraybuffer',
+            headers: { ...CINESUBZ_REQUEST_HEADERS, Range: 'bytes=0-65535' },
+            validateStatus: s => s < 500
+        });
+
+        const buf          = Buffer.from(res.data || []);
+        const contentType  = (res.headers?.['content-type'] || '').toLowerCase();
+        const contentRange = res.headers?.['content-range']; // e.g. "bytes 0-65535/734003200"
+
+        let sizeMB = null;
+        if (contentRange) {
+            const m = contentRange.match(/\/(\d+)$/);
+            if (m) sizeMB = parseInt(m[1]) / (1024 * 1024);
+        } else if (res.headers?.['content-length'] && res.status === 200) {
+            sizeMB = parseInt(res.headers['content-length']) / (1024 * 1024);
+        }
+
+        // Real video bytes won't look like an HTML/JSON error page
+        const sniff = buf.toString('latin1', 0, Math.min(buf.length, 512)).toLowerCase();
+        const looksLikeError = sniff.includes('<html') || sniff.includes('<!doctype') ||
+                                sniff.includes('"success"') || sniff.includes('"error"') ||
+                                sniff.includes('not found') || sniff.includes('forbidden');
+
+        const looksValid = res.status < 400 && !looksLikeError && buf.length > 1000 &&
+                            (sizeMB === null || sizeMB >= 5);
+
+        return { ok: true, sizeMB, contentType, looksValid };
+    } catch {
+        return { ok: false, sizeMB: null, contentType: null, looksValid: false };
+    }
+}
+
+// ─────────────────────────────────────────────────────
+// HELPER: video එක Baileys ට direct url එකක් විදිහට දෙනවා වෙනුවට,
+// අපිම proper headers (Referer/User-Agent) එක්කම fetch කරලා
+// stream එකක් විදිහට ලබාදෙනවා — hotlink-protected CDN links
+// වලින් KB size error page එනවට හේතුව මෙයයි.
+// ─────────────────────────────────────────────────────
+async function getVideoStream(url) {
+    const res = await axios.get(url, {
+        responseType: 'stream',
+        maxRedirects: 5,
+        headers: CINESUBZ_REQUEST_HEADERS
+    });
+    return res.data;
+}
+
 
 // =================================================
 // 1. CINESUBZ MOVIE SEARCH COMMAND (.cz2)
@@ -338,43 +422,64 @@ async (conn, mek, m, { from, q, pushname, sender, reply }) => {
                             { quoted: FakeVCard }
                         );
 
-                        // Quality URL replace
+                        // Quality URL replace (guess) — then VALIDATE it actually exists
+                        const actualQuality = detectQuality(baseLink) || 'Original';
                         let finalUrl = baseLink;
+                        let usedQuality = actualQuality;
+
                         if (chosenQuality === '480p') {
                             finalUrl = baseLink.replace(/(1080p|1080|720p|720)/gi, '480p');
                         } else if (chosenQuality === '720p') {
                             finalUrl = baseLink.replace(/(1080p|1080|480p|480)/gi, '720p');
                         }
 
-                        // File size check
-                        try {
-                            const headRes = await axios.head(finalUrl, { timeout: 10000 });
-                            const len     = headRes.headers?.['content-length'];
-                            if (len) {
-                                const sizeMB = parseInt(len) / (1024 * 1024);
-                                if (sizeMB > 1950) {
-                                    await conn.sendMessage(from, { react: { text: '❌', key: qMsg.key } });
-                                    return conn.sendMessage(from,
-                                        { text: `❌ *File too large: ${sizeMB.toFixed(1)} MB*\nWhatsApp 2GB limit exceed කර ඇත.` },
-                                        { quoted: FakeVCard }
-                                    );
-                                }
+                        if (finalUrl !== baseLink) {
+                            // requested quality is a guessed URL — confirm it's a real video, not a KB-size error page
+                            const check = await checkVideoLink(finalUrl);
+                            const validType = !check.contentType || /video|octet-stream|mp4/i.test(check.contentType);
+
+                            if (!check.ok || !check.looksValid || !validType) {
+                                // Guessed quality doesn't actually exist — fall back to the real link
+                                finalUrl     = baseLink;
+                                usedQuality  = actualQuality;
+                                await conn.sendMessage(from,
+                                    { text: `⚠️ *${chosenQuality} quality මෙම movie එකට නොමැත.*\n_ලබාගත හැකි quality (${actualQuality}) එකෙන් download කරමින්..._` },
+                                    { quoted: qMsg }
+                                );
+                            } else {
+                                usedQuality = chosenQuality;
                             }
-                        } catch {
-                            // head check fail — proceed anyway
+                        }
+
+                        // Final size check on the link we're actually going to send
+                        const finalCheck = await checkVideoLink(finalUrl);
+                        if (finalCheck.ok && !finalCheck.looksValid) {
+                            await conn.sendMessage(from, { react: { text: '❌', key: qMsg.key } });
+                            return conn.sendMessage(from,
+                                { text: `❌ *Link එක broken/expire වී ඇත (file size ඉතා කුඩායි).*\n_වෙනත් movie එකක් උත්සාහ කරන්න._` },
+                                { quoted: FakeVCard }
+                            );
+                        }
+                        if (finalCheck.ok && finalCheck.sizeMB && finalCheck.sizeMB > 1950) {
+                            await conn.sendMessage(from, { react: { text: '❌', key: qMsg.key } });
+                            return conn.sendMessage(from,
+                                { text: `❌ *File too large: ${finalCheck.sizeMB.toFixed(1)} MB*\nWhatsApp 2GB limit exceed කර ඇත.`,
+                                }, { quoted: FakeVCard }
+                            );
                         }
 
                         // Send as document
                         const captionText =
-                            `🎬 *${selectedMovie.title || shortTitle}* [${chosenQuality}]\n\n` +
+                            `🎬 *${selectedMovie.title || shortTitle}* [${usedQuality}]\n\n` +
                             `> 👤 Downloaded by: ${pushname}\n` +
                             `> © Mr Savendra · 𝗦𝗛𝗔𝗩𝗜𝗬𝗔-𝗫𝗠𝗗 𝗩𝟮`;
 
                         try {
+                            const videoStream = await getVideoStream(finalUrl);
                             await conn.sendMessage(from, {
-                                document:  { url: finalUrl },
+                                document:  { stream: videoStream },
                                 mimetype:  'video/mp4',
-                                fileName:  `${shortTitle} - ${chosenQuality}.mp4`,
+                                fileName:  `${shortTitle} - ${usedQuality}.mp4`,
                                 caption:   captionText
                             }, { quoted: FakeVCard });
 
@@ -448,31 +553,50 @@ async (conn, mek, m, { from, q, pushname, reply }) => {
             finalUrl = originalUrl.replace(/(1080p|1080|480p|480)/gi, '720p');
         }
 
-        try {
-            const headRes = await axios.head(finalUrl, { timeout: 10000 });
-            const len     = headRes.headers?.['content-length'];
-            if (len) {
-                const sizeMB = parseInt(len) / (1024 * 1024);
-                if (sizeMB > 1950) {
-                    await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
-                    return reply(`❌ *File too large: ${sizeMB.toFixed(1)} MB*\nWhatsApp 2GB limit exceed කර ඇත.`);
-                }
+        let usedQuality = quality;
+        if (finalUrl !== originalUrl) {
+            const check = await checkVideoLink(finalUrl);
+            const validType = !check.contentType || /video|octet-stream|mp4/i.test(check.contentType);
+            if (!check.ok || !check.looksValid || !validType) {
+                // guessed quality URL doesn't actually exist — fall back to the real link
+                finalUrl    = originalUrl;
+                usedQuality = detectQuality(originalUrl) || 'Original';
+                await conn.sendMessage(from,
+                    { text: `⚠️ *${quality} quality මෙම movie එකට නොමැත.*\n_ලබාගත හැකි quality (${usedQuality}) එකෙන් download කරමින්..._` },
+                    { quoted: FakeVCard }
+                );
             }
-        } catch { /* skip */ }
+        }
+
+        const finalCheck = await checkVideoLink(finalUrl);
+        if (finalCheck.ok && !finalCheck.looksValid) {
+            await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
+            return reply('❌ *Link එක broken/expire වී ඇත (file size ඉතා කුඩායි).*\n_වෙනත් movie එකක් උත්සාහ කරන්න._');
+        }
+        if (finalCheck.ok && finalCheck.sizeMB && finalCheck.sizeMB > 1950) {
+            await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
+            return reply(`❌ *File too large: ${finalCheck.sizeMB.toFixed(1)} MB*\nWhatsApp 2GB limit exceed කර ඇත.`);
+        }
 
         const captionText =
-            `🎬 *${title}* [${quality}]\n\n` +
+            `🎬 *${title}* [${usedQuality}]\n\n` +
             `> 👤 Downloaded by: ${pushname}\n` +
             `> © Mr Savendra · 𝗦𝗛𝗔𝗩𝗜𝗬𝗔-𝗫𝗠𝗗 𝗩𝟮`;
 
-        await conn.sendMessage(from, {
-            document:  { url: finalUrl },
-            mimetype:  'video/mp4',
-            fileName:  `${title} - ${quality}.mp4`,
-            caption:   captionText
-        }, { quoted: FakeVCard });
+        try {
+            const videoStream = await getVideoStream(finalUrl);
+            await conn.sendMessage(from, {
+                document:  { stream: videoStream },
+                mimetype:  'video/mp4',
+                fileName:  `${title} - ${usedQuality}.mp4`,
+                caption:   captionText
+            }, { quoted: FakeVCard });
 
-        await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+            await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+        } catch (dlErr) {
+            await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
+            return reply(`❌ *Download Failed!*\n_${dlErr.message}_`);
+        }
 
     } catch (e) {
         console.error('[CINESUBZ DL ERROR]', e);
