@@ -115,6 +115,27 @@ function shortLabel(label, type) {
 }
 
 // ═══════════════════════════════════════════════════
+//  Series/season detection - some "direct" entries bundle
+//  MULTIPLE episode file URLs joined together (newline/space
+//  separated) instead of a single movie file URL. Split them
+//  out into a clean per-episode list so we never try to
+//  "document.url" a broken multi-link string.
+// ═══════════════════════════════════════════════════
+function extractUrls(raw) {
+  if (!raw) return [];
+  const matches = raw.match(/https?:\/\/\S+/g) || [];
+  // de-dup while preserving order
+  return [...new Set(matches)];
+}
+
+function episodeLabel(url, index) {
+  const fileName = decodeURIComponent(url.split("/").pop() || `Episode ${index + 1}`);
+  const epMatch = fileName.match(/S(\d+)E(\d+)/i);
+  if (epMatch) return `Episode ${parseInt(epMatch[2], 10)} (S${epMatch[1]})`;
+  return fileName.replace(/\.mp4.*$/i, ".mp4");
+}
+
+// ═══════════════════════════════════════════════════
 //  Send the actual video file (direct CDN url - no ad-gate)
 // ═══════════════════════════════════════════════════
 async function sendDirectFile(conn, from, directUrl, fileName, caption, quotedMsg, posterUrl, sessionId) {
@@ -194,10 +215,47 @@ async function runDetailsFlow(conn, from, sender, selMsg, selected, hardThumb, m
         }
 
         if (picked.type === "direct" && picked.actual_url) {
-          // ✅ Real direct CDN file - stream & send the actual movie
-          const fileName = `${cleanTitle(details.title)}.mp4`;
-          const caption = `✅ *Download Complete*\n\n🎬 *${cleanTitle(details.title)}*\n💿 *Quality:* ${details.details?.quality || "?"}\n\n${FOOTER}`;
-          await sendDirectFile(conn, from, picked.actual_url, fileName, caption, dlSel.msg, details.poster || selected.image, sessionId);
+          const urls = extractUrls(picked.actual_url);
+
+          if (urls.length <= 1) {
+            // ✅ Single movie file - stream & send directly
+            const fileUrl = urls[0] || picked.actual_url;
+            const fileName = `${cleanTitle(details.title)}.mp4`;
+            const caption = `✅ *Download Complete*\n\n🎬 *${cleanTitle(details.title)}*\n💿 *Quality:* ${details.details?.quality || "?"}\n\n${FOOTER}`;
+            await sendDirectFile(conn, from, fileUrl, fileName, caption, dlSel.msg, details.poster || selected.image, sessionId);
+
+          } else {
+            // 📺 Series/season bundle - multiple episode files under one option.
+            // Show an episode picker instead of sending a broken multi-url document.
+            await react(conn, from, dlSel.msg.key, "📺");
+
+            let epText = `📺 *${cleanTitle(details.title)}*\n\n*Episodes:*\n`;
+            urls.forEach((u, i) => { epText += `*${i + 1}.* ${episodeLabel(u, i)}\n`; });
+            epText += `\n📌 Episode අංකයෙන් Reply කරන්න.\n${FOOTER}`;
+
+            const epMsg = await conn.sendMessage(from, { text: epText }, { quoted: dlSel.msg });
+
+            const startEpFlow = async () => {
+              while (true) {
+                const epSel = await waitForReply(conn, from, sender, epMsg.key.id);
+                if (!epSel) break;
+
+                (async () => {
+                  const epIndex = parseInt(epSel.text) - 1;
+                  const epUrl = urls[epIndex];
+                  if (isNaN(epIndex) || !epUrl) {
+                    return conn.sendMessage(from, { text: "❌ වලංගු episode අංකයක් ඇතුලත් කරන්න." }, { quoted: epSel.msg });
+                  }
+
+                  const epName = episodeLabel(epUrl, epIndex);
+                  const fileName = `${cleanTitle(details.title)} - ${epName}`.replace(/\.mp4$/i, "") + ".mp4";
+                  const caption = `✅ *Download Complete*\n\n🎬 *${cleanTitle(details.title)}*\n📺 *${epName}*\n\n${FOOTER}`;
+                  await sendDirectFile(conn, from, epUrl, fileName, caption, epSel.msg, details.poster || selected.image, sessionId);
+                })();
+              }
+            };
+            startEpFlow();
+          }
 
         } else if (picked.type === "telegram" && picked.actual_url) {
           // Telegram bot delivery - can't stream through WhatsApp, hand off the bot link
