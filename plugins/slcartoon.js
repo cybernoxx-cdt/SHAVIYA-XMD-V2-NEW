@@ -55,15 +55,26 @@ async function makeThumbnail(moviePosterUrl, hardThumbUrl) {
   const fallbackUrl = hardThumbUrl;
 
   async function fetchThumb(url) {
-    const img = await axios.get(url, { responseType: "arraybuffer", timeout: 15000 });
+    const img = await axios.get(url, {
+      responseType: "arraybuffer",
+      timeout: 15000,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        "Referer": "https://sinhalacartoons.com/",
+      },
+    });
     return await sharp(img.data).resize(300).jpeg({ quality: 65 }).toBuffer();
   }
 
   try {
     return await fetchThumb(primaryUrl);
   } catch (e) {
+    console.log("⚠️ thumbnail primary fetch failed:", primaryUrl, "-", e.message);
     if (primaryUrl !== fallbackUrl) {
-      try { return await fetchThumb(fallbackUrl); } catch {}
+      try { return await fetchThumb(fallbackUrl); } catch (e2) {
+        console.log("⚠️ thumbnail fallback fetch failed:", fallbackUrl, "-", e2.message);
+      }
     }
     return null;
   }
