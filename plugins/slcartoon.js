@@ -1,571 +1,361 @@
-'use strict';
-
-/**
- * SHAVIYA-XMD V2 — Sinhala Cartoons Search & Downloader
- * API: ZANTA-MD / slcartoons
- *
- * Commands:
- *   .sc <cartoon name>       Search
- *   .sc <number>             Select search result
- *   .sc <episode number>     Download episode after selection
- *
- * Aliases: slcartoon, slcartoons, cartoon
- *
- * IMPORTANT:
- * Put the API key in .env:
- *   SLCARTOON_API_KEY=YOUR_API_KEY
- */
-
 const { cmd } = require('../command');
 const axios = require('axios');
+const sharp = require('sharp');
+const fs = require('fs');
+const path = require('path');
 
-const SEARCH_API = 'https://api.zanta-mini.store/api/slcartoons/search';
-const DOWNLOAD_API = 'https://api.zanta-mini.store/api/slcartoons/dl';
-const API_KEY = process.env.SLCARTOON_API_KEY || 'zan_vWpU1lkr_g6wwxdlvyv';
+// ═══════════════════════════════════════════════════
+//  API CONFIG (hardcoded)
+// ═══════════════════════════════════════════════════
+const API_BASE  = "https://whiteshadow-x-api.onrender.com/api/movie/sinhalacartoo-lk";
+const API_TOKEN = "e76n2P"; // hardcoded api key
 
-const MAX_SEARCH_RESULTS = 10;
-const SESSION_TTL = 10 * 60 * 1000;
-const API_TIMEOUT = 30_000;
+const SEARCH_URL  = (q)   => `${API_BASE}?type=search&q=${encodeURIComponent(q)}&apitoken=${API_TOKEN}`;
+const LATEST_URL  = ()    => `${API_BASE}?type=latest&apitoken=${API_TOKEN}`;
+const DETAILS_URL = (url) => `${API_BASE}?type=movie&url=${encodeURIComponent(url)}&apitoken=${API_TOKEN}`;
 
-// Per-chat state. Nothing is persisted to disk.
-const sessions = new Map();
-
-function getText(msg) {
-  const message = msg?.message;
-  if (!message) return '';
-
-  const unwrap = (obj) => {
-    if (!obj) return '';
-    return (
-      obj.conversation ||
-      obj.extendedTextMessage?.text ||
-      obj.imageMessage?.caption ||
-      obj.videoMessage?.caption ||
-      obj.documentMessage?.caption ||
-      ''
-    );
-  };
-
-  let text = unwrap(message);
-  if (text) return text.trim();
-
-  const wrapped =
-    message.ephemeralMessage?.message ||
-    message.viewOnceMessage?.message ||
-    message.viewOnceMessageV2?.message;
-
-  text = unwrap(wrapped);
-  return String(text || '').trim();
+// ═══════════════════════════════════════════════════
+//  Session Config Helpers
+// ═══════════════════════════════════════════════════
+function getSessionConfig(sessionId) {
+  try {
+    const file = path.join(__dirname, `../data/session_config_${sessionId}.json`);
+    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (e) {}
+  return {};
 }
 
-function getSender(msg) {
-  return String(msg?.key?.participant || msg?.key?.remoteJid || '');
+function getBotName(sessionId) {
+  return getSessionConfig(sessionId).botName || "Sʜᴀᴠɪʏᴀ Cɪɴᴇᴍᴀ © ⚜️";
 }
 
-function sameUser(a, b) {
-  if (!a || !b) return false;
-  const clean = (v) => String(v).split(':')[0].split('@')[0].replace(/\D/g, '');
-  const aa = clean(a);
-  const bb = clean(b);
-  return aa && bb && (aa === bb || String(a) === String(b));
+function getHardThumbUrl(sessionId) {
+  return getSessionConfig(sessionId).thumbUrl ||
+    "https://image2url.com/r2/default/images/1774184263251-f9306abd-80ec-4b38-830e-73649a3d687e.png";
 }
 
-function isReplyTo(msg, targetId) {
-  if (!msg?.message || !targetId) return false;
-
-  const check = (obj) => obj?.contextInfo?.stanzaId === targetId;
-  const message = msg.message;
-
-  if (check(message.extendedTextMessage)) return true;
-  if (check(message.imageMessage)) return true;
-  if (check(message.videoMessage)) return true;
-  if (check(message.audioMessage)) return true;
-  if (check(message.documentMessage)) return true;
-  if (check(message.stickerMessage)) return true;
-
-  const wrapped =
-    message.ephemeralMessage?.message ||
-    message.viewOnceMessage?.message ||
-    message.viewOnceMessageV2?.message;
-
-  if (wrapped) {
-    for (const key of Object.keys(wrapped)) {
-      if (check(wrapped[key])) return true;
-    }
-  }
-
-  return false;
+function isMovieDocOn(sessionId) {
+  return getSessionConfig(sessionId).movieDoc === true;
 }
 
-function cleanupSessions() {
-  const now = Date.now();
-  for (const [chatId, session] of sessions) {
-    if (!session || now - session.updatedAt > SESSION_TTL) {
-      sessions.delete(chatId);
-    }
-  }
-}
-
-function saveSession(chatId, data) {
-  cleanupSessions();
-  sessions.set(chatId, { ...data, updatedAt: Date.now() });
-}
-
-function getSession(chatId) {
-  cleanupSessions();
-  const session = sessions.get(chatId);
-  if (session) session.updatedAt = Date.now();
-  return session;
-}
-
-function deleteSession(chatId) {
-  sessions.delete(chatId);
-}
-
-function safeTitle(value, fallback = 'Sinhala Cartoon') {
-  return String(value || fallback)
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
-    .trim()
-    .slice(0, 100) || fallback;
-}
-
-async function apiGet(url, params) {
-  const response = await axios.get(url, {
-    params,
-    timeout: API_TIMEOUT,
-    validateStatus: (status) => status >= 200 && status < 500,
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': 'SHAVIYA-XMD-V2',
-    },
-  });
-
-  if (response.status >= 400) {
-    throw new Error(`API HTTP ${response.status}`);
-  }
-
-  return response.data;
-}
-
+// ═══════════════════════════════════════════════════
+//  React helper
+// ═══════════════════════════════════════════════════
 async function react(conn, jid, key, emoji) {
-  try {
-    await conn.sendMessage(jid, { react: { text: emoji, key } });
-  } catch (_) {}
+  try { await conn.sendMessage(jid, { react: { text: emoji, key } }); } catch {}
 }
 
-async function sendSearchResults(conn, from, mek, query, results) {
-  let text =
-    `╭━━━〔 🎬 *SINHALA CARTOONS* 〕━━━╮\n` +
-    `┃ 🔎 *Search:* ${query}\n` +
-    `┃ 📚 *Results:* ${results.length}\n` +
-    `╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n`;
+// ═══════════════════════════════════════════════════
+//  Thumbnail Builder
+// ═══════════════════════════════════════════════════
+async function makeThumbnail(moviePosterUrl, hardThumbUrl, movieDocOn) {
+  const primaryUrl = (movieDocOn && moviePosterUrl) ? moviePosterUrl : hardThumbUrl;
+  const fallbackUrl = hardThumbUrl;
 
-  results.forEach((item, i) => {
-    const title = item.title || item.name || 'Unknown';
-    const quality = item.quality ? ` • ${item.quality}` : '';
-    const type = item.type ? ` • ${item.type}` : '';
-    text += `*${i + 1}.* 🎞️ ${title}${quality}${type}\n`;
-    if (item.rating) text += `   ⭐ ${item.rating}`;
-    text += `\n\n`;
-  });
-
-  text +=
-    `📌 *Reply to this message with a number*\n` +
-    `Example: *1*\n\n` +
-    `> ⚡ SHAVIYA-XMD V2`;
-
-  return conn.sendMessage(from, { text }, { quoted: mek });
-}
-
-async function sendEpisodeList(conn, from, quoted, selected, episodes) {
-  let text =
-    `╭━━━〔 📺 *CARTOON EPISODES* 〕━━━╮\n` +
-    `┃ 🎬 *${selected.title || 'Sinhala Cartoon'}*\n` +
-    `┃ 📦 *Episodes:* ${episodes.length}\n` +
-    `╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n`;
-
-  episodes.forEach((ep, i) => {
-    const number = ep.episode || String(i + 1).padStart(2, '0');
-    const title = ep.title || `Episode ${number}`;
-    text += `*${i + 1}.* 📺 ${title}  _(EP ${number})_\n`;
-  });
-
-  text +=
-    `\n📥 *Reply with the episode number*\n` +
-    `Example: *1*\n\n` +
-    `> ⚡ SHAVIYA-XMD V2`;
-
-  return conn.sendMessage(from, { text }, { quoted });
-}
-
-async function sendEpisode(conn, from, quoted, seriesTitle, episode) {
-  const streamUrl = episode?.stream_url || episode?.url || episode?.download_url;
-  if (!streamUrl) throw new Error('Episode stream URL not found');
-
-  const epNo = episode?.episode || '';
-  const epTitle = episode?.title || `Episode ${epNo}`;
-  const fileName = `${safeTitle(seriesTitle)} - EP ${safeTitle(epNo || '01')}.mp4`;
-
-  const caption =
-    `╭━━〔 🎬 *SINHALA CARTOON* 〕━━╮\n` +
-    `┃ 🎞️ *${seriesTitle}*\n` +
-    `┃ 📺 *${epTitle}*\n` +
-    `╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n` +
-    `> ⚡ SHAVIYA-XMD V2`;
-
-  // The API returns direct MP4 CDN URLs. Baileys can fetch the URL directly,
-  // avoiding an unnecessary full-file buffer in the bot process.
-  try {
-    await conn.sendMessage(
-      from,
-      {
-        video: { url: streamUrl },
-        mimetype: 'video/mp4',
-        fileName,
-        caption,
-      },
-      { quoted }
-    );
-    return;
-  } catch (videoError) {
-    console.error('[SLCARTOON] video send failed:', videoError?.message || videoError);
+  async function fetchThumb(url) {
+    const img = await axios.get(url, { responseType: "arraybuffer", timeout: 15000 });
+    return await sharp(img.data).resize(300).jpeg({ quality: 65 }).toBuffer();
   }
 
-  // Fallback: send the same direct file as a document.
   try {
-    await conn.sendMessage(
-      from,
-      {
-        document: { url: streamUrl },
-        mimetype: 'video/mp4',
-        fileName,
-        caption,
-      },
-      { quoted }
-    );
-  } catch (docError) {
-    console.error('[SLCARTOON] document send failed:', docError?.message || docError);
-    throw new Error('WhatsApp could not fetch/send this episode. The direct CDN link may be unavailable or the file may be too large.');
-  }
-}
-
-cmd(
-  {
-    pattern: 'slcartoon',
-    alias: ['slcartoons', 'sc', 'cartoon'],
-    react: '🎬',
-    desc: 'Search and download Sinhala cartoons',
-    category: 'download',
-    filename: __filename,
-  },
-  async (conn, mek, m, { from, q, reply, sender }) => {
-    const chatId = from || m?.chat;
-    const query = typeof q === 'string' ? q.trim() : '';
-
-    try {
-      if (!API_KEY) {
-        return reply(
-          '❌ *SLCARTOON API key is not configured.*\n\n' +
-          'Add this to your .env:\n' +
-          '`SLCARTOON_API_KEY=YOUR_API_KEY`\n\n' +
-          'Then restart the bot.'
-        );
-      }
-
-      if (!query) {
-        return reply(
-          `╭━━━〔 🎬 *SINHALA CARTOON DOWNLOADER* 〕━━━╮\n` +
-          `┃\n` +
-          `┃ 🔎 *Search:* .sc <cartoon name>\n` +
-          `┃ 📥 *Select:* Reply with result number\n` +
-          `┃ 📺 *Download:* Reply with episode number\n` +
-          `┃\n` +
-          `╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n` +
-          `📝 *Examples:*\n` +
-          `• .sc Ben 10\n` +
-          `• .sc Doraemon\n` +
-          `• .sc Shinchan\n\n` +
-          `> ⚡ SHAVIYA-XMD V2`
-        );
-      }
-
-      // If a numeric query is received, first check whether this chat has a
-      // pending search or episode menu. This makes `.sc 1` work naturally.
-      if (/^\d+$/.test(query)) {
-        const number = Number(query);
-        const session = getSession(chatId);
-
-        if (!session) {
-          return reply('❌ *No active selection found.*\nUse `.sc <cartoon name>` first.');
-        }
-
-        if (session.stage === 'search') {
-          const selected = session.results[number - 1];
-          if (!selected) {
-            return reply(`❌ Invalid result number. Reply with *1 - ${session.results.length}*.`);
-          }
-
-          const selectedUrl = selected.url || selected.link || selected.href;
-          if (!selectedUrl) {
-            return reply('❌ This result does not contain a valid cartoon URL.');
-          }
-
-          await react(conn, chatId, mek.key, '⏳');
-          await reply(`⏳ *Loading episodes...*\n🎬 ${selected.title || 'Sinhala Cartoon'}`);
-
-          let data;
-          try {
-            data = await apiGet(DOWNLOAD_API, {
-              apiKey: API_KEY,
-              text: selectedUrl,
-            });
-          } catch (e) {
-            console.error('[SLCARTOON] download API:', e?.message || e);
-            return reply('❌ *Download API error.* Please try again later.');
-          }
-
-          if (!data?.success) {
-            return reply(`❌ *API error:* ${data?.message || 'Unable to fetch episodes.'}`);
-          }
-
-          const result = data.results || data.result || data.data;
-          const episodes = Array.isArray(result?.episodes) ? result.episodes : [];
-
-          if (!episodes.length) {
-            return reply('❌ No episodes were returned for this cartoon.');
-          }
-
-          saveSession(chatId, {
-            stage: 'episodes',
-            sender,
-            selected,
-            title: result.title || selected.title || 'Sinhala Cartoon',
-            episodes,
-          });
-
-          const episodeMsg = await sendEpisodeList(
-            conn,
-            chatId,
-            mek,
-            selected,
-            episodes
-          );
-
-          const session2 = getSession(chatId);
-          if (session2) {
-            session2.episodeMessageId = episodeMsg?.key?.id;
-            session2.updatedAt = Date.now();
-          }
-
-          return;
-        }
-
-        if (session.stage === 'episodes') {
-          if (session.sender && !sameUser(session.sender, sender)) {
-            return reply('❌ Only the user who started this download can select the episode.');
-          }
-
-          const episode = session.episodes[number - 1];
-          if (!episode) {
-            return reply(`❌ Invalid episode number. Reply with *1 - ${session.episodes.length}*.`);
-          }
-
-          await react(conn, chatId, mek.key, '📥');
-          await conn.sendMessage(
-            chatId,
-            { text: `⏬ *Downloading:* ${session.title}\n📺 *${episode.title || `Episode ${number}`}*\n\nPlease wait...` },
-            { quoted: mek }
-          );
-
-          try {
-            await sendEpisode(conn, chatId, mek, session.title, episode);
-            deleteSession(chatId);
-            await react(conn, chatId, mek.key, '✅');
-          } catch (e) {
-            console.error('[SLCARTOON] episode send:', e?.stack || e);
-            return reply(`❌ *Download failed.*\n${e?.message || 'Please try again.'}`);
-          }
-
-          return;
-        }
-      }
-
-      // Normal search
-      await react(conn, chatId, mek.key, '🔎');
-
-      let data;
-      try {
-        data = await apiGet(SEARCH_API, {
-          apiKey: API_KEY,
-          text: query,
-        });
-      } catch (e) {
-        console.error('[SLCARTOON] search API:', e?.message || e);
-        return reply('❌ *Search API error.* Please try again later.');
-      }
-
-      if (!data?.success) {
-        return reply(`❌ *Search failed:* ${data?.message || 'No results found.'}`);
-      }
-
-      const rawResults = Array.isArray(data.results)
-        ? data.results
-        : Array.isArray(data.data)
-          ? data.data
-          : [];
-
-      if (!rawResults.length) {
-        return reply(`❌ No cartoons found for *${query}*.`);
-      }
-
-      const results = rawResults.slice(0, MAX_SEARCH_RESULTS);
-      saveSession(chatId, {
-        stage: 'search',
-        sender,
-        query,
-        results,
-      });
-
-      const resultMsg = await sendSearchResults(conn, chatId, mek, query, results);
-      const session = getSession(chatId);
-      if (session) {
-        session.searchMessageId = resultMsg?.key?.id;
-        session.updatedAt = Date.now();
-      }
-    } catch (error) {
-      console.error('[SLCARTOON] fatal:', error?.stack || error);
-      return reply('❌ *Unexpected error occurred.* Please try again.');
+    return await fetchThumb(primaryUrl);
+  } catch (e) {
+    if (primaryUrl !== fallbackUrl) {
+      try { return await fetchThumb(fallbackUrl); } catch {}
     }
+    return null;
   }
-);
+}
 
-// Optional free-text reply support:
-// If the user replies directly to the search/episode message with a number,
-// the command prefix is not required. This listener is installed by the
-// plugin once and is compatible with Baileys' messages.upsert event.
-//
-// NOTE: This bot is multi-session — index.js keeps live sockets in
-// `global._activeConns` (Map<sessionId, conn>), NOT in a single
-// `global.conn`/`global.sock`/`global.client` global. A single global socket
-// never exists here, so we must attach the listener to every active
-// connection (and to any new/reconnected one) instead of waiting for one.
-function installReplyHandler() {
-  const attachedConns = new WeakSet();
+// ═══════════════════════════════════════════════════
+//  waitForReply - multi-use loop
+// ═══════════════════════════════════════════════════
+function waitForReply(conn, from, sender, replyToId, timeout = 600000) {
+  return new Promise((resolve) => {
+    let settled = false;
 
-  const attachTo = (conn) => {
-    if (!conn || attachedConns.has(conn) || !conn.ev?.on) return;
-    attachedConns.add(conn);
-
-    conn.ev.on('messages.upsert', async (update) => {
-      try {
-        if (update?.type === 'append') return;
-        const msg = update?.messages?.[0];
-        if (!msg?.message || msg.key?.fromMe) return;
-
-        const chatId = msg.key.remoteJid;
-        const text = getText(msg);
-        if (!/^\d+$/.test(text)) return;
-
-        const session = getSession(chatId);
-        if (!session) return;
-
-        const targetId = session.stage === 'search'
-          ? session.searchMessageId
-          : session.episodeMessageId;
-
-        if (!targetId || !isReplyTo(msg, targetId)) return;
-        if (session.sender && !sameUser(session.sender, getSender(msg))) return;
-
-        const n = Number(text);
-        if (session.stage === 'search') {
-          const selected = session.results[n - 1];
-          if (!selected) return;
-
-          // Avoid dispatching duplicate processing if the user sends the same
-          // reply multiple times while the API is still loading.
-          if (session.processing) return;
-          session.processing = true;
-
-          const selectedUrl = selected.url || selected.link || selected.href;
-          if (!selectedUrl) {
-            session.processing = false;
-            return;
-          }
-
-          await react(conn, chatId, msg.key, '⏳');
-          await conn.sendMessage(chatId, { text: `⏳ *Loading episodes...*\n🎬 ${selected.title || 'Sinhala Cartoon'}` }, { quoted: msg });
-
-          let data;
-          try {
-            data = await apiGet(DOWNLOAD_API, { apiKey: API_KEY, text: selectedUrl });
-          } catch (e) {
-            session.processing = false;
-            return conn.sendMessage(chatId, { text: '❌ *Download API error.* Please try again.' }, { quoted: msg });
-          }
-
-          const result = data?.results || data?.result || data?.data;
-          const episodes = Array.isArray(result?.episodes) ? result.episodes : [];
-          if (!data?.success || !episodes.length) {
-            session.processing = false;
-            return conn.sendMessage(chatId, { text: `❌ ${data?.message || 'No episodes found.'}` }, { quoted: msg });
-          }
-
-          saveSession(chatId, {
-            stage: 'episodes',
-            sender: session.sender,
-            selected,
-            title: result.title || selected.title || 'Sinhala Cartoon',
-            episodes,
-          });
-
-          const sent = await sendEpisodeList(conn, chatId, msg, selected, episodes);
-          const newSession = getSession(chatId);
-          if (newSession) newSession.episodeMessageId = sent?.key?.id;
-          return;
-        }
-
-        if (session.stage === 'episodes') {
-          const episode = session.episodes[n - 1];
-          if (!episode || session.processing) return;
-          session.processing = true;
-
-          await react(conn, chatId, msg.key, '📥');
-          await conn.sendMessage(chatId, { text: `⏬ *Downloading:* ${session.title}\n📺 *${episode.title || `Episode ${n}`}*\n\nPlease wait...` }, { quoted: msg });
-
-          try {
-            await sendEpisode(conn, chatId, msg, session.title, episode);
-            deleteSession(chatId);
-            await react(conn, chatId, msg.key, '✅');
-          } catch (e) {
-            session.processing = false;
-            await conn.sendMessage(chatId, { text: `❌ *Download failed.*\n${e?.message || 'Please try again.'}` }, { quoted: msg });
-          }
-        }
-      } catch (e) {
-        console.error('[SLCARTOON] reply handler:', e?.message || e);
+    const handler = (update) => {
+      const msg = update.messages?.[0];
+      if (!msg?.message) return;
+      const ctx = msg.message?.extendedTextMessage?.contextInfo;
+      const text = msg.message.conversation || msg.message?.extendedTextMessage?.text || "";
+      const msgSender = msg.key.participant || msg.key.remoteJid;
+      const isCorrectUser = msgSender.includes(sender.split('@')[0]) || msgSender.includes("@lid");
+      if (msg.key.remoteJid === from && isCorrectUser && ctx?.stanzaId === replyToId) {
+        if (settled) return;
+        settled = true;
+        conn.ev.off("messages.upsert", handler);
+        resolve({ msg, text: text.trim() });
       }
+    };
+
+    conn.ev.on("messages.upsert", handler);
+
+    setTimeout(() => {
+      if (settled) return;
+      conn.ev.off("messages.upsert", handler);
+      resolve(null);
+    }, timeout);
+  });
+}
+
+// ═══════════════════════════════════════════════════
+//  Helpers
+// ═══════════════════════════════════════════════════
+function cleanTitle(title) {
+  if (!title) return "Unknown";
+  return title.replace(/^HD\s*[\d.]*\s*/i, "").split("|")[0].trim();
+}
+
+// Shorten the long descriptive label field down to something readable in a list
+function shortLabel(label, type) {
+  if (!label) return type === "telegram" ? "Telegram" : "Direct Download";
+  const main = label.split("•")[0].trim();
+  return main;
+}
+
+// ═══════════════════════════════════════════════════
+//  Send the actual video file (direct CDN url - no ad-gate)
+// ═══════════════════════════════════════════════════
+async function sendDirectFile(conn, from, directUrl, fileName, caption, quotedMsg, posterUrl, sessionId) {
+  const thumb = await makeThumbnail(posterUrl || null, getHardThumbUrl(sessionId), isMovieDocOn(sessionId));
+  await react(conn, from, quotedMsg.key, "📥");
+
+  try {
+    const docMsg = await conn.sendMessage(from, {
+      document: { url: directUrl },
+      fileName: fileName.replace(/[\/\\:*?"<>|]/g, ""),
+      mimetype: "video/mp4",
+      jpegThumbnail: thumb || undefined,
+      caption,
+    }, { quoted: quotedMsg });
+
+    await react(conn, from, docMsg.key, "✅");
+  } catch (e) {
+    console.log("❌ sendDirectFile error:", e.message);
+    await conn.sendMessage(from, {
+      text: `❌ File send කිරීමේදී දෝෂයක් සිදු විය.\n\n📎 Direct link:\n${directUrl}\n\n${caption}`
+    }, { quoted: quotedMsg });
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  Shared flow: given a resolved list of {title, link, image?}, run details + download
+// ═══════════════════════════════════════════════════
+async function runDetailsFlow(conn, from, sender, selMsg, selected, hardThumb, movieDocOn, sessionId, FOOTER) {
+  await react(conn, from, selMsg.msg.key, "⏳");
+
+  // DETAILS
+  let details;
+  try {
+    const detRes = await axios.get(DETAILS_URL(selected.link), { timeout: 20000 });
+    if (detRes.data?.status !== "success") throw new Error(detRes.data?.message || "details failed");
+    details = detRes.data?.result;
+  } catch (e) {
+    return conn.sendMessage(from, { text: "❌ Details API error: " + e.message }, { quoted: selMsg.msg });
+  }
+
+  if (!details) return conn.sendMessage(from, { text: "❌ Details හමු නොවීය." }, { quoted: selMsg.msg });
+
+  const links = details.download_links || [];
+  if (!links.length) {
+    return conn.sendMessage(from, { text: `❌ *${cleanTitle(details.title)}*\n\nDownload links හමු නොවීය.` }, { quoted: selMsg.msg });
+  }
+
+  let infoText = `🎬 *${cleanTitle(details.title)}*\n\n`;
+  if (details.details?.release_year) infoText += `📅 *Year:* ${details.details.release_year}\n`;
+  if (details.details?.director)     infoText += `🎬 *Director:* ${details.details.director}\n`;
+  if (details.details?.imdb_rating)  infoText += `⭐ *IMDB:* ${details.details.imdb_rating}\n`;
+  if (details.details?.quality)      infoText += `💿 *Quality:* ${details.details.quality}\n`;
+  if (details.description)           infoText += `📝 *Description:* ${details.description.substring(0, 200)}\n`;
+
+  infoText += `\n*💎 Download Options:*\n`;
+  links.forEach((d, i) => {
+    infoText += `*${i + 1}.* ${shortLabel(d.label, d.type)}\n`;
+  });
+  infoText += `\n📌 අංකයෙන් Reply කරන්න.\n${FOOTER}`;
+
+  const infoMsg = await conn.sendMessage(from, {
+    image: { url: details.poster || selected.image || hardThumb },
+    caption: infoText
+  }, { quoted: selMsg.msg });
+
+  // ── Download option select loop ──
+  const startDlFlow = async () => {
+    while (true) {
+      const dlSel = await waitForReply(conn, from, sender, infoMsg.key.id);
+      if (!dlSel) break;
+
+      (async () => {
+        const dIndex = parseInt(dlSel.text) - 1;
+        const picked = links[dIndex];
+        if (isNaN(dIndex) || !picked) {
+          return conn.sendMessage(from, { text: "❌ වලංගු අංකයක් ඇතුලත් කරන්න." }, { quoted: dlSel.msg });
+        }
+
+        if (picked.type === "direct" && picked.actual_url) {
+          // ✅ Real direct CDN file - stream & send the actual movie
+          const fileName = `${cleanTitle(details.title)}.mp4`;
+          const caption = `✅ *Download Complete*\n\n🎬 *${cleanTitle(details.title)}*\n💿 *Quality:* ${details.details?.quality || "?"}\n\n${FOOTER}`;
+          await sendDirectFile(conn, from, picked.actual_url, fileName, caption, dlSel.msg, details.poster || selected.image, sessionId);
+
+        } else if (picked.type === "telegram" && picked.actual_url) {
+          // Telegram bot delivery - can't stream through WhatsApp, hand off the bot link
+          await react(conn, from, dlSel.msg.key, "📥");
+          await conn.sendMessage(from, {
+            text: `📨 *Telegram Download*\n\n🎬 *${cleanTitle(details.title)}*\n\n🔗 Telegram bot එක open කර movie එක ලබාගන්න:\n${picked.actual_url}\n\n${FOOTER}`
+          }, { quoted: dlSel.msg });
+
+        } else {
+          // Unknown type - fall back to whatever url we have
+          const fallbackUrl = picked.actual_url || picked.page_url;
+          await conn.sendMessage(from, {
+            text: `🔗 *${cleanTitle(details.title)}*\n\n${fallbackUrl}\n\n${FOOTER}`
+          }, { quoted: dlSel.msg });
+        }
+      })();
+    }
+  };
+  startDlFlow();
+}
+
+// ═══════════════════════════════════════════════════
+//  SINHALA CARTOON COMMAND (search / latest)
+// ═══════════════════════════════════════════════════
+cmd({
+  pattern: "sinhalacartoon",
+  alias: ["cartoon", "scartoon"],
+  desc: "SinhalaCartoons.com Search / Latest / Download",
+  category: "downloader",
+  react: "🔍",
+  filename: __filename
+}, async (conn, mek, m, { from, q, reply, sender, sessionId }) => {
+  try {
+    const FOOTER     = `✫☘${getBotName(sessionId)}☢️☘`;
+    const hardThumb  = getHardThumbUrl(sessionId);
+    const movieDocOn = isMovieDocOn(sessionId);
+
+    await react(conn, from, m.key, "🔍");
+
+    let items;
+    let headerTitle;
+
+    if (q && q.trim()) {
+      // SEARCH
+      try {
+        const searchRes = await axios.get(SEARCH_URL(q), { timeout: 20000 });
+        if (searchRes.data?.status !== "success") throw new Error(searchRes.data?.message || "search failed");
+        items = searchRes.data?.results;
+      } catch (e) {
+        return reply("❌ Search API error: " + e.message);
+      }
+      headerTitle = `🧸 *SinhalaCartoons.com Search Results*`;
+    } else {
+      // LATEST (no query given)
+      try {
+        const latestRes = await axios.get(LATEST_URL(), { timeout: 20000 });
+        if (latestRes.data?.status !== "success") throw new Error(latestRes.data?.message || "latest failed");
+        items = latestRes.data?.results;
+      } catch (e) {
+        return reply("❌ Latest API error: " + e.message);
+      }
+      headerTitle = `🧸 *SinhalaCartoons.com Latest Uploads*`;
+    }
+
+    if (!items?.length) return reply("❌ ප්‍රතිඵල හමු නොවීය. වෙනත් නමකින් සොයන්න.");
+
+    let listText = `${headerTitle}\n\n`;
+    items.slice(0, 10).forEach((v, i) => {
+      listText += `*${i + 1}.* ${cleanTitle(v.title)}${v.year ? ` (${v.year})` : ""}\n`;
     });
-  };
+    listText += `\n📌 අංකයෙන් Reply කරන්න.\n\n${FOOTER}`;
 
-  // Scan whatever sessions are currently live and attach to each one.
-  // Runs forever (not just for 60s) because sessions can connect, disconnect,
-  // and reconnect (with a brand-new socket object) at any point while the
-  // bot process is running — a one-time check would miss all of that.
-  const scanAndAttach = () => {
-    const activeConns = global._activeConns;
-    if (!activeConns || typeof activeConns.forEach !== 'function') return;
-    for (const conn of activeConns.values()) {
-      attachTo(conn);
+    const listMsg = await conn.sendMessage(from, { text: listText }, { quoted: mek });
+
+    // ── Select loop ──
+    const startSelectFlow = async () => {
+      while (true) {
+        const sel = await waitForReply(conn, from, sender, listMsg.key.id);
+        if (!sel) break;
+
+        (async () => {
+          const index = parseInt(sel.text) - 1;
+          const selected = items[index];
+          if (isNaN(index) || !selected) {
+            return conn.sendMessage(from, { text: "❌ වලංගු අංකයක් ඇතුලත් කරන්න." }, { quoted: sel.msg });
+          }
+
+          await runDetailsFlow(conn, from, sender, sel, selected, hardThumb, movieDocOn, sessionId, FOOTER);
+        })();
+      }
+    };
+
+    startSelectFlow();
+
+  } catch (e) {
+    console.error("📛 SINHALACARTOON ERROR:", e);
+    reply("⚠️ Error: " + e.message);
+  }
+});
+
+// ═══════════════════════════════════════════════════
+//  Dedicated LATEST command (shortcut, same flow)
+// ═══════════════════════════════════════════════════
+cmd({
+  pattern: "cartoonlatest",
+  alias: ["latestcartoon"],
+  desc: "SinhalaCartoons.com Latest Uploads",
+  category: "downloader",
+  react: "🆕",
+  filename: __filename
+}, async (conn, mek, m, { from, reply, sender, sessionId }) => {
+  try {
+    const FOOTER     = `✫☘${getBotName(sessionId)}☢️☘`;
+    const hardThumb  = getHardThumbUrl(sessionId);
+    const movieDocOn = isMovieDocOn(sessionId);
+
+    await react(conn, from, m.key, "🆕");
+
+    let items;
+    try {
+      const latestRes = await axios.get(LATEST_URL(), { timeout: 20000 });
+      if (latestRes.data?.status !== "success") throw new Error(latestRes.data?.message || "latest failed");
+      items = latestRes.data?.results;
+    } catch (e) {
+      return reply("❌ Latest API error: " + e.message);
     }
-  };
 
-  scanAndAttach();
-  setInterval(scanAndAttach, 3000);
-}
+    if (!items?.length) return reply("❌ Latest uploads හමු නොවීය.");
 
-installReplyHandler();
+    let listText = `🧸 *SinhalaCartoons.com Latest Uploads*\n\n`;
+    items.slice(0, 10).forEach((v, i) => {
+      listText += `*${i + 1}.* ${cleanTitle(v.title)}${v.year ? ` (${v.year})` : ""}\n`;
+    });
+    listText += `\n📌 අංකයෙන් Reply කරන්න.\n\n${FOOTER}`;
 
-module.exports = {
-  SEARCH_API,
-  DOWNLOAD_API,
-};
+    const listMsg = await conn.sendMessage(from, { text: listText }, { quoted: mek });
+
+    const startSelectFlow = async () => {
+      while (true) {
+        const sel = await waitForReply(conn, from, sender, listMsg.key.id);
+        if (!sel) break;
+
+        (async () => {
+          const index = parseInt(sel.text) - 1;
+          const selected = items[index];
+          if (isNaN(index) || !selected) {
+            return conn.sendMessage(from, { text: "❌ වලංගු අංකයක් ඇතුලත් කරන්න." }, { quoted: sel.msg });
+          }
+
+          await runDetailsFlow(conn, from, sender, sel, selected, hardThumb, movieDocOn, sessionId, FOOTER);
+        })();
+      }
+    };
+
+    startSelectFlow();
+
+  } catch (e) {
+    console.error("📛 CARTOONLATEST ERROR:", e);
+    reply("⚠️ Error: " + e.message);
+  }
+});
